@@ -6,14 +6,14 @@ in a form that LLMs can author reliably. The design rule: the author only makes
 continuous/spatial one (vertices, skinning weights, normals, winding). It is
 structurally impossible to produce a non-manifold mesh or a disconnected rig.
 
-Toolchain: `python3 -m wam.cli models/foo.wam` → glTF 2.0 (skinned + animated)
+Toolchain: `python3 -m wam.cli foo.wam` → glTF 2.0 (skinned + animated)
 plus turntable PNG renders for visual iteration.
 
 ```
-python3 -m wam.cli models/tauren.wam            # sheet PNG + glTF + viewer JSON
-python3 -m wam.cli models/tauren.wam --bones    # also render skeleton overlay
-python3 -m wam.cli models/tauren.wam --anim walk --frames 6
-python3 -m wam.cli models/dragon.wam --width 760 --height 560   # landscape
+python3 -m wam.cli mymodel.wam            # sheet PNG + glTF + viewer JSON
+python3 -m wam.cli mymodel.wam --bones    # also render skeleton overlay
+python3 -m wam.cli mymodel.wam --anim walk --frames 6
+python3 -m wam.cli mymodel.wam --width 760 --height 560   # landscape panels
 ```
 
 Panels default to 480×600 portrait; pass `--width/--height` for anything
@@ -430,7 +430,7 @@ surfacing, waterways, and prop placement as named, discrete decisions —
 into one textured scene (viewer JSON + vista renders):
 
 ```
-python3 -m wam.zone models/zone/myzone.zone
+python3 -m wam.zone myzone.zone
 ```
 
 ```
@@ -510,16 +510,9 @@ empty, not skimmed.
 
 - `wam/` — compiler: parser, skeleton solver, mesh gen, texture baker, lint,
   glTF export, software renderer, viewer-JSON export
-- `models/` — reference characters (`tauren`, `human`, `wolf`, `orc` — the
-  orc is the most feature-complete) and `models/town/` — twelve textured
-  buildings/props
-- `scripts/compose_town.py` — composes town props into a scene (renders +
-  merged viewer JSON with a packed mega-atlas)
-- `wam/zone.py` — the zone compiler (see **Zones**); `models/zone/` —
-  environment props: terrain-scale (mesa-country trees, rocks, standing
-  stones, cave mouth) and story-scale (tipi, campfire, totem, gate, ruin,
-  kodo ribcage, spear, burial mound, dock, crop field, rowboat, banner,
-  smoke plume)
+- `wam/zone.py` — the zone compiler (see **Zones**)
+- `scripts/compose_town.py` — composes a set of prop models into one scene
+  (renders + merged viewer JSON with a packed mega-atlas)
 - `viewer/template.html` — standalone WebGL viewer (open directly, drop any
   `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
   preloaded

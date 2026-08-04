@@ -16,13 +16,14 @@ language — there is always a construct that removes the math.
 
 The compiler ships with this skill: the plugin root (the directory containing
 `skills/`, available as `$CLAUDE_PLUGIN_ROOT` when set) holds the `wam/`
-Python package, `SPEC.md` (full grammar), and `models/` (four reference
-models: `tauren.wam`, `human.wam`, `wolf.wam`, `orc.wam`). Requires Python 3
-with numpy.
+Python package and `SPEC.md` (the full grammar). Requires Python 3 with numpy.
+
+There are no bundled example models — **`SPEC.md` is the reference**. Read it
+before authoring; every construct there has a worked snippet.
 
 ```bash
 cd "$CLAUDE_PLUGIN_ROOT"                        # or the wam repo checkout
-python3 -m wam.cli models/tauren.wam            # -> out/tauren_sheet.png + .gltf
+python3 -m wam.cli my.wam                       # -> out/my_sheet.png + .gltf
 python3 -m wam.cli my.wam --anim walk --frames 6
 python3 -m wam.cli my.wam --bones               # skeleton overlay render
 python3 -m wam.cli my.wam --width 760 --height 560   # landscape, for long models
@@ -134,8 +135,12 @@ actions like a double-arm smash).
 9. **Membranes**: a surface between bones is a `web`, never a flattened tube.
 10. **Framing**: if a model is longer than it is tall, render it landscape
    (`--width 760 --height 560`) — the default panel is portrait.
-11. **Study a reference model first** (`models/orc.wam` is the most complete:
-   groups, `on=`, `follow=`, six animations) and copy its patterns.
+11. **Work from SPEC.md, not from memory** — there are no example models to
+   crib from, and half the constructs (`web`, `frame=`, `material_arc=`,
+   `pin`, `checks`) have no analogue in other 3D formats. Build in passes:
+   skeleton first, then block out the masses with a few rings per part,
+   compile and *look*, and only then add detail. A silhouette that reads
+   wrong never gets fixed by adding more parts.
 
 ## Zones
 
