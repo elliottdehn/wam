@@ -10,10 +10,14 @@ Toolchain: `python3 -m wam.cli models/foo.wam` → glTF 2.0 (skinned + animated)
 plus turntable PNG renders for visual iteration.
 
 ```
-python3 -m wam.cli models/tauren.wam            # compile + render sheet + glTF
+python3 -m wam.cli models/tauren.wam            # sheet PNG + glTF + viewer JSON
 python3 -m wam.cli models/tauren.wam --bones    # also render skeleton overlay
 python3 -m wam.cli models/tauren.wam --anim walk --frames 6
 ```
+
+Every compile also writes `out/<name>_viewer.json` — open
+`viewer/template.html` in a browser and drop the JSON on it to inspect the
+model interactively (orbit, wireframe, skeleton, animation playback).
 
 ## Conventions
 
@@ -29,8 +33,9 @@ python3 -m wam.cli models/tauren.wam --anim walk --frames 6
     splays a `down` bone outward (+).
 - Comments start with `#` (hex colors like `#6b4a33` are still parsed).
 - Sections appear in order: `model`, `palette`, `skeleton`, `parts`,
-  `animations`. A `mirror` … `end` block inside `skeleton`/`parts` authors the
-  left side only; the compiler emits `.l` and a reflected `.r`.
+  `textures` (optional), `animations`. A `mirror` … `end` block inside
+  `skeleton`/`parts` authors the left side only; the compiler emits `.l` and
+  a reflected `.r`.
 
 ## `model`
 
@@ -42,8 +47,9 @@ model tauren
 
 ## `palette`
 
-Named flat colors (WoW-style hand-painted look comes from silhouette + palette,
-not textures):
+Named flat colors. Any material without a `textures` entry renders as a
+flat fill; the hand-painted look comes from layering the `textures` section
+on top of these bases:
 
 ```
 palette
@@ -75,8 +81,10 @@ skeleton
 
 ## `parts`
 
-Three generators. Everything is closed and skinned automatically; ring/segment
-counts come from `style`.
+Three generators (`loft`, `sweep`, `attach`) plus the `group` construct for
+compound props. Everything is closed and skinned automatically; ring/segment
+counts come from `style` (override per part with `sides=`). `shape=` on a
+loft line sets the default cross-section for all its rings.
 
 ### `loft` — cross-section rings along a bone chain
 
@@ -176,9 +184,9 @@ along local +Z. Prefer aiming over raw group Euler angles.
 ## `textures` — painted-look procedural texturing
 
 Materials stop being flat fills by adding a `textures` section: named
-operator stacks evaluated per-vertex (deterministic seeds, so renders are
-reproducible and tunable by parameter edits). A material name resolves to
-its palette color (or the texture's `base=`), then ops adjust it:
+operator stacks baked into a texel atlas (deterministic seeds, so renders
+are reproducible and tunable by parameter edits). A material name resolves
+to its palette color (or the texture's `base=`), then ops adjust it:
 
 ```
 textures
@@ -210,8 +218,10 @@ edges stay crisp, and `out/<name>_tex.png` lets you inspect the atlas.
 ## `animations`
 
 Rotations are **deltas from rest**, applied about the bone's head: `pitch`
-about +X, `yaw` about +Y, `roll` about the bone's own axis. Two authoring
-styles that can mix inside one `anim`:
+about +X, `yaw` about +Y, `tilt` about +Z (flares a hanging arm sideways —
+the roar/flex idiom), `roll` about the bone's own axis. `yaw`, `roll`, and
+`tilt` flip sign under mirroring; `pitch` keeps it. Two authoring styles
+that can mix inside one `anim`:
 
 ```
 animations
@@ -247,12 +257,21 @@ animations
 feet dipping below / floating above ground, asymmetry, degenerate triangles,
 **loft folds** (a ring wider than the bend it sits on doubles the surface
 back — the classic "invisible faces" bug; split the loft at the joint),
-parts hosted on the wrong bone, plus a proportion report (head-heights, bbox). Errors name the fix — the
-intended workflow is *compile → read warnings → look at the render sheet →
-edit angles/ratios → repeat*.
+parts hosted on the wrong bone, plus a proportion report (head-heights,
+bbox). Warnings name the fix — the intended workflow is *compile → read
+warnings → look at the render sheet → edit angles/ratios → repeat*.
 
 ## Files
 
-- `wam/` — compiler (parser, skeleton solver, mesh gen, lint, glTF, renderer)
-- `models/tauren.wam` — reference model
-- `out/` — glTF + PNG sheets per model
+- `wam/` — compiler: parser, skeleton solver, mesh gen, texture baker, lint,
+  glTF export, software renderer, viewer-JSON export
+- `models/` — reference characters (`tauren`, `human`, `wolf`, `orc` — the
+  orc is the most feature-complete) and `models/town/` — twelve textured
+  buildings/props
+- `scripts/compose_town.py` — composes town props into a scene (renders +
+  merged viewer JSON with a packed mega-atlas)
+- `viewer/template.html` — standalone WebGL viewer (open directly, drop any
+  `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
+  preloaded
+- `out/` — per model: `.gltf`, `_sheet.png`, `_anim_*.png`, `_tex.png`
+  (atlas), `_viewer.json`
