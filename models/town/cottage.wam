@@ -1,0 +1,64 @@
+# Timber-framed cottage — stone base, plaster upper, steep shingle roof.
+model cottage
+  height 5.5
+  style chunky
+
+palette
+  stone   #8a8578
+  plaster #d8cfb8
+  timber  #5a4632
+  roof    #7a4a34
+  door    #4a3524
+  window  #2a2620
+  glow    #e8c86a
+
+textures
+  texture stone base=#8a8578
+    gradient axis=v from=-0.12 to=0.08
+    bricks courses=16 ratio=1.6 width=0.09 seam=#6e6a5e
+    noise scale=0.09 amount=0.08
+  texture plaster base=#d8cfb8
+    noise scale=0.12 amount=0.055
+    gradient axis=v from=-0.05 to=0.07
+  texture roof base=#7a4a34
+    gradient axis=v from=-0.14 to=0.12
+    planks dir=v count=7 width=0.05 seam=#5e3826
+    noise scale=0.07 amount=0.06
+  texture timber base=#5a4632
+    streaks along=v amount=0.12 scale=1.2
+    noise scale=0.05 amount=0.05
+  texture door base=#4a3524
+    streaks along=v amount=0.12 scale=1.4
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft walls bones=core..core material=stone shape=box
+    ring 0.00 w=0.95 d=0.72
+    ring 0.26 w=0.95 d=0.72 material=plaster
+    ring 0.60 w=0.92 d=0.70
+    cap start=flat end=flat
+
+  loft roof bone=core at=0.58 dir=up len=0.40 material=roof shape=box
+    ring 0.00 w=1.10 d=0.88
+    ring 1.00 w=1.12 d=0.05
+    cap start=flat end=flat
+
+  loft chimney bone=core at=0.55 offset=(0.30,0,0.16) dir=up len=0.40 material=stone shape=box
+    ring 0.00 w=0.11 d=0.11
+    ring 0.90 w=0.10 d=0.10
+    ring 1.00 w=0.13 d=0.13
+    cap start=none end=flat
+
+  attach door bone=core kind=box at=0.37 offset=(0.16,0,0.352) w=0.17 h=0.36 d=0.035 material=door
+  attach win1 bone=core kind=box at=0.52 offset=(-0.26,0,0.352) w=0.11 h=0.13 d=0.035 material=glow
+  attach win2 bone=core kind=box at=0.52 offset=(0.02,0,0.352) w=0.11 h=0.13 d=0.035 material=window
+  attach winside bone=core kind=box at=0.50 offset=(0.468,0,0.10) w=0.035 h=0.13 d=0.13 material=window
+
+  attach beam_h bone=core kind=box at=0.285 offset=(0,0,0.355) w=0.95 h=0.03 d=0.03 material=timber
+  attach beam_t bone=core kind=box at=0.60 offset=(0,0,0.352) w=0.92 h=0.03 d=0.03 material=timber
+  attach beam_v1 bone=core kind=box at=0.575 offset=(-0.44,0,0.352) w=0.035 h=0.31 d=0.03 material=timber
+  attach beam_v2 bone=core kind=box at=0.575 offset=(0.44,0,0.352) w=0.035 h=0.31 d=0.03 material=timber
+  attach beam_v3 bone=core kind=box at=0.575 offset=(-0.12,0,0.352) w=0.03 h=0.31 d=0.03 material=timber

@@ -1,4 +1,4 @@
-<title>WAM Viewer — Tauren</title>
+<title>WAM Viewer</title>
 <style>
   :root {
     --bg: #ece4d6;
@@ -79,15 +79,30 @@
             flex-direction: row; flex-wrap: wrap; }
     .group { min-width: 150px; }
   }
+  #dropHint {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; color: var(--muted); font-size: 15px;
+    pointer-events: none; text-align: center; padding: 24px;
+  }
+  #dropHint.hidden { display: none; }
+  #stage.dragover canvas { outline: 3px dashed var(--accent); outline-offset: -6px; }
 </style>
 
 <header>
-  <h1>Tauren</h1>
-  <span class="sub">compiled from <code>models/tauren.wam</code> — drag to orbit</span>
+  <h1 id="mtitle">WAM Viewer</h1>
+  <span class="sub" id="msub">drag to orbit — drop a compiled <code>*_viewer.json</code> anywhere to load it</span>
 </header>
 <main>
-  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="stage"><canvas id="cv"></canvas>
+      <div id="dropHint">Drop a compiled <b>&nbsp;*_viewer.json&nbsp;</b> here<br>
+      (produced by <code>&nbsp;python3 -m wam.cli model.wam&nbsp;</code>)</div>
+    </div>
   <aside>
+    <div class="group">
+      <h2>Model</h2>
+      <div class="btns"><button id="openBtn">Open model JSON…</button></div>
+      <input type="file" id="fileInput" accept=".json" style="display:none">
+    </div>
     <div class="group">
       <h2>Animation</h2>
       <div class="btns" id="animBtns"></div>
@@ -103,7 +118,7 @@
       <div class="swatches" id="swatches"></div>
     </div>
     <div class="group">
-      <h2>Model</h2>
+      <h2>Stats</h2>
       <div class="stats" id="stats"></div>
     </div>
     <p class="hint">Authored in WAM, a text language for LLM-writable models: the mesh, rig, and animations compile from ~130 lines of source.</p>
@@ -112,15 +127,16 @@
 
 <script>
 "use strict";
-const DATA = /*__DATA__*/;
+const EMBEDDED = null /*__DATA__*/;
 
 const cv = document.getElementById('cv');
 const gl = cv.getContext('webgl', {antialias: true});
-const NV = DATA.verts.length / 3;
-const NT = DATA.tris.length / 3;
-const NB = DATA.bones.length;
+const spinBox=document.getElementById('spin');
+const wireBox=document.getElementById('wire');
+const skelBox=document.getElementById('skel');
+spinBox.checked=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// ---- quaternion helpers ----
+// ---- math ----
 function quatMat(q){
   const x=q[0], y=q[1], z=q[2], w=q[3];
   return [1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w),
@@ -141,86 +157,22 @@ function slerp(a,b,t){
 }
 const IDENT=[0,0,0,1];
 
-// ---- bones + skinning ----
-const G = new Float64Array(NB*12);
-function composeBones(rotFn){
-  for(let i=0;i<NB;i++){
-    const b=DATA.bones[i], R=quatMat(rotFn(i)), h=b.h;
-    const tx=h[0]-(R[0]*h[0]+R[1]*h[1]+R[2]*h[2]);
-    const ty=h[1]-(R[3]*h[0]+R[4]*h[1]+R[5]*h[2]);
-    const tz=h[2]-(R[6]*h[0]+R[7]*h[1]+R[8]*h[2]);
-    const o=i*12;
-    if(b.p<0){
-      G[o]=R[0];G[o+1]=R[1];G[o+2]=R[2];G[o+3]=tx;
-      G[o+4]=R[3];G[o+5]=R[4];G[o+6]=R[5];G[o+7]=ty;
-      G[o+8]=R[6];G[o+9]=R[7];G[o+10]=R[8];G[o+11]=tz;
-    } else {
-      const p=b.p*12;
-      for(let r=0;r<3;r++){
-        const pr=p+r*4, gr=o+r*4;
-        G[gr]  =G[pr]*R[0]+G[pr+1]*R[3]+G[pr+2]*R[6];
-        G[gr+1]=G[pr]*R[1]+G[pr+1]*R[4]+G[pr+2]*R[7];
-        G[gr+2]=G[pr]*R[2]+G[pr+1]*R[5]+G[pr+2]*R[8];
-        G[gr+3]=G[pr]*tx+G[pr+1]*ty+G[pr+2]*tz+G[pr+3];
-      }
-    }
-  }
-}
-const posed = new Float64Array(NV*3);
-function skinVerts(){
-  for(let v=0;v<NV;v++){
-    const s=DATA.skin[v], j0=s[0], w0=s[1], j1=s[2];
-    const x=DATA.verts[v*3], y=DATA.verts[v*3+1], z=DATA.verts[v*3+2];
-    let o=j0*12;
-    let px=w0*(G[o]*x+G[o+1]*y+G[o+2]*z+G[o+3]);
-    let py=w0*(G[o+4]*x+G[o+5]*y+G[o+6]*z+G[o+7]);
-    let pz=w0*(G[o+8]*x+G[o+9]*y+G[o+10]*z+G[o+11]);
-    if(j1>=0){
-      const w1=1-w0; o=j1*12;
-      px+=w1*(G[o]*x+G[o+1]*y+G[o+2]*z+G[o+3]);
-      py+=w1*(G[o+4]*x+G[o+5]*y+G[o+6]*z+G[o+7]);
-      pz+=w1*(G[o+8]*x+G[o+9]*y+G[o+10]*z+G[o+11]);
-    }
-    posed[v*3]=px; posed[v*3+1]=py; posed[v*3+2]=pz;
-  }
-}
-
-// ---- animation sampling ----
-let curAnim=null, animClock=0;
-function animQuat(anim, phase, bi){
-  const tr=anim.tracks[bi];
-  if(!tr) return IDENT;
-  const S=tr.length-1;
-  const f=Math.min(phase,0.99999)*S;
-  const i0=Math.floor(f), t=f-i0;
-  return slerp(tr[i0], tr[Math.min(i0+1,S)], t);
-}
-
-// ---- camera ----
-let bbMin=[1e9,1e9,1e9], bbMax=[-1e9,-1e9,-1e9];
-for(let v=0;v<NV;v++)for(let a=0;a<3;a++){
-  const val=DATA.verts[v*3+a];
-  if(val<bbMin[a])bbMin[a]=val; if(val>bbMax[a])bbMax[a]=val;
-}
-const center=[(bbMin[0]+bbMax[0])/2,(bbMin[1]+bbMax[1])/2,(bbMin[2]+bbMax[2])/2];
-const radius=Math.hypot(bbMax[0]-bbMin[0],bbMax[1]-bbMin[1],bbMax[2]-bbMin[2])/2;
-let yaw=0.55, pitch=0.16;
-const FOV=Math.PI*28/180;
-const dist=radius*1.25/Math.tan(FOV/2);
-
-// ---- WebGL setup ----
+// ---- GL programs (model-independent) ----
 const VS = `
-attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol;
+attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol; attribute vec2 aUV;
 uniform mat4 uMVP; uniform mat3 uRot;
-varying vec3 vN; varying vec3 vC;
+varying vec3 vN; varying vec3 vC; varying vec2 vUV;
 void main(){
   gl_Position = uMVP * vec4(aPos, 1.0);
   vN = uRot * aNrm;
   vC = aCol;
+  vUV = aUV;
 }`;
 const FS = `
 precision mediump float;
-varying vec3 vN; varying vec3 vC;
+varying vec3 vN; varying vec3 vC; varying vec2 vUV;
+uniform sampler2D uTex;
+uniform float uUseTex;
 void main(){
   vec3 n = normalize(vN);
   float back = 0.0;
@@ -229,7 +181,8 @@ void main(){
   vec3 L2 = normalize(vec3(0.6, -0.1, 0.5));
   float sh = 0.36 + 0.62*max(dot(n,L1),0.0) + 0.18*max(dot(n,L2),0.0);
   if(back > 0.5) sh *= 0.7;
-  gl_FragColor = vec4(vC * min(sh, 1.15), 1.0);
+  vec3 base = mix(vC, texture2D(uTex, vUV).rgb, uUseTex);
+  gl_FragColor = vec4(base * min(sh, 1.15), 1.0);
 }`;
 const LVS = `
 attribute vec3 aPos; uniform mat4 uMVP;
@@ -253,51 +206,176 @@ function makeProg(vs, fs){
 }
 const prog=makeProg(VS,FS), lprog=makeProg(LVS,LFS);
 const aPos=gl.getAttribLocation(prog,'aPos'), aNrm=gl.getAttribLocation(prog,'aNrm'),
-      aCol=gl.getAttribLocation(prog,'aCol');
+      aCol=gl.getAttribLocation(prog,'aCol'), aUV=gl.getAttribLocation(prog,'aUV');
 const uMVP=gl.getUniformLocation(prog,'uMVP'), uRot=gl.getUniformLocation(prog,'uRot');
+const uTex=gl.getUniformLocation(prog,'uTex'), uUseTex=gl.getUniformLocation(prog,'uUseTex');
 const laPos=gl.getAttribLocation(lprog,'aPos');
 const luMVP=gl.getUniformLocation(lprog,'uMVP'), luColor=gl.getUniformLocation(lprog,'uColor');
-
-// per-face-vertex buffers (positions+normals dynamic, colors static)
-const fpos=new Float32Array(NT*9), fnrm=new Float32Array(NT*9), fcol=new Float32Array(NT*9);
-for(let t=0;t<NT;t++){
-  const rgb=DATA.mats[DATA.triMat[t]].rgb;
-  for(let k=0;k<3;k++){ fcol[t*9+k*3]=rgb[0]; fcol[t*9+k*3+1]=rgb[1]; fcol[t*9+k*3+2]=rgb[2]; }
-}
-const bPos=gl.createBuffer(), bNrm=gl.createBuffer(), bCol=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,bCol); gl.bufferData(gl.ARRAY_BUFFER,fcol,gl.STATIC_DRAW);
-gl.bindBuffer(gl.ARRAY_BUFFER,bPos); gl.bufferData(gl.ARRAY_BUFFER,fpos,gl.DYNAMIC_DRAW);
-gl.bindBuffer(gl.ARRAY_BUFFER,bNrm); gl.bufferData(gl.ARRAY_BUFFER,fnrm,gl.DYNAMIC_DRAW);
-
-// unique edges for wireframe
-const edgeSet=new Set(), edges=[];
-for(let t=0;t<NT;t++){
-  const tri=[DATA.tris[t*3],DATA.tris[t*3+1],DATA.tris[t*3+2]];
-  for(let k=0;k<3;k++){
-    const a=tri[k], b=tri[(k+1)%3];
-    const key=a<b? a+'_'+b : b+'_'+a;
-    if(!edgeSet.has(key)){ edgeSet.add(key); edges.push(a,b); }
-  }
-}
-const NE=edges.length/2;
-const epos=new Float32Array(NE*6);
-const bEdge=gl.createBuffer();
-// skeleton lines
-const spos=new Float32Array(NB*6);
-const bSkel=gl.createBuffer();
-
+const bPos=gl.createBuffer(), bNrm=gl.createBuffer(), bCol=gl.createBuffer(),
+      bUV=gl.createBuffer(), bEdge=gl.createBuffer(), bSkel=gl.createBuffer();
+const glTex=gl.createTexture();
 gl.enable(gl.DEPTH_TEST);
 gl.depthFunc(gl.LEQUAL);
 gl.disable(gl.CULL_FACE);
 
-function cssColor(name){
-  const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const m=/^#([0-9a-fA-F]{6})$/.exec(v);
-  if(!m) return [0.1,0.1,0.1];
-  const h=m[1];
-  return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255];
+// ---- model state ----
+let M = null;          // everything derived from a loaded model
+let curAnim=null, animClock=0;
+let yaw=0.55, pitch=0.16;
+const FOV=Math.PI*28/180;
+
+function loadModel(DATA){
+  const NV = DATA.verts.length / 3;
+  const NT = DATA.tris.length / 3;
+  const NB = DATA.bones.length;
+  let bbMin=[1e9,1e9,1e9], bbMax=[-1e9,-1e9,-1e9];
+  for(let v=0;v<NV;v++)for(let a=0;a<3;a++){
+    const val=DATA.verts[v*3+a];
+    if(val<bbMin[a])bbMin[a]=val; if(val>bbMax[a])bbMax[a]=val;
+  }
+  const center=[(bbMin[0]+bbMax[0])/2,(bbMin[1]+bbMax[1])/2,(bbMin[2]+bbMax[2])/2];
+  const radius=Math.hypot(bbMax[0]-bbMin[0],bbMax[1]-bbMin[1],bbMax[2]-bbMin[2])/2;
+
+  const fpos=new Float32Array(NT*9), fnrm=new Float32Array(NT*9),
+        fcol=new Float32Array(NT*9), fuv=new Float32Array(NT*6);
+  for(let t=0;t<NT;t++){
+    for(let k=0;k<3;k++){
+      const vi=DATA.tris[t*3+k];
+      let r,g,bl;
+      if(DATA.vcols){ r=DATA.vcols[vi*3]; g=DATA.vcols[vi*3+1]; bl=DATA.vcols[vi*3+2]; }
+      else { const rgb=DATA.mats[DATA.triMat[t]].rgb; r=rgb[0]; g=rgb[1]; bl=rgb[2]; }
+      fcol[t*9+k*3]=r; fcol[t*9+k*3+1]=g; fcol[t*9+k*3+2]=bl;
+      if(DATA.uv){ fuv[t*6+k*2]=DATA.uv[vi*2]; fuv[t*6+k*2+1]=DATA.uv[vi*2+1]; }
+    }
+  }
+  const edgeSet=new Set(), edges=[];
+  for(let t=0;t<NT;t++){
+    const tri=[DATA.tris[t*3],DATA.tris[t*3+1],DATA.tris[t*3+2]];
+    for(let k=0;k<3;k++){
+      const a=tri[k], b=tri[(k+1)%3];
+      const key=a<b? a+'_'+b : b+'_'+a;
+      if(!edgeSet.has(key)){ edgeSet.add(key); edges.push(a,b); }
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,bCol); gl.bufferData(gl.ARRAY_BUFFER,fcol,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bUV); gl.bufferData(gl.ARRAY_BUFFER,fuv,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPos); gl.bufferData(gl.ARRAY_BUFFER,fpos,gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bNrm); gl.bufferData(gl.ARRAY_BUFFER,fnrm,gl.DYNAMIC_DRAW);
+
+  M = {
+    DATA, NV, NT, NB, center, radius,
+    dist: radius*1.25/Math.tan(FOV/2),
+    fpos, fnrm,
+    posed: new Float64Array(NV*3),
+    G: new Float64Array(NB*12),
+    edges, NE: edges.length/2,
+    epos: new Float32Array(edges.length*3),
+    spos: new Float32Array(NB*6),
+    texReady: 0,
+  };
+  curAnim = null; animClock = 0;
+
+  if(DATA.tex){
+    const im=new Image();
+    im.onload=()=>{
+      gl.bindTexture(gl.TEXTURE_2D, glTex);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      M.texReady=1;
+    };
+    im.src=DATA.tex;
+  }
+
+  // UI
+  document.getElementById('dropHint').classList.add('hidden');
+  const name = (DATA.name||'model');
+  document.getElementById('mtitle').textContent = name[0].toUpperCase()+name.slice(1);
+  document.title = 'WAM Viewer — ' + name;
+  const animBtns=document.getElementById('animBtns');
+  animBtns.innerHTML='';
+  function mkBtn(label,anim){
+    const b=document.createElement('button');
+    b.textContent=label;
+    b.onclick=()=>{
+      curAnim=anim; animClock=0;
+      [...animBtns.children].forEach(x=>x.classList.toggle('on',x===b));
+    };
+    animBtns.appendChild(b);
+    return b;
+  }
+  mkBtn('Rest',null).classList.add('on');
+  (DATA.anims||[]).forEach(a=>mkBtn(a.name[0].toUpperCase()+a.name.slice(1),a));
+  const sw=document.getElementById('swatches');
+  sw.innerHTML='';
+  DATA.mats.forEach(mt=>{
+    const d=document.createElement('div'); d.className='swatch';
+    const i=document.createElement('i');
+    i.style.background='rgb('+mt.rgb.map(v=>Math.round(v*255)).join(',')+')';
+    d.appendChild(i); d.appendChild(document.createTextNode(mt.name));
+    sw.appendChild(d);
+  });
+  document.getElementById('stats').innerHTML=
+    '<b>'+NV+'</b> vertices<br><b>'+NT+'</b> triangles<br><b>'+NB+'</b> bones<br>'+
+    '<b>'+(DATA.anims||[]).length+'</b> animations<br>'+
+    'painted <b>'+(DATA.tex?'atlas':(DATA.vcols?'vertex':'off'))+'</b>';
 }
 
+// ---- bones + skinning ----
+function composeBones(rotFn){
+  const {DATA, NB, G} = M;
+  for(let i=0;i<NB;i++){
+    const b=DATA.bones[i], R=quatMat(rotFn(i)), h=b.h;
+    const tx=h[0]-(R[0]*h[0]+R[1]*h[1]+R[2]*h[2]);
+    const ty=h[1]-(R[3]*h[0]+R[4]*h[1]+R[5]*h[2]);
+    const tz=h[2]-(R[6]*h[0]+R[7]*h[1]+R[8]*h[2]);
+    const o=i*12;
+    if(b.p<0){
+      G[o]=R[0];G[o+1]=R[1];G[o+2]=R[2];G[o+3]=tx;
+      G[o+4]=R[3];G[o+5]=R[4];G[o+6]=R[5];G[o+7]=ty;
+      G[o+8]=R[6];G[o+9]=R[7];G[o+10]=R[8];G[o+11]=tz;
+    } else {
+      const p=b.p*12;
+      for(let r=0;r<3;r++){
+        const pr=p+r*4, gr=o+r*4;
+        G[gr]  =G[pr]*R[0]+G[pr+1]*R[3]+G[pr+2]*R[6];
+        G[gr+1]=G[pr]*R[1]+G[pr+1]*R[4]+G[pr+2]*R[7];
+        G[gr+2]=G[pr]*R[2]+G[pr+1]*R[5]+G[pr+2]*R[8];
+        G[gr+3]=G[pr]*tx+G[pr+1]*ty+G[pr+2]*tz+G[pr+3];
+      }
+    }
+  }
+}
+function skinVerts(){
+  const {DATA, NV, G, posed} = M;
+  for(let v=0;v<NV;v++){
+    const s=DATA.skin[v], j0=s[0], w0=s[1], j1=s[2];
+    const x=DATA.verts[v*3], y=DATA.verts[v*3+1], z=DATA.verts[v*3+2];
+    let o=j0*12;
+    let px=w0*(G[o]*x+G[o+1]*y+G[o+2]*z+G[o+3]);
+    let py=w0*(G[o+4]*x+G[o+5]*y+G[o+6]*z+G[o+7]);
+    let pz=w0*(G[o+8]*x+G[o+9]*y+G[o+10]*z+G[o+11]);
+    if(j1>=0){
+      const w1=1-w0; o=j1*12;
+      px+=w1*(G[o]*x+G[o+1]*y+G[o+2]*z+G[o+3]);
+      py+=w1*(G[o+4]*x+G[o+5]*y+G[o+6]*z+G[o+7]);
+      pz+=w1*(G[o+8]*x+G[o+9]*y+G[o+10]*z+G[o+11]);
+    }
+    posed[v*3]=px; posed[v*3+1]=py; posed[v*3+2]=pz;
+  }
+}
+function animQuat(anim, phase, bi){
+  const tr=anim.tracks[bi];
+  if(!tr) return IDENT;
+  const S=tr.length-1;
+  const f=Math.min(phase,0.99999)*S;
+  const i0=Math.floor(f), t=f-i0;
+  return slerp(tr[i0], tr[Math.min(i0+1,S)], t);
+}
+
+// ---- camera / draw ----
 let W=0,H=0;
 function resize(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
@@ -307,30 +385,31 @@ function resize(){
 }
 new ResizeObserver(resize).observe(cv);
 
+function cssColor(name){
+  const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m=/^#([0-9a-fA-F]{6})$/.exec(v);
+  if(!m) return [0.1,0.1,0.1];
+  const h=m[1];
+  return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255];
+}
+
 function buildMVP(){
+  const {center, dist} = M;
   const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
-  // rotation rows (world -> camera)
   const R=[ cy,0,-sy,  sp*sy,cp,sp*cy,  cp*sy,-sp,cp*cy ];
   const f=1/Math.tan(FOV/2), aspect=W/H;
   const near=dist*0.1, far=dist*4;
   const A=(far+near)/(near-far), B=2*far*near/(near-far);
-  // column-major MVP = P * T(0,0,-dist) * R * T(-center)
   const m=new Float32Array(16);
-  // camera-space row i of point p: R[i]. (p-center); then z -= dist
-  // clip: x' = f/aspect * xc; y' = f * yc; z' = A*zc + B... with zc negative fwd
-  // note camera looks down -Z: after our rotation zc = row2.(p-center); we place
-  // the model at zc' = zc - dist, so pass zc' to projection.
   const rx=[R[0],R[1],R[2]], ry=[R[3],R[4],R[5]], rz=[R[6],R[7],R[8]];
   const tx=-(rx[0]*center[0]+rx[1]*center[1]+rx[2]*center[2]);
   const ty=-(ry[0]*center[0]+ry[1]*center[1]+ry[2]*center[2]);
   const tz=-(rz[0]*center[0]+rz[1]*center[1]+rz[2]*center[2])-dist;
   const fa=f/aspect;
-  // column-major
   m[0]=fa*rx[0]; m[4]=fa*rx[1]; m[8] =fa*rx[2]; m[12]=fa*tx;
   m[1]=f*ry[0];  m[5]=f*ry[1];  m[9] =f*ry[2];  m[13]=f*ty;
   m[2]=A*rz[0];  m[6]=A*rz[1];  m[10]=A*rz[2];  m[14]=A*tz+B;
   m[3]=-rz[0];   m[7]=-rz[1];   m[11]=-rz[2];   m[15]=-tz;
-  // column-major for uniformMatrix3fv
   const Rcol=new Float32Array([R[0],R[3],R[6], R[1],R[4],R[7], R[2],R[5],R[8]]);
   return {m, R:Rcol};
 }
@@ -339,9 +418,10 @@ function draw(){
   const bg=cssColor('--canvas-bg');
   gl.clearColor(bg[0],bg[1],bg[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  if(!M) return;
+  const {DATA, NT, NB, posed, fpos, fnrm, G} = M;
   const {m,R}=buildMVP();
 
-  // face-vertex positions + flat normals
   for(let t=0;t<NT;t++){
     const a=DATA.tris[t*3],b=DATA.tris[t*3+1],c=DATA.tris[t*3+2];
     const ax=posed[a*3],ay=posed[a*3+1],az=posed[a*3+2];
@@ -369,13 +449,21 @@ function draw(){
   gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bCol);
   gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bUV);
+  gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, glTex);
+  gl.uniform1i(uTex, 0);
+  gl.uniform1f(uUseTex, (DATA.tex && M.texReady) ? 1.0 : 0.0);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1,1);
   gl.drawArrays(gl.TRIANGLES,0,NT*3);
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.disableVertexAttribArray(aNrm); gl.disableVertexAttribArray(aCol);
+  gl.disableVertexAttribArray(aUV);
 
   if(wireBox.checked){
+    const {edges, NE, epos} = M;
     for(let e=0;e<NE;e++){
       const a=edges[e*2], b=edges[e*2+1];
       epos[e*6]=posed[a*3]; epos[e*6+1]=posed[a*3+1]; epos[e*6+2]=posed[a*3+2];
@@ -393,6 +481,7 @@ function draw(){
   }
 
   if(skelBox.checked){
+    const {spos} = M;
     let n=0;
     const hp=new Float64Array(NB*3);
     for(let i=0;i<NB;i++){
@@ -425,52 +514,48 @@ let last=performance.now();
 function frame(now){
   const dt=Math.min(0.1,(now-last)/1000); last=now;
   if(spinBox.checked) yaw+=dt*0.5;
-  let rotFn;
-  if(curAnim){
-    animClock+=dt/curAnim.dur;
-    if(curAnim.loop) animClock%=1; else animClock=Math.min(animClock,1);
-    const ph=animClock;
-    rotFn=(i)=>animQuat(curAnim,ph,i);
-  } else rotFn=()=>IDENT;
-  composeBones(rotFn);
-  skinVerts();
+  if(M){
+    let rotFn;
+    if(curAnim){
+      animClock+=dt/curAnim.dur;
+      if(curAnim.loop) animClock%=1; else animClock=Math.min(animClock,1);
+      const ph=animClock;
+      rotFn=(i)=>animQuat(curAnim,ph,i);
+    } else rotFn=()=>IDENT;
+    composeBones(rotFn);
+    skinVerts();
+  }
   draw();
   requestAnimationFrame(frame);
 }
 
-// ---- UI ----
-const spinBox=document.getElementById('spin');
-const wireBox=document.getElementById('wire');
-const skelBox=document.getElementById('skel');
-spinBox.checked=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-const animBtns=document.getElementById('animBtns');
-function mkBtn(label,anim){
-  const b=document.createElement('button');
-  b.textContent=label;
-  b.onclick=()=>{
-    curAnim=anim; animClock=0;
-    [...animBtns.children].forEach(x=>x.classList.toggle('on',x===b));
+// ---- loading UI ----
+const stage=document.getElementById('stage');
+function loadFile(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try { loadModel(JSON.parse(rd.result)); }
+    catch(e){ alert('Not a WAM viewer JSON: '+e.message); }
   };
-  animBtns.appendChild(b);
-  return b;
+  rd.readAsText(file);
 }
-mkBtn('Rest',null).classList.add('on');
-DATA.anims.forEach(a=>mkBtn(a.name[0].toUpperCase()+a.name.slice(1),a));
-
-const sw=document.getElementById('swatches');
-DATA.mats.forEach(mt=>{
-  const d=document.createElement('div'); d.className='swatch';
-  const i=document.createElement('i');
-  i.style.background='rgb('+mt.rgb.map(v=>Math.round(v*255)).join(',')+')';
-  d.appendChild(i); d.appendChild(document.createTextNode(mt.name));
-  sw.appendChild(d);
+document.getElementById('openBtn').onclick=()=>document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange=(e)=>{
+  if(e.target.files.length) loadFile(e.target.files[0]);
+};
+['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,(e)=>{
+  e.preventDefault(); stage.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(ev=>window.addEventListener(ev,(e)=>{
+  e.preventDefault(); if(ev==='dragleave'&&e.relatedTarget)return;
+  stage.classList.remove('dragover');
+}));
+window.addEventListener('drop',(e)=>{
+  e.preventDefault();
+  if(e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
 });
 
-document.getElementById('stats').innerHTML=
-  '<b>'+NV+'</b> vertices<br><b>'+NT+'</b> triangles<br><b>'+NB+'</b> bones<br>'+
-  '<b>'+DATA.anims.length+'</b> animations<br><b>'+DATA.height.toFixed(1)+' m</b> tall';
-
+// drag orbit
 let drag=null;
 cv.addEventListener('pointerdown',e=>{
   drag={x:e.clientX,y:e.clientY}; cv.classList.add('dragging');
@@ -485,5 +570,6 @@ cv.addEventListener('pointermove',e=>{
 cv.addEventListener('pointerup',()=>{drag=null;cv.classList.remove('dragging');});
 
 resize();
+if(EMBEDDED) loadModel(EMBEDDED);
 requestAnimationFrame(frame);
 </script>

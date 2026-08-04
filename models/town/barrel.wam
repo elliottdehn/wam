@@ -1,0 +1,31 @@
+# Oak barrel with iron hoops.
+model barrel
+  height 1.0
+  style smooth
+
+palette
+  wood #7a5c3c
+  iron #45423e
+
+textures
+  texture wood base=#7a5c3c
+    planks dir=u count=9 width=0.05 seam=#5e4630
+    streaks along=v amount=0.10 scale=1.6
+    gradient axis=v from=-0.08 to=0.08
+  texture iron base=#45423e
+    noise scale=0.04 amount=0.06
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft body bones=core..core material=wood
+    ring 0.00 w=0.60 d=0.60
+    ring 0.10 w=0.66 d=0.66 material=iron
+    ring 0.18 w=0.70 d=0.70
+    ring 0.50 w=0.76 d=0.76
+    ring 0.82 w=0.70 d=0.70 material=iron
+    ring 0.90 w=0.66 d=0.66
+    ring 1.00 w=0.60 d=0.60
+    cap start=flat end=flat

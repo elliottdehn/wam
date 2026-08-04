@@ -1,0 +1,30 @@
+# Iron lamppost with a glowing lantern.
+model lamppost
+  height 3.4
+  style chunky
+
+palette
+  iron  #3c3a36
+  glow  #f2cf6a
+  brass #8a7a4a
+
+textures
+  texture iron base=#3c3a36
+    gradient axis=v from=-0.10 to=0.08
+    noise scale=0.05 amount=0.05
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft post bones=core..core material=iron
+    ring 0.00 w=0.14 d=0.14
+    ring 0.05 w=0.07 d=0.07
+    ring 0.80 w=0.05 d=0.05
+    ring 0.84 w=0.07 d=0.07
+    cap start=flat end=flat
+
+  attach lantern bone=core kind=box at=0.95 offset=(0,0,0) w=0.11 h=0.11 d=0.11 material=glow
+  attach cap bone=core kind=hoof at=0.99 offset=(0,0,0) w=0.15 h=0.045 d=0.15 taper=0.4 material=iron
+  attach basecap bone=core kind=box at=0.845 offset=(0,0,0) w=0.13 h=0.015 d=0.13 material=brass

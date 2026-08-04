@@ -112,5 +112,8 @@ actions like a double-arm smash).
   Blender/three.js/engines directly.
 - `out/<name>_sheet.png` — 4-view turntable; `_anim_<x>.png` strips;
   `_bones.png` overlay.
-- `wam/viewer_export.py` + `viewer/template.html` build a self-contained
-  WebGL viewer page (inject the exported JSON at `/*__DATA__*/`).
+- `out/<name>_viewer.json` — viewer data, emitted on every compile.
+- `viewer/template.html` is a standalone WebGL viewer: open it directly in a
+  browser and drop any `*_viewer.json` onto it (or use the Open button).
+  `scripts/build_viewer.py <json> <out.html>` bakes a page with a model
+  preloaded.

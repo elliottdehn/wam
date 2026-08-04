@@ -26,6 +26,7 @@ class MeshOut:
         self._mat_index = {}
         self.part_ranges = {}  # part name -> (vstart, vend)
         self.warnings = []
+        self.uvs = []          # per-vertex chart-local (u, v), parallel to verts
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -33,9 +34,10 @@ class MeshOut:
             self.materials.append((name, rgb))
         return self._mat_index[name]
 
-    def add_vert(self, p, skin):
+    def add_vert(self, p, skin, uv=(0.5, 0.5)):
         self.verts.append(np.asarray(p, dtype=float))
         self.skin.append(skin)
+        self.uvs.append((float(uv[0]), float(uv[1])))
         return len(self.verts) - 1
 
     def add_tri(self, i, j, k, mat):
@@ -108,6 +110,15 @@ def snap_on(out, part, origin, suffix, default_inset=0.012):
     if n < inset * 0.5:      # already touching/inside: leave it
         return origin
     return best + u / n * inset
+
+
+def mat_rgb(model, name):
+    """Base color for a material name: palette, else texture base, else magenta."""
+    if name in model.palette:
+        return model.palette[name]
+    if name in getattr(model, "textures", {}):
+        return model.textures[name]["base"]
+    return (0.7, 0.5, 0.8)
 
 
 def _frame(tangent):
@@ -230,27 +241,40 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     """
     nrings = len(centers)
     t_first = len(out.tris)
-    ring_ids = []
-    for ri in range(nrings):
+
+    def make_ring(ri):
         c = centers[ri]
         side, other, tang = axes[ri]
         p = params[ri]
         exp = p.get("exp", 2.0)
         roll = p.get("roll", 0.0)
+        vcoord = p.get("t", ri / max(nrings - 1, 1))
         if roll:
             R = rot_axis(tang, roll)
             side, other = R @ side, R @ other
         w2, d2 = p["w"] / 2.0, p["d"] / 2.0
         skin_at = skins[ri] if callable(skins[ri]) else (lambda pt, sk=skins[ri]: sk)
         if w2 < 1e-6 and d2 < 1e-6:
-            vid = out.add_vert(c, skin_at(c))
-            ring_ids.append([vid] * n_sides)
-            continue
+            vid = out.add_vert(c, skin_at(c), uv=(0.5, vcoord))
+            return [vid] * n_sides
         ids = []
-        for (cx, sy) in _superellipse(n_sides, exp):
+        for si, (cx, sy) in enumerate(_superellipse(n_sides, exp)):
             pt = c + side * (cx * w2) + other * (sy * d2)
-            ids.append(out.add_vert(pt, skin_at(pt)))
-        ring_ids.append(ids)
+            ids.append(out.add_vert(pt, skin_at(pt),
+                                    uv=((si + 0.5) / n_sides, vcoord)))
+        return ids
+
+    # each band (ring ri -> ri+1) owns its boundary verts: duplicate rings at
+    # material changes so baked vertex colors keep crisp edges
+    ring_lower = [None] * nrings   # ids a band uses at its bottom ring
+    ring_upper = [None] * nrings   # ids the band below uses at its top ring
+    for ri in range(nrings):
+        ids = make_ring(ri)
+        ring_lower[ri] = ids
+        ring_upper[ri] = ids
+        if 0 < ri < nrings and ri < len(mats) and mats[ri - 1] != mats[min(ri, len(mats) - 1)]:
+            ring_lower[ri] = make_ring(ri)
+    ring_ids = ring_upper   # caps + legacy uses
 
     def quad(a, b, c, d, mat):
         if flip:
@@ -261,7 +285,9 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
             out.add_tri(a, c, d, mat)
 
     for ri in range(nrings - 1):
-        A, B = ring_ids[ri], ring_ids[ri + 1]
+        A = ring_lower[ri] if ri == 0 else (
+            ring_lower[ri] if mats[ri - 1] != mats[ri] else ring_upper[ri])
+        B = ring_upper[ri + 1]
         mat = mats[ri]
         for k in range(n_sides):
             k2 = (k + 1) % n_sides
@@ -283,7 +309,9 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
             r = np.mean([np.linalg.norm(p - center) for p in pts])
             raise_amt = r * (0.45 if style == "dome" else 1.0)
         apex = center + direction[2] * raise_amt
-        cid = out.add_vert(apex, skin(apex) if callable(skin) else skin)
+        apex_v = 0.0 if ring is ring_ids[0] else 1.0
+        cid = out.add_vert(apex, skin(apex) if callable(skin) else skin,
+                           uv=(0.5, apex_v))
         for k in range(n_sides):
             k2 = (k + 1) % n_sides
             if ring[k] == ring[k2]:
@@ -371,9 +399,9 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         exp = SHAPE_EXP.get(r.get("shape", ""), default_exp)
         centers.append(c)
         axes.append((side, other, tang))
-        params.append(dict(w=w, d=d, exp=exp, roll=r.get("roll", 0.0)))
+        params.append(dict(w=w, d=d, exp=exp, roll=r.get("roll", 0.0), t=t))
         mats.append(out.material(r.get("material", base_mat),
-                                 model.palette.get(r.get("material", base_mat), (0.7, 0.5, 0.8))))
+                                 mat_rgb(model, r.get("material", base_mat))))
         base_skin = skin_for(t)
         if "follow" in r:
             # cloth skinning: ring verts partially follow a mirrored bone pair,
@@ -435,7 +463,7 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
 def build_sweep(out, model, bones, part, suffix="", reflect=False):
     n_sides = max(6, int(part.get("sides", STYLE_SIDES.get(model.style, 8)) - 2))
     base_mat = part.get("material") or "default"
-    mat = out.material(base_mat, model.palette.get(base_mat, (0.7, 0.5, 0.8)))
+    mat = out.material(base_mat, mat_rgb(model, base_mat))
     if not part["segs"]:
         raise WamError("sweep %r has no segs" % part["name"])
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
@@ -452,10 +480,13 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
     centers, axes, params, mats, skins = [], [], [], [], []
     skin = [(host.name, 1.0)]
 
+    total_len = sum(sg["len"] for sg in part["segs"]) or 1.0
+    acc_len = [0.0]
+
     def push(c, r):
         centers.append(c.copy())
         axes.append((side.copy(), other.copy(), tang.copy()))
-        params.append(dict(w=2 * r, d=2 * r, exp=2.0))
+        params.append(dict(w=2 * r, d=2 * r, exp=2.0, t=acc_len[0] / total_len))
         mats.append(mat)
         skins.append(skin)
 
@@ -483,6 +514,7 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         side = R @ side
         other = R @ other
         pos = pos + tang * seg["len"]
+        acc_len[0] += seg["len"]
         r = 0.0 if seg.get("tip") else seg["r"]
         push(pos, r)
 
@@ -507,7 +539,7 @@ def _reflect_range(out, v0, suffix):
 def build_attach(out, model, bones, part, suffix="", reflect=False):
     prim = part.get("prim", "sphere")
     base_mat = part.get("material") or "default"
-    mat = out.material(base_mat, model.palette.get(base_mat, (0.7, 0.5, 0.8)))
+    mat = out.material(base_mat, mat_rgb(model, base_mat))
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
     at = part.get("at", 0.0)
     origin = host.point_at(at) + np.array(part.get("offset", (0, 0, 0)), dtype=float)
@@ -522,8 +554,8 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
         h = part.get("h", size)
         d = part.get("d", size)
         ids = []
-        top = out.add_vert(origin + np.array([0, h / 2, 0]), skin)
-        bot = out.add_vert(origin - np.array([0, h / 2, 0]), skin)
+        top = out.add_vert(origin + np.array([0, h / 2, 0]), skin, uv=(0.5, 1.0))
+        bot = out.add_vert(origin - np.array([0, h / 2, 0]), skin, uv=(0.5, 0.0))
         for li in range(1, lats):
             th = math.pi * li / lats
             row = []
@@ -532,7 +564,8 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
                 p = origin + np.array([math.sin(th) * math.cos(ph) * w / 2,
                                        math.cos(th) * h / 2,
                                        math.sin(th) * math.sin(ph) * d / 2])
-                row.append(out.add_vert(p, skin))
+                row.append(out.add_vert(p, skin,
+                                        uv=((lo + 0.5) / lons, 1.0 - li / lats)))
             ids.append(row)
         for lo in range(lons):
             lo2 = (lo + 1) % lons
@@ -558,7 +591,9 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
              ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         c += [origin + np.array([sx * bw, -h, sz * bd + shift]) for sx, sz in
               ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-        ids = [out.add_vert(p, skin) for p in c]
+        box_uv = [(0.0, 1.0), (0.33, 1.0), (0.66, 1.0), (1.0, 1.0),
+                  (0.0, 0.0), (0.33, 0.0), (0.66, 0.0), (1.0, 0.0)]
+        ids = [out.add_vert(p, skin, uv=box_uv[i]) for i, p in enumerate(c)]
         faces = [(0, 1, 2, 3), (7, 6, 5, 4), (0, 4, 5, 1),
                  (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
         for (a, b, cc, dd) in faces:

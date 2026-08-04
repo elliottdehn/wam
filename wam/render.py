@@ -6,6 +6,29 @@ import zlib
 import numpy as np
 
 
+def png_bytes(img):
+    """Encode (H,W,3) float image to PNG bytes."""
+    import io
+    buf = io.BytesIO()
+    _write_png_fh(buf, img)
+    return buf.getvalue()
+
+
+def _write_png_fh(f, img):
+    h, w, _ = img.shape
+    data = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    raw = b"".join(b"\x00" + data[y].tobytes() for y in range(h))
+
+    def chunk(tag, payload):
+        c = struct.pack(">I", len(payload)) + tag + payload
+        return c + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF)
+
+    f.write(b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6))
+            + chunk(b"IEND", b""))
+
+
 def write_png(path, img):
     """img: (H,W,3) float 0..1"""
     h, w, _ = img.shape
@@ -39,7 +62,8 @@ def vertex_normals(V, T):
 
 def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 width=480, height=600, fov_deg=28.0, bg=(0.92, 0.92, 0.94),
-                ground_y=None, margin=1.12):
+                ground_y=None, margin=1.12, vert_colors=None,
+                uv=None, tex=None):
     """Render one view. Camera orbits around Y axis; yaw=0 looks at +Z face."""
     V = np.asarray(V, dtype=np.float64)
     N = vertex_normals(V, T)
@@ -127,8 +151,19 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         if not upd.any():
             continue
         shi = w0 * sh[0] + w1 * sh[1] + w2 * sh[2]
-        color = np.asarray(mat_colors[tri_mat[ti]])
-        px = color[None, None, :] * shi[..., None]
+        if uv is not None and tex is not None:
+            uu = w0 * uv[ia, 0] + w1 * uv[ib, 0] + w2 * uv[ic, 0]
+            vv = w0 * uv[ia, 1] + w1 * uv[ib, 1] + w2 * uv[ic, 1]
+            th, tw = tex.shape[:2]
+            txi = np.clip((uu * tw).astype(int), 0, tw - 1)
+            tyi = np.clip((vv * th).astype(int), 0, th - 1)
+            px = tex[tyi, txi] * shi[..., None]
+        elif vert_colors is not None:
+            ca, cb, cc = vert_colors[ia], vert_colors[ib], vert_colors[ic]
+            px = (w0[..., None] * ca + w1[..., None] * cb + w2[..., None] * cc) * shi[..., None]
+        else:
+            color = np.asarray(mat_colors[tri_mat[ti]])
+            px = color[None, None, :] * shi[..., None]
         win = img[y0:y1 + 1, x0:x1 + 1]
         win[upd] = np.clip(px[upd], 0, 1)
         zwin[upd] = zi[upd]

@@ -17,6 +17,7 @@ from . import lint as wlint
 from . import gltf as wgltf
 from . import animation as wanim
 from . import render as wrender
+from . import texture as wtexture
 
 VIEW_ANGLES = {"front": 0, "threequarter": 38, "side": 90, "back": 180,
                "threequarter_back": 142, "side_r": 270}
@@ -53,11 +54,15 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
     V, T, M = mesh.arrays()
     mat_colors = [rgb for _, rgb in mesh.materials]
+    atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
+    vcols = None
+    if atlas is not None:
+        wrender.write_png(out_prefix + "_tex.png", atlas)
 
     imgs = []
     for vname in views:
         yaw = VIEW_ANGLES.get(vname, 0)
-        img = wrender.render_view(V, T, M, mat_colors, yaw_deg=yaw)
+        img = wrender.render_view(V, T, M, mat_colors, yaw_deg=yaw, vert_colors=vcols, uv=atlas_uv, tex=atlas)
         imgs.append(img)
     if imgs:
         sheet = wrender.hstack_views(imgs)
@@ -84,14 +89,18 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                 ph = i / frames
                 rots = wanim.anim_rotations_at(model, bones, anim, ph)
                 Vp = wanim.skin_verts(mesh, bones, bone_order, rots)
-                aimgs.append(wrender.render_view(Vp, T, M, mat_colors, yaw_deg=55))
+                aimgs.append(wrender.render_view(Vp, T, M, mat_colors, yaw_deg=55, vert_colors=vcols, uv=atlas_uv, tex=atlas))
             wrender.write_png(out_prefix + "_anim_%s.png" % anim_name,
                               wrender.hstack_views(aimgs))
 
     if do_gltf:
         tracks = wanim.gltf_tracks(model, bones, bone_order)
+        tex_png = wrender.png_bytes(atlas) if atlas is not None else None
         wgltf.export(out_prefix + ".gltf", model, bones, bone_order, mesh,
-                     tracks, scale=model.height)
+                     tracks, scale=model.height, vert_colors=vcols,
+                     uv=atlas_uv, tex_png=tex_png)
+        from . import viewer_export as wviewer
+        wviewer.export(path, out_prefix + "_viewer.json")
 
     if not quiet:
         for w in warnings:

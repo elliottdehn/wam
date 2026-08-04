@@ -173,6 +173,40 @@ bone, and `spin=<deg>` rotates the prop about that spine. "Haft rising 45°
 from the fist, blade down" is `dir=up pitch=45` with the blade authored
 along local +Z. Prefer aiming over raw group Euler angles.
 
+## `textures` — painted-look procedural texturing
+
+Materials stop being flat fills by adding a `textures` section: named
+operator stacks evaluated per-vertex (deterministic seeds, so renders are
+reproducible and tunable by parameter edits). A material name resolves to
+its palette color (or the texture's `base=`), then ops adjust it:
+
+```
+textures
+  texture fur base=#6b4a33
+    gradient axis=v from=-0.10 to=0.16   # painted top-light (v = world-vertical per part)
+    noise scale=0.14 amount=0.10         # hand-painted mottle
+    streaks along=v amount=0.08          # fur/wood grain along the part
+    ao amount=0.16                       # crevice darkening
+  texture horn base=#cbbfa4
+    band axis=along at=0.25 width=0.12 color=#a89878   # growth ring along the tube
+```
+
+Ops: `gradient` (`axis=v` world-vertical | `along` the loft | `u` around
+it), `noise` (3D value noise, scale in height units), `streaks`
+(anisotropic grain), `spots` (two-tone blotches — foliage), `band` (soft
+stripe), `planks` (`dir=u|v count seam width` — plank/shingle seams with
+per-plank value jitter), `bricks` (`courses ratio seam width` — running-bond
+courses), `ao` (proximity-based crevice darkening).
+
+Textured models bake to a **texel atlas**: every part gets an auto-unwrapped
+chart (u around the loft, v along it — captured at mesh generation, never
+authored), triangles rasterize into the atlas with seamless 3D-noise
+interpolation, and the glTF ships `TEXCOORD_0` + the embedded PNG. `planks`
+and `bricks` only read at texel resolution; pattern coordinates span the
+whole chart, so scale `count`/`courses` to the band the material occupies.
+The compiler still splits shared vertices at material boundaries so color
+edges stay crisp, and `out/<name>_tex.png` lets you inspect the atlas.
+
 ## `animations`
 
 Rotations are **deltas from rest**, applied about the bone's head: `pitch`

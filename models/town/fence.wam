@@ -1,0 +1,40 @@
+# Post-and-rail fence section (tile them side by side).
+model fence
+  height 1.15
+  style chunky
+
+palette
+  wood #6e5238
+
+textures
+  texture wood base=#6e5238
+    streaks along=v amount=0.14 scale=1.4
+    noise scale=0.06 amount=0.06
+    gradient axis=v from=-0.08 to=0.06
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft post1 bone=core at=0.0 offset=(-0.55,0,0) dir=up len=1.0 material=wood shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 0.92 w=0.09 d=0.09
+    ring 1.00 w=0.045 d=0.09
+    cap start=none end=flat
+
+  loft post2 bone=core at=0.0 offset=(0.55,0,0) dir=up len=1.0 material=wood shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 0.92 w=0.09 d=0.09
+    ring 1.00 w=0.045 d=0.09
+    cap start=none end=flat
+
+  loft rail1 bone=core at=0.78 offset=(-0.62,0,0) dir=side len=1.24 material=wood shape=box
+    ring 0.00 w=0.05 d=0.045
+    ring 1.00 w=0.05 d=0.045
+    cap start=flat end=flat
+
+  loft rail2 bone=core at=0.42 offset=(-0.62,0,0) dir=side len=1.24 material=wood shape=box
+    ring 0.00 w=0.05 d=0.045
+    ring 1.00 w=0.05 d=0.045
+    cap start=flat end=flat

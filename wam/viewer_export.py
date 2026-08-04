@@ -8,6 +8,9 @@ from . import skeleton as wskel
 from . import mesh as wmesh
 from . import animation as wanim
 from .gltf import mat_to_quat
+from . import texture as wtexture
+from . import render as wrender
+import base64
 
 
 def export(path, out_json, samples=24):
@@ -41,6 +44,8 @@ def export(path, out_json, samples=24):
                           loop=anim["loop"],
                           tracks={str(k): v for k, v in tracks.items()}))
 
+    atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
+    vcols = None if atlas is not None else wtexture.bake_vertex_colors(model, mesh, V, T, M)
     data = dict(
         name=model.name,
         height=model.height,
@@ -53,6 +58,12 @@ def export(path, out_json, samples=24):
                     h=[round(float(x), 4) for x in b.head]) for b in bone_order],
         anims=anims,
     )
+    if vcols is not None:
+        data["vcols"] = [round(float(c), 3) for c in vcols.reshape(-1)]
+    if atlas is not None:
+        data["uv"] = [round(float(c), 4) for c in atlas_uv.reshape(-1)]
+        data["tex"] = ("data:image/png;base64,"
+                       + base64.b64encode(wrender.png_bytes(atlas)).decode())
     with open(out_json, "w") as f:
         json.dump(data, f, separators=(",", ":"))
     return data

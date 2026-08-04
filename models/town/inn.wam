@@ -1,0 +1,83 @@
+# Two-story inn — jettied upper floor, hanging sign, twin chimneys.
+model inn
+  height 8.5
+  style chunky
+
+palette
+  stone   #85806f
+  plaster #ded4bc
+  timber  #52402e
+  roof    #6e4230
+  door    #443220
+  window  #282420
+  glow    #e8c86a
+  sign    #7a5c3c
+  iron    #3c3a36
+
+textures
+  texture stone base=#85806f
+    gradient axis=v from=-0.12 to=0.08
+    bricks courses=15 ratio=1.6 width=0.09 seam=#6a6558
+    noise scale=0.09 amount=0.08
+  texture plaster base=#ded4bc
+    noise scale=0.12 amount=0.055
+    gradient axis=v from=-0.05 to=0.07
+  texture roof base=#6e4230
+    gradient axis=v from=-0.14 to=0.12
+    planks dir=v count=8 width=0.05 seam=#553226
+    noise scale=0.07 amount=0.06
+  texture timber base=#52402e
+    streaks along=v amount=0.12 scale=1.2
+  texture door base=#443220
+    streaks along=v amount=0.12 scale=1.4
+  texture sign base=#7a5c3c
+    streaks along=u amount=0.10 scale=1.2
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft walls bones=core..core material=stone shape=box
+    ring 0.00 w=0.90 d=0.62
+    ring 0.18 w=0.90 d=0.62 material=plaster
+    ring 0.34 w=0.90 d=0.62
+    ring 0.36 w=0.96 d=0.68 material=plaster
+    ring 0.62 w=0.96 d=0.68
+    cap start=flat end=flat
+
+  loft roof bone=core at=0.60 dir=up len=0.38 material=roof shape=box
+    ring 0.00 w=1.10 d=0.82
+    ring 1.00 w=1.12 d=0.05
+    cap start=flat end=flat
+
+  loft chimney1 bone=core at=0.55 offset=(0.32,0,0.14) dir=up len=0.44 material=stone shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 0.90 w=0.09 d=0.09
+    ring 1.00 w=0.12 d=0.12
+    cap start=none end=flat
+
+  loft chimney2 bone=core at=0.55 offset=(-0.30,0,-0.12) dir=up len=0.40 material=stone shape=box
+    ring 0.00 w=0.09 d=0.09
+    ring 1.00 w=0.11 d=0.11
+    cap start=none end=flat
+
+  attach door bone=core kind=box at=0.26 offset=(-0.02,0,0.302) w=0.15 h=0.25 d=0.035 material=door
+  attach win1 bone=core kind=box at=0.52 offset=(-0.30,0,0.332) w=0.10 h=0.10 d=0.035 material=glow
+  attach win2 bone=core kind=box at=0.52 offset=(-0.05,0,0.332) w=0.10 h=0.10 d=0.035 material=window
+  attach win3 bone=core kind=box at=0.52 offset=(0.22,0,0.332) w=0.10 h=0.10 d=0.035 material=glow
+  attach win4 bone=core kind=box at=0.26 offset=(0.24,0,0.302) w=0.10 h=0.10 d=0.035 material=window
+
+  attach beam_jetty bone=core kind=box at=0.365 offset=(0,0,0.335) w=0.96 h=0.03 d=0.035 material=timber
+  attach beam_top bone=core kind=box at=0.62 offset=(0,0,0.332) w=0.96 h=0.03 d=0.03 material=timber
+  attach beam_v1 bone=core kind=box at=0.60 offset=(-0.45,0,0.332) w=0.035 h=0.24 d=0.03 material=timber
+  attach beam_v2 bone=core kind=box at=0.60 offset=(0.45,0,0.332) w=0.035 h=0.24 d=0.03 material=timber
+  attach beam_v3 bone=core kind=box at=0.60 offset=(0.10,0,0.332) w=0.03 h=0.24 d=0.03 material=timber
+
+  # hanging sign: iron arm out from the wall, board dangling from its tip
+  loft bracket bone=core at=0.40 offset=(0.40,0,0.30) dir=fwd len=0.12 material=iron
+    ring 0.00 w=0.018 d=0.018
+    ring 1.00 w=0.016 d=0.016
+    cap start=none end=dome
+
+  attach board bone=core kind=box at=0.395 offset=(0.40,0,0.39) w=0.025 h=0.11 d=0.13 material=sign

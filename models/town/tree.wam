@@ -1,0 +1,45 @@
+# Broadleaf town tree — trunk and a lumpy two-tone canopy.
+model tree
+  height 6.5
+  style chunky
+
+palette
+  bark  #5c4834
+  leaf  #4d6e35
+  leaf2 #5d8040
+
+textures
+  texture bark base=#5c4834
+    streaks along=v amount=0.15 scale=1.6
+    gradient axis=v from=-0.10 to=0.08
+  texture leaf base=#4d6e35
+    gradient axis=v from=-0.20 to=0.16
+    spots color=#5d8040 density=0.55 scale=0.10
+    noise scale=0.08 amount=0.08
+  texture leaf2 base=#5d8040
+    gradient axis=v from=-0.16 to=0.12
+    spots color=#4d6e35 density=0.45 scale=0.09
+    noise scale=0.08 amount=0.08
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft trunk bones=core..core material=bark
+    ring 0.00 w=0.20 d=0.20
+    ring 0.06 w=0.14 d=0.14
+    ring 0.42 w=0.10 d=0.10
+    cap start=flat end=flat
+
+  loft canopy bone=core at=0.36 dir=up len=0.60 material=leaf
+    ring 0.00 w=0.30 d=0.28
+    ring 0.25 w=0.72 d=0.66
+    ring 0.60 w=0.78 d=0.72
+    ring 0.85 w=0.52 d=0.48
+    ring 1.00 w=0.16 d=0.15 tip
+    cap start=dome end=none
+
+  attach blob1 bone=core kind=sphere at=0.62 offset=(0.34,0,0.10) w=0.42 h=0.34 d=0.40 material=leaf2
+  attach blob2 bone=core kind=sphere at=0.72 offset=(-0.30,0,-0.08) w=0.38 h=0.30 d=0.36 material=leaf2
+  attach blob3 bone=core kind=sphere at=0.52 offset=(-0.10,0,0.30) w=0.34 h=0.28 d=0.32 material=leaf2

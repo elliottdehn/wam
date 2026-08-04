@@ -1,0 +1,54 @@
+# Round stone watchtower with conical slate roof and a banner.
+model tower
+  height 10.0
+  style smooth
+
+palette
+  stone  #7e7a6e
+  stone2 #6b675c
+  slate  #55616e
+  door   #443220
+  window #262320
+  wood   #5a4632
+  banner #24407e
+
+textures
+  texture stone base=#7e7a6e
+    gradient axis=v from=-0.15 to=0.10
+    bricks courses=11 ratio=2.2 width=0.05 seam=#63604f
+    noise scale=0.07 amount=0.08
+  texture stone2 base=#6b675c
+    noise scale=0.07 amount=0.10
+  texture slate base=#55616e
+    gradient axis=v from=-0.12 to=0.12
+    planks dir=v count=6 width=0.06 seam=#48525c
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft shaft bones=core..core material=stone
+    ring 0.00 w=0.52 d=0.52
+    ring 0.06 w=0.46 d=0.46
+    ring 0.60 w=0.40 d=0.40
+    ring 0.68 w=0.40 d=0.40 material=stone2
+    ring 0.70 w=0.50 d=0.50
+    ring 0.76 w=0.50 d=0.50
+    cap start=flat end=flat
+
+  loft cone bone=core at=0.755 dir=up len=0.20 material=slate
+    ring 0.00 w=0.56 d=0.56
+    ring 1.00 w=0.02 d=0.02 tip
+    cap start=flat end=none
+
+  loft pole bone=core at=0.94 dir=up len=0.075 material=wood
+    ring 0.00 w=0.015 d=0.015
+    ring 1.00 w=0.012 d=0.012
+    cap start=none end=dome
+
+  attach flag bone=core kind=box at=1.005 offset=(0.055,0,0) w=0.10 h=0.045 d=0.012 material=banner
+
+  attach door bone=core kind=box at=0.13 offset=(0,0,0.215) w=0.11 h=0.13 d=0.04 material=door
+  attach slit1 bone=core kind=box at=0.38 offset=(0,0,0.205) w=0.03 h=0.08 d=0.04 material=window
+  attach slit2 bone=core kind=box at=0.58 offset=(0.15,0,0.145) w=0.03 h=0.08 d=0.04 material=window

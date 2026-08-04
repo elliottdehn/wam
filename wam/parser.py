@@ -62,6 +62,7 @@ class Model:
         self.height = 2.0
         self.style = "chunky"
         self.palette = {}          # name -> (r,g,b) floats 0..1
+        self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
         self.parts = []            # list of dicts
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
@@ -84,6 +85,7 @@ def parse(text, path=None):
     mirror = False
     cur_group = None
     cur_part = None
+    cur_tex = None
     cur_pose = None
     cur_anim = None
 
@@ -94,7 +96,7 @@ def parse(text, path=None):
         tokens = line.split()
         kw = tokens[0]
 
-        if kw in ("model", "palette", "skeleton", "parts", "animations"):
+        if kw in ("model", "palette", "skeleton", "parts", "textures", "animations"):
             section = kw
             mirror = False
             cur_group = None
@@ -151,6 +153,30 @@ def parse(text, path=None):
             if len(tokens) != 2:
                 raise WamError("palette entry: <name> #rrggbb", line_no, line)
             model.palette[kw] = _hex_color(tokens[1], line_no, line)
+
+        elif section == "textures":
+            if kw == "texture":
+                if len(tokens) < 2:
+                    raise WamError("texture needs a name", line_no, line)
+                _, kv, _ = _split_kv(tokens[2:], line_no, line)
+                if "base" not in kv:
+                    raise WamError("texture needs base=#rrggbb", line_no, line)
+                cur_tex = dict(base=_hex_color(kv["base"], line_no, line), ops=[])
+                model.textures[tokens[1]] = cur_tex
+            else:
+                if not model.textures:
+                    raise WamError("texture op before any texture", line_no, line)
+                _, kv, flags = _split_kv(tokens[1:], line_no, line)
+                op = dict(op=kw)
+                for k, v in kv.items():
+                    if v.startswith("#"):
+                        op[k] = _hex_color(v, line_no, line)
+                    elif re.match(r"^[a-zA-Z_]", v):
+                        op[k] = v
+                    else:
+                        op[k] = _num(v, line_no, line)
+                cur_tex["ops"].append(op)
+            continue
 
         elif section == "skeleton":
             if kw == "root":

@@ -21,6 +21,17 @@ floating feet, inside-out faces).
 
 ![Walk cycle](assets/tauren_anim_walk.png)
 
+Models aren't limited to characters — `models/town/` holds twelve buildings
+and props composed into a scene by `scripts/compose_town.py`:
+
+![Town](assets/town.png)
+
+A `textures` section gives materials a hand-painted look from named
+procedural operators (gradients, noise, grain, bricks, planks, AO...),
+baked into an auto-unwrapped texel atlas that ships inside the glTF:
+
+![Tauren atlas](assets/tauren_atlas.png)
+
 ## Quick start
 
 ```bash
@@ -30,7 +41,9 @@ python3 -m wam.cli models/tauren.wam --bones    # skeleton overlay
 ```
 
 Outputs land in `out/`: a skinned, animated `.gltf` (drops into
-Blender/three.js/engines) plus PNG render sheets. Requires Python 3 + numpy.
+Blender/three.js/engines), PNG render sheets, the texture atlas, and a
+`*_viewer.json` — open `viewer/template.html` in a browser and drop the
+JSON onto it for an interactive orbit/animation view. Requires Python 3 + numpy.
 
 A tiny sample of the language (see [SPEC.md](SPEC.md) for the full grammar
 and `models/` for four complete reference models):

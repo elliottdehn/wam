@@ -74,7 +74,7 @@ class BufferBuilder:
         return len(self.accessors) - 1
 
 
-def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale):
+def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_colors=None, uv=None, tex_png=None):
     """anim_tracks: list of dicts:
        {name, dur, loop, bones: {bone_name: [(t_sec, quat_xyzw), ...]}}"""
     V, T, M = mesh.arrays()
@@ -107,6 +107,12 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale):
     nrm_acc = bb.add(N, 34962, 5126, "VEC3")
     j_acc = bb.add(JOINTS, 34962, 5123, "VEC4")
     w_acc = bb.add(WEIGHTS, 34962, 5126, "VEC4")
+    col_acc = None
+    if vert_colors is not None and tex_png is None:
+        col_acc = bb.add(np.asarray(vert_colors, dtype=np.float32), 34962, 5126, "VEC3")
+    uv_acc = None
+    if uv is not None and tex_png is not None:
+        uv_acc = bb.add(np.asarray(uv, dtype=np.float32), 34962, 5126, "VEC2")
 
     # primitives per material
     primitives = []
@@ -115,21 +121,26 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale):
         if len(idx) == 0:
             continue
         i_acc = bb.add(idx, 34963, 5125, "SCALAR")
-        primitives.append(dict(
-            attributes=dict(POSITION=pos_acc, NORMAL=nrm_acc,
-                            JOINTS_0=j_acc, WEIGHTS_0=w_acc),
-            indices=i_acc, material=len(primitives)))
+        attrs = dict(POSITION=pos_acc, NORMAL=nrm_acc,
+                     JOINTS_0=j_acc, WEIGHTS_0=w_acc)
+        if col_acc is not None:
+            attrs["COLOR_0"] = col_acc
+        if uv_acc is not None:
+            attrs["TEXCOORD_0"] = uv_acc
+        primitives.append(dict(attributes=attrs, indices=i_acc,
+                               material=len(primitives)))
 
     materials = []
     used = [mi for mi, _ in enumerate(mesh.materials)
             if (M == mi).any()]
     for mi in used:
         mname, rgb = mesh.materials[mi]
-        materials.append(dict(
-            name=mname,
-            pbrMetallicRoughness=dict(
-                baseColorFactor=[rgb[0], rgb[1], rgb[2], 1.0],
-                metallicFactor=0.0, roughnessFactor=0.9)))
+        textured = vert_colors is not None or tex_png is not None
+        base = [1.0, 1.0, 1.0, 1.0] if textured else [rgb[0], rgb[1], rgb[2], 1.0]
+        pbr = dict(baseColorFactor=base, metallicFactor=0.0, roughnessFactor=0.9)
+        if tex_png is not None:
+            pbr["baseColorTexture"] = dict(index=0)
+        materials.append(dict(name=mname, pbrMetallicRoughness=pbr))
 
     # nodes: mesh node + bone nodes
     nodes = [dict(name="mesh", mesh=0, skin=0)]
@@ -188,6 +199,12 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale):
     )
     if animations:
         gltf["animations"] = animations
+    if tex_png is not None:
+        gltf["images"] = [dict(uri="data:image/png;base64,"
+                               + base64.b64encode(tex_png).decode())]
+        gltf["samplers"] = [dict(magFilter=9729, minFilter=9729,
+                                 wrapS=33071, wrapT=33071)]
+        gltf["textures"] = [dict(source=0, sampler=0)]
 
     with open(path, "w") as f:
         json.dump(gltf, f)
