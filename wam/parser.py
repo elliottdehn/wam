@@ -1,3 +1,4 @@
+
 """Parser for the WAM (WoW-ish Art Model) language.
 
 Line-oriented format. Sections: model, palette, skeleton, parts, animations.
@@ -221,6 +222,8 @@ def parse(text, path=None):
                         p["shape"] = f
                     if f in DIR_WORDS:
                         p["dir"] = f
+                    if f == "double_sided":
+                        p["double_sided"] = True
                 if "bones" in kv:
                     m = re.match(r"^([\w.]+)\.\.([\w.]+)$", kv["bones"])
                     if not m:

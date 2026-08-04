@@ -1,3 +1,4 @@
+
 """Semantic lint: catches the mistakes that make models look broken."""
 import numpy as np
 
@@ -93,6 +94,34 @@ def lint(model, bones, mesh):
         ndeg = int((areas < 1e-10).sum())
         if ndeg > len(T) * 0.05:
             warnings.append("%d degenerate triangles (>5%% of mesh)" % ndeg)
+
+        # Shared manifold edges must be traversed in opposite directions by
+        # their two incident triangles. Same-direction pairs are a precise
+        # indicator of inconsistent winding and become holes under Godot's
+        # default backface culling.
+        edges = {}
+        for ti, tri in enumerate(T):
+            for u, v in ((int(tri[0]), int(tri[1])),
+                         (int(tri[1]), int(tri[2])),
+                         (int(tri[2]), int(tri[0]))):
+                if u == v:
+                    continue
+                key = (u, v) if u < v else (v, u)
+                direction = 1 if (u, v) == key else -1
+                edges.setdefault(key, []).append((ti, direction))
+        inconsistent = sum(1 for uses in edges.values()
+                           if len(uses) == 2 and uses[0][1] == uses[1][1])
+        nonmanifold = sum(1 for uses in edges.values() if len(uses) > 2)
+        if inconsistent:
+            warnings.append("%d shared edges have inconsistent triangle winding"
+                            % inconsistent)
+        if nonmanifold:
+            warnings.append("%d non-manifold edges are used by more than two triangles"
+                            % nonmanifold)
+
+    double_sided = sorted(getattr(mesh, "double_sided_materials", ()))
+    if double_sided:
+        infos.append("double-sided materials: %s" % ", ".join(double_sided))
 
     infos.append("%d vertices, %d triangles, %d materials"
                  % (len(V), len(T), len(mesh.materials)))

@@ -1,3 +1,4 @@
+
 """Mesh generation: lofts, sweeps, and attachments -> triangles + skin weights.
 
 All geometry is generated in world (rest-pose) space, in model-height units;
@@ -27,6 +28,10 @@ class MeshOut:
         self.part_ranges = {}  # part name -> (vstart, vend)
         self.warnings = []
         self.uvs = []          # per-vertex chart-local (u, v), parallel to verts
+        # glTF materials are single-sided by default. Parts may opt a material
+        # into double-sided rendering with the `double_sided` flag, intended
+        # only for genuinely thin/open surfaces.
+        self.double_sided_materials = set()
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -231,8 +236,126 @@ def _chain_skin(sampler, chain, t):
     return [(bone.name, 1.0)]
 
 
+def _triangle_components(out, t0, t1):
+    """Return triangle-index components connected by shared vertex indices."""
+    if t1 <= t0:
+        return []
+    by_vert = {}
+    for ti in range(t0, t1):
+        for vi in out.tris[ti]:
+            by_vert.setdefault(vi, []).append(ti)
+    seen = set()
+    comps = []
+    for seed in range(t0, t1):
+        if seed in seen:
+            continue
+        stack = [seed]
+        seen.add(seed)
+        comp = []
+        while stack:
+            ti = stack.pop()
+            comp.append(ti)
+            for vi in out.tris[ti]:
+                for nb in by_vert.get(vi, ()):
+                    if nb not in seen:
+                        seen.add(nb)
+                        stack.append(nb)
+        comps.append(comp)
+    return comps
+
+
+def _closest_point_polyline(p, centers):
+    """Closest point to p on the center polyline used to generate a tube."""
+    if len(centers) == 1:
+        return centers[0]
+    best_p, best_d2 = centers[0], float("inf")
+    for a, b in zip(centers, centers[1:]):
+        ab = b - a
+        den = float(ab @ ab)
+        f = 0.0 if den < 1e-18 else float(np.clip(((p - a) @ ab) / den, 0.0, 1.0))
+        q = a + ab * f
+        d2 = float((p - q) @ (p - q))
+        if d2 < best_d2:
+            best_p, best_d2 = q, d2
+    return best_p
+
+
+def _orient_tube_components(out, t0, t1, roles, centers, axes, part_name):
+    """Orient each disconnected tube component outward in final coordinates.
+
+    Material seams deliberately duplicate ring vertices, so a single authored
+    tube can contain multiple index-disconnected components. Each component is
+    checked independently after mirroring. Side faces vote against the nearest
+    point on the centerline; caps vote against their authored outward tangent.
+    """
+    if t1 <= t0:
+        return
+    if len(roles) != t1 - t0:
+        raise AssertionError("tube role count does not match emitted triangles")
+
+    start_out = -np.asarray(axes[0][2], dtype=float)
+    end_out = np.asarray(axes[-1][2], dtype=float)
+    centers = [np.asarray(c, dtype=float) for c in centers]
+
+    def expected(ti, fc):
+        role = roles[ti - t0]
+        if role == "start_cap":
+            return start_out
+        if role == "end_cap":
+            return end_out
+        return fc - _closest_point_polyline(fc, centers)
+
+    for comp in _triangle_components(out, t0, t1):
+        vote = 0.0
+        usable = 0
+        for ti in comp:
+            i, j, k = out.tris[ti]
+            a, b, c = out.verts[i], out.verts[j], out.verts[k]
+            n = np.cross(b - a, c - a)
+            nn = float(np.linalg.norm(n))
+            if nn < 1e-14:
+                continue
+            fc = (a + b + c) / 3.0
+            e = expected(ti, fc)
+            en = float(np.linalg.norm(e))
+            if en < 1e-14:
+                continue
+            vote += float(n @ (e / en))
+            usable += 1
+        if usable and vote < 0.0:
+            for ti in comp:
+                i, j, k = out.tris[ti]
+                out.tris[ti] = (i, k, j)
+
+    # A component-level correction preserves manifold edge consistency. Report
+    # strongly disagreeing local faces rather than flipping them individually,
+    # which would create cracks/non-manifold winding at shared edges.
+    bad = 0
+    checked = 0
+    for ti in range(t0, t1):
+        i, j, k = out.tris[ti]
+        a, b, c = out.verts[i], out.verts[j], out.verts[k]
+        n = np.cross(b - a, c - a)
+        nn = float(np.linalg.norm(n))
+        if nn < 1e-14:
+            continue
+        fc = (a + b + c) / 3.0
+        e = expected(ti, fc)
+        en = float(np.linalg.norm(e))
+        if en < 1e-14:
+            continue
+        checked += 1
+        if float((n / nn) @ (e / en)) < -0.15:
+            bad += 1
+    if checked and bad > max(2, int(checked * 0.08)):
+        out.warnings.append(
+            "tube %r has %d/%d locally inward-facing triangles after winding "
+            "correction — the path probably folds or self-intersects"
+            % (part_name, bad, checked))
+
+
 def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               cap_start, cap_end, flip=False):
+               cap_start, cap_end):
     """Build a tube from per-ring data.
 
     centers: list of (3,), axes: list of (side, other, tangent),
@@ -240,7 +363,6 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     skins: per-ring skin list.
     """
     nrings = len(centers)
-    t_first = len(out.tris)
 
     def make_ring(ri):
         c = centers[ri]
@@ -276,13 +398,15 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
             ring_lower[ri] = make_ring(ri)
     ring_ids = ring_upper   # caps + legacy uses
 
+    roles = []
+
+    def tri(a, b, c, mat, role):
+        out.add_tri(a, b, c, mat)
+        roles.append(role)
+
     def quad(a, b, c, d, mat):
-        if flip:
-            out.add_tri(a, c, b, mat)
-            out.add_tri(a, d, c, mat)
-        else:
-            out.add_tri(a, b, c, mat)
-            out.add_tri(a, c, d, mat)
+        tri(a, b, c, mat, "side")
+        tri(a, c, d, mat, "side")
 
     for ri in range(nrings - 1):
         A = ring_lower[ri] if ri == 0 else (
@@ -295,12 +419,9 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
                 continue
             quad(A[k], A[k2], B[k2], B[k], mat)
 
-    def cap(ring, center, skin, mat, direction, style):
+    def cap(ring, center, skin, mat, outward, style, role):
         if style == "none" or len(set(ring)) < 3:
             return
-        _, _, tang = direction
-        if style == "dome":
-            apex_off = tang * 0.0  # dome handled as raised fan below
         # flat fan (dome = raised fan)
         raise_amt = 0.0
         if style in ("dome", "point"):
@@ -308,7 +429,7 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
             pts = [out.verts[i] for i in ring]
             r = np.mean([np.linalg.norm(p - center) for p in pts])
             raise_amt = r * (0.45 if style == "dome" else 1.0)
-        apex = center + direction[2] * raise_amt
+        apex = center + outward * raise_amt
         apex_v = 0.0 if ring is ring_ids[0] else 1.0
         cid = out.add_vert(apex, skin(apex) if callable(skin) else skin,
                            uv=(0.5, apex_v))
@@ -316,39 +437,22 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
             k2 = (k + 1) % n_sides
             if ring[k] == ring[k2]:
                 continue
-            if flip:
-                out.add_tri(ring[k], ring[k2], cid, mat)
+            if role == "start_cap":
+                # Ring vertices are CCW when viewed along +tangent. The start
+                # cap must therefore reverse that order to face -tangent.
+                tri(ring[k2], ring[k], cid, mat, role)
             else:
-                out.add_tri(ring[k2], ring[k], cid, mat)
+                # The end cap faces +tangent and keeps the ring order.
+                tri(ring[k], ring[k2], cid, mat, role)
 
     # start cap faces along -tangent, end cap along +tangent
-    s_side, s_other, s_tang = axes[0]
-    e_side, e_other, e_tang = axes[-1]
-    cap(ring_ids[0], centers[0], skins[0], mats[0], (s_side, s_other, -s_tang), cap_start)
-    cap(ring_ids[-1], centers[-1], skins[-1], mats[-1], (e_side, e_other, e_tang), cap_end)
-
-    # orient outward: vote with band-face normals vs radial direction from the
-    # ring-center polyline (signed volume is unreliable for open tubes)
-    vote = 0.0
-    for ti in range(t_first, len(out.tris)):
-        i, j, k = out.tris[ti]
-        a, b, c = out.verts[i], out.verts[j], out.verts[k]
-        n = np.cross(b - a, c - a)
-        fc = (a + b + c) / 3.0
-        best = None
-        for cc in centers:
-            d2 = float(np.dot(fc - cc, fc - cc))
-            if best is None or d2 < best[0]:
-                best = (d2, cc)
-        radial = fc - best[1]
-        vote += float(np.dot(n, radial))
-    # mirrored parts are reflected after emission, which reverses orientation:
-    # their vote must come out negative here to be outward after reflection
-    if (vote < 0) != flip:
-        for ti in range(t_first, len(out.tris)):
-            i, j, k = out.tris[ti]
-            out.tris[ti] = (i, k, j)
-    return ring_ids
+    s_tang = np.asarray(axes[0][2], dtype=float)
+    e_tang = np.asarray(axes[-1][2], dtype=float)
+    cap(ring_ids[0], centers[0], skins[0], mats[0], -s_tang,
+        cap_start, "start_cap")
+    cap(ring_ids[-1], centers[-1], skins[-1], mats[-1], e_tang,
+        cap_end, "end_cap")
+    return ring_ids, roles
 
 
 def build_loft(out, model, bones, part, suffix="", reflect=False):
@@ -400,8 +504,10 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         centers.append(c)
         axes.append((side, other, tang))
         params.append(dict(w=w, d=d, exp=exp, roll=r.get("roll", 0.0), t=t))
-        mats.append(out.material(r.get("material", base_mat),
-                                 mat_rgb(model, r.get("material", base_mat))))
+        mat_name = r.get("material", base_mat)
+        mats.append(out.material(mat_name, mat_rgb(model, mat_name)))
+        if part.get("double_sided"):
+            out.double_sided_materials.add(mat_name)
         base_skin = skin_for(t)
         if "follow" in r:
             # cloth skinning: ring verts partially follow a mirrored bone pair,
@@ -452,11 +558,20 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
                    math.degrees(theta), rmax, reach))
 
     v0 = len(out.verts)
-    _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               part.get("cap_start", "flat"), part.get("cap_end", "flat"),
-               flip=reflect)
+    t0 = len(out.tris)
+    _, roles = _emit_tube(out, centers, axes, params, mats, skins, n_sides,
+                          part.get("cap_start", "flat"),
+                          part.get("cap_end", "flat"))
     if reflect:
         _reflect_range(out, v0, suffix)
+        refl = np.array([-1.0, 1.0, 1.0])
+        orient_centers = [c * refl for c in centers]
+        orient_axes = [tuple(v * refl for v in ax) for ax in axes]
+    else:
+        orient_centers, orient_axes = centers, axes
+    _orient_tube_components(out, t0, len(out.tris), roles,
+                            orient_centers, orient_axes,
+                            part["name"] + (".r" if reflect else suffix))
     out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))
 
 
@@ -464,6 +579,8 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
     n_sides = max(6, int(part.get("sides", STYLE_SIDES.get(model.style, 8)) - 2))
     base_mat = part.get("material") or "default"
     mat = out.material(base_mat, mat_rgb(model, base_mat))
+    if part.get("double_sided"):
+        out.double_sided_materials.add(base_mat)
     if not part["segs"]:
         raise WamError("sweep %r has no segs" % part["name"])
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
@@ -519,12 +636,21 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         push(pos, r)
 
     v0 = len(out.verts)
-    _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               part.get("cap_start", "flat"),
-               "none" if part["segs"][-1].get("tip") else part.get("cap_end", "dome"),
-               flip=reflect)
+    t0 = len(out.tris)
+    _, roles = _emit_tube(
+        out, centers, axes, params, mats, skins, n_sides,
+        part.get("cap_start", "flat"),
+        "none" if part["segs"][-1].get("tip") else part.get("cap_end", "dome"))
     if reflect:
         _reflect_range(out, v0, suffix)
+        refl = np.array([-1.0, 1.0, 1.0])
+        orient_centers = [c * refl for c in centers]
+        orient_axes = [tuple(v * refl for v in ax) for ax in axes]
+    else:
+        orient_centers, orient_axes = centers, axes
+    _orient_tube_components(out, t0, len(out.tris), roles,
+                            orient_centers, orient_axes,
+                            part["name"] + (".r" if reflect else suffix))
     out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))
 
 
@@ -540,6 +666,8 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
     prim = part.get("prim", "sphere")
     base_mat = part.get("material") or "default"
     mat = out.material(base_mat, mat_rgb(model, base_mat))
+    if part.get("double_sided"):
+        out.double_sided_materials.add(base_mat)
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
     at = part.get("at", 0.0)
     origin = host.point_at(at) + np.array(part.get("offset", (0, 0, 0)), dtype=float)
@@ -608,18 +736,25 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
 
 
 def _fix_winding(out, t0, t1):
-    """Flip triangle winding if the part's signed volume is negative."""
+    """Orient each closed connected component by signed volume."""
     if t1 <= t0:
         return
-    tris = out.tris[t0:t1]
-    vs = np.array([out.verts[i] for tri in tris for i in tri]).reshape(-1, 3, 3)
-    centroid = vs.reshape(-1, 3).mean(axis=0)
-    a, b, c = vs[:, 0] - centroid, vs[:, 1] - centroid, vs[:, 2] - centroid
-    vol = np.einsum('ij,ij->i', a, np.cross(b, c)).sum()
-    if vol < 0:
-        for i in range(t0, t1):
-            x, y, z = out.tris[i]
-            out.tris[i] = (x, z, y)
+    for comp in _triangle_components(out, t0, t1):
+        vs = np.array([out.verts[i] for ti in comp for i in out.tris[ti]])
+        if not len(vs):
+            continue
+        centroid = vs.mean(axis=0)
+        vol = 0.0
+        for ti in comp:
+            i, j, k = out.tris[ti]
+            a = out.verts[i] - centroid
+            b = out.verts[j] - centroid
+            c = out.verts[k] - centroid
+            vol += float(a @ np.cross(b, c))
+        if vol < 0.0:
+            for ti in comp:
+                i, j, k = out.tris[ti]
+                out.tris[ti] = (i, k, j)
 
 
 def build(model, bones):

@@ -1,3 +1,4 @@
+
 """glTF 2.0 export: skinned mesh + bone nodes + animations, embedded buffer."""
 import base64
 import json
@@ -74,6 +75,30 @@ class BufferBuilder:
         return len(self.accessors) - 1
 
 
+def _vertex_normals(vertices, triangles):
+    """Area-weighted vertex normals from the final, corrected triangle order."""
+    N = np.zeros_like(vertices, dtype=np.float64)
+    if len(triangles):
+        a = vertices[triangles[:, 0]]
+        b = vertices[triangles[:, 1]]
+        c = vertices[triangles[:, 2]]
+        fn = np.cross(b - a, c - a)
+        good = np.linalg.norm(fn, axis=1) > 1e-14
+        fn = fn[good]
+        good_tris = triangles[good]
+        for i in range(3):
+            np.add.at(N, good_tris[:, i], fn)
+    ln = np.linalg.norm(N, axis=1, keepdims=True)
+    orphan = ln[:, 0] < 1e-12
+    ln[orphan] = 1.0
+    N = N / ln
+    # glTF requires normalized normals. Isolated/fully-degenerate vertices are
+    # not referenced by a useful face, but a deterministic unit fallback keeps
+    # validators and importers happy.
+    N[orphan] = (0.0, 1.0, 0.0)
+    return N.astype(np.float32)
+
+
 def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_colors=None, uv=None, tex_png=None):
     """anim_tracks: list of dicts:
        {name, dur, loop, bones: {bone_name: [(t_sec, quat_xyzw), ...]}}"""
@@ -92,16 +117,10 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
             JOINTS[vi, si] = joint_index[bn]
             WEIGHTS[vi, si] = w / total
 
-    # normals
-    N = np.zeros_like(V)
-    if len(T):
-        a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
-        fn = np.cross(b - a, c - a)
-        for i in range(3):
-            np.add.at(N, T[:, i], fn)
-    ln = np.linalg.norm(N, axis=1, keepdims=True)
-    ln[ln < 1e-12] = 1
-    N = (N / ln).astype(np.float32)
+    # Mesh generation performs all reflection and winding repair before export.
+    # Recompute normals here from that final triangle order so Godot receives
+    # normals consistent with backface culling.
+    N = _vertex_normals(V, T)
 
     pos_acc = bb.add(V.astype(np.float32), 34962, 5126, "VEC3")
     nrm_acc = bb.add(N, 34962, 5126, "VEC3")
@@ -131,6 +150,8 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
                                material=len(primitives)))
 
     materials = []
+    double_sided = set(getattr(mesh, "double_sided_materials", ()))
+    double_sided.update(getattr(model, "double_sided_materials", ()))
     used = [mi for mi, _ in enumerate(mesh.materials)
             if (M == mi).any()]
     for mi in used:
@@ -140,7 +161,10 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
         pbr = dict(baseColorFactor=base, metallicFactor=0.0, roughnessFactor=0.9)
         if tex_png is not None:
             pbr["baseColorTexture"] = dict(index=0)
-        materials.append(dict(name=mname, pbrMetallicRoughness=pbr))
+        material = dict(name=mname, pbrMetallicRoughness=pbr)
+        if mname in double_sided:
+            material["doubleSided"] = True
+        materials.append(material)
 
     # nodes: mesh node + bone nodes
     nodes = [dict(name="mesh", mesh=0, skin=0)]
