@@ -123,10 +123,14 @@ actions like a double-arm smash).
    folded surfaces read as invisible/missing faces.
 7. **Ground**: lint reports floating or sunken feet with the distance;
    adjust the root height or limb lengths, then re-check.
-8. **Proportions**: write them as `checks` rather than doing the arithmetic
-   once in your head — `assert dist(shoulder.l,hip.l)/len(head) in 2.0..2.5`
-   is re-checked on every compile, and `measure <label> <expr>` prints any
-   measurement you want to watch while iterating.
+8. **Proportions and angles**: write them as `checks` rather than doing the
+   arithmetic once in your head — `assert dist(shoulder.l,hip.l)/len(head) in
+   2.0..2.5`, `assert angle(wf1.l,wf4.l) < 46` (bone-to-bone splay),
+   `assert angle(thigh.l,knee.l,ankle.l) in 150..178` (joint flexion),
+   `elevation()`/`heading()` for aim. Each is re-checked on every compile, and
+   `measure <label> <expr>` prints any value you want to watch while
+   iterating. Position questions ("is the muzzle ahead of the eye") are just
+   coordinate comparisons: `assert z(muzzle) > z(eye.l)`.
 9. **Membranes**: a surface between bones is a `web`, never a flattened tube.
 10. **Framing**: if a model is longer than it is tall, render it landscape
    (`--width 760 --height 560`) — the default panel is portrait.

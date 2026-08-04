@@ -389,9 +389,12 @@ compile re-run it:
 ```
 checks
   assert dist(shoulder.l, hip.l) / len(head) in 2.0..2.5
-  assert y(hoof.l.tail) < 0.02              # feet on the ground
+  assert y(hoof.l.tail) < 0.02                    # feet on the ground
   assert width / height == 0.45 +- 0.05
-  measure snout dist(skull, jaw.tail)       # just report it every compile
+  assert angle(wingdigit1.l, wingdigit4.l) < 46   # keep the fan spannable
+  assert angle(thigh.l, knee.l, ankle.l) in 150..178   # knee not hyperextended
+  assert elevation(tail) in -20..20
+  measure snout dist(skull, jaw.tail)             # just report it every compile
 ```
 
 - `assert <expr> in <lo>..<hi>`, or `<expr> <op> <value>` with
@@ -402,6 +405,18 @@ checks
   to the `.l` side when unsuffixed.
 - **Functions**: `dist(a,b)`, `len(bone)`, `x/y/z(point)`,
   `width/height/depth/span(part)`, `abs`, `min`, `max`.
+- **Angles**, all in degrees:
+  - `angle(boneA, boneB)` — unsigned angle between two bone directions
+    (0..180): limb splay, wing dihedral, how far a digit fan opens.
+  - `angle(a, b, c)` — unsigned angle at `b` in the corner `a-b-c`, over any
+    three points: joint flexion (`angle(thigh.l, knee.l, ankle.l)`), or the
+    relation between two parts via their bbox centers.
+  - `elevation(bone)` — degrees above the ground plane, +90 straight up.
+  - `heading(bone)` — degrees in the ground plane, 0 facing +Z, positive
+    turning toward +X (the character's left); undefined for a vertical bone.
+
+  Which side of something a part sits on needs no angle function — compare
+  coordinates directly (`assert z(muzzle) > z(eye.l)`).
 - **Globals**: `height`, `width`, `depth` (the whole model's bbox), `ground`
   (lowest vertex), `top`, `pi`. Arithmetic is `+ - * / **` and parentheses.
 

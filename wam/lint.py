@@ -68,6 +68,48 @@ def _measure_env(model, bones, mesh, V):
             raise _CheckError("bone %r has zero length" % b.name)
         return float(b.len)
 
+    def direction(ref):
+        """Unit vector a bone points along. Parts have no direction."""
+        name = ref.name if isinstance(ref, _Ref) else str(ref)
+        if not (bones.get(name) or bones.get(name + ".l")):
+            raise _CheckError("%r is not a bone, so it has no direction — use "
+                              "the three-point form angle(a,b,c) for parts"
+                              % name)
+        b, _ = bone(ref)
+        if b.len <= 0:
+            raise _CheckError("bone %r has zero length, so no direction" % b.name)
+        return b.dir / np.linalg.norm(b.dir)
+
+    def between(u, v):
+        c = float(np.clip(u @ v, -1.0, 1.0))
+        return float(np.degrees(np.arccos(c)))
+
+    def angle(*refs):
+        """angle(a,b): between two bone directions.
+        angle(a,b,c): at b, in the corner a-b-c. Both unsigned, 0..180."""
+        if len(refs) == 2:
+            return between(direction(refs[0]), direction(refs[1]))
+        if len(refs) == 3:
+            a, b, c = (point(r) for r in refs)
+            u, v = a - b, c - b
+            if np.linalg.norm(u) < 1e-9 or np.linalg.norm(v) < 1e-9:
+                raise _CheckError("angle() needs three distinct points")
+            return between(u / np.linalg.norm(u), v / np.linalg.norm(v))
+        raise _CheckError("angle() takes two bones or three points")
+
+    def elevation(ref):
+        """Degrees above the horizontal plane: +90 straight up, -90 down."""
+        d = direction(ref)
+        return float(np.degrees(np.arcsin(float(np.clip(d[1], -1.0, 1.0)))))
+
+    def heading(ref):
+        """Degrees in the ground plane: 0 faces +Z, + turns toward +X (left)."""
+        d = direction(ref)
+        if abs(d[0]) < 1e-9 and abs(d[2]) < 1e-9:
+            raise _CheckError("bone points straight up or down, so its "
+                              "heading is undefined")
+        return float(np.degrees(np.arctan2(d[0], d[2])))
+
     ymin = float(V[:, 1].min())
     scalars = {
         "height": float(V[:, 1].max() - ymin),
@@ -87,6 +129,9 @@ def _measure_env(model, bones, mesh, V):
         "height": lambda r: axis_size(r, 1),
         "depth": lambda r: axis_size(r, 2),
         "span": lambda r: max(axis_size(r, i) for i in range(3)),
+        "angle": angle,
+        "elevation": elevation,
+        "heading": heading,
         "abs": lambda v: abs(_number(v, "abs")),
         "min": lambda *vs: min(_number(v, "min") for v in vs),
         "max": lambda *vs: max(_number(v, "max") for v in vs),
