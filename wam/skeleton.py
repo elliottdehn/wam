@@ -83,9 +83,37 @@ def solve(model):
     """Return dict name -> Bone (mirror blocks expanded to .l / .r)."""
     bones = {}
     order = []
+    pins = {}
+    used_pins = set()
+    for p in getattr(model, "pins", ()):
+        pins.setdefault(p["bone"], {}).update(
+            {k: v for k, v in p.items() if k in ("head", "tail")})
 
     def flip(v):
         return np.array([-v[0], v[1], v[2]])
+
+    def pin_for(b, emitted_name, mirrored):
+        """Absolute head/tail for this bone, or {}. Keys: head, tail.
+
+        A pin written against the emitted name (`wingtip.r`) is taken
+        literally; one written against the authored name inside a `mirror`
+        block is reflected for the `.r` copy like every other offset.
+        """
+        spec = dict(head=b.get("pin_head"), tail=b.get("pin_tail"))
+        spec = {k: v for k, v in spec.items() if v is not None}
+        reflect = mirrored
+        if emitted_name in pins:
+            spec = dict(pins[emitted_name])
+            used_pins.add(emitted_name)
+            reflect = False
+        elif b["name"] in pins:
+            spec = dict(pins[b["name"]])
+            used_pins.add(b["name"])
+        out = {}
+        for k, v in spec.items():
+            v = np.asarray(v, dtype=float)
+            out[k] = flip(v) if reflect else v
+        return out
 
     def find_parent(ref, suffix):
         if ref is None:
@@ -99,8 +127,14 @@ def solve(model):
         name = b["name"] + suffix
         if name in bones:
             raise WamError("duplicate bone %r" % name)
+        pin = pin_for(b, name, mirrored)
         if b.get("parent") is None:  # root
-            bone = Bone(name, None, b["root_pos"], (0, 1, 0), b.get("len", 0.0))
+            head = np.asarray(b["root_pos"], dtype=float)
+            if "head" in pin:
+                head = pin["head"]
+            bone = Bone(name, None, head, (0, 1, 0), b.get("len", 0.0))
+            if "tail" in pin:
+                bone.head = pin["tail"] - bone.dir * bone.len
         else:
             parent = find_parent(b["parent"], suffix)
             at = b.get("at", 1.0)
@@ -114,7 +148,15 @@ def solve(model):
             if mirrored:
                 off = flip(off)
                 d = flip(d)
-            bone = Bone(name, parent, head + off, d, b["len"])
+            # A pin overrides where the parent chain would have put this bone,
+            # so upstream edits (a longer spine) leave it exactly where it is.
+            if "head" in pin:
+                origin = pin["head"]
+            elif "tail" in pin:
+                origin = pin["tail"] - d * b["len"]
+            else:
+                origin = head + off
+            bone = Bone(name, parent, origin, d, b["len"])
             parent.children.append(bone)
         bones[name] = bone
         order.append(bone)
@@ -126,6 +168,10 @@ def solve(model):
             make(b, ".r", mirrored=True)
         else:
             make(b, "", mirrored=False)
+
+    unused = [n for n in pins if n not in used_pins]
+    if unused:
+        raise WamError("pin refers to unknown bone(s): %s" % ", ".join(sorted(unused)))
 
     return bones, order
 

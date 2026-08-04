@@ -60,13 +60,56 @@ def vertex_normals(V, T):
     return N / lens
 
 
+def orbit_basis(yaw_deg=0.0, pitch_deg=10.0):
+    """Camera rotation for the orbit camera at a given yaw/pitch."""
+    ya = math.radians(yaw_deg)
+    pa = math.radians(pitch_deg)
+    Ry = np.array([[math.cos(ya), 0, -math.sin(ya)],
+                   [0, 1, 0],
+                   [math.sin(ya), 0, math.cos(ya)]])
+    Rx = np.array([[1, 0, 0],
+                   [0, math.cos(pa), -math.sin(pa)],
+                   [0, math.sin(pa), math.cos(pa)]])
+    return Rx @ Ry
+
+
+def fit_distance(V, center, R, fov_deg=28.0, aspect=1.0, margin=1.12):
+    """Camera distance that just contains the model in *this* view.
+
+    Fitting the 3D bounding sphere (the obvious thing) wastes the frame on
+    anything elongated — a dragon renders tiny because its sphere is far
+    bigger than any silhouette — and ignores the horizontal field of view
+    entirely, so a model wider than it is tall runs off the sides of a
+    portrait canvas. This solves the projection instead: for every vertex,
+    the distance at which it lands inside the frame, horizontally *and*
+    vertically, given the canvas aspect.
+    """
+    V = np.asarray(V, dtype=np.float64)
+    if not len(V):
+        return 1.0
+    Vc = (V - np.asarray(center, dtype=float)) @ R.T
+    f = 1.0 / math.tan(math.radians(fov_deg) / 2)
+    need_x = Vc[:, 2] + np.abs(Vc[:, 0]) * margin * f / aspect
+    need_y = Vc[:, 2] + np.abs(Vc[:, 1]) * margin * f
+    return float(max(need_x.max(), need_y.max(), 1e-6))
+
+
 def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 width=480, height=600, fov_deg=28.0, bg=(0.92, 0.92, 0.94),
                 ground_y=None, margin=1.12, vert_colors=None,
                 uv=None, tex=None, sky=None, fog=None,
-                eye=None, look=None, detail=None, detail_scale=180.0):
+                eye=None, look=None, detail=None, detail_scale=180.0,
+                dist=None, center=None, fit="extents"):
     """Render one view: orbit camera by default, or first-person when
-    eye=(x,y,z) and look=(x,y,z) are given."""
+    eye=(x,y,z) and look=(x,y,z) are given.
+
+    Pass `dist`/`center` (see `fit_distance`) to hold the framing constant
+    across a set of views — otherwise each panel fits itself and the same
+    model silently renders at a different scale in every panel.
+
+    `fit="sphere"` restores the old bounding-sphere framing, for scene
+    renders whose `margin` was hand-tuned against it.
+    """
     V = np.asarray(V, dtype=np.float64)
     N = vertex_normals(V, T)
 
@@ -82,20 +125,15 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         Vc = (V - eye) @ R.T
         Nc = N @ R.T
     else:
-        center = (V.min(axis=0) + V.max(axis=0)) / 2
-        radius = np.linalg.norm(V - center, axis=1).max()
-
-        ya = math.radians(yaw_deg)
-        pa = math.radians(pitch_deg)
-        Ry = np.array([[math.cos(ya), 0, -math.sin(ya)],
-                       [0, 1, 0],
-                       [math.sin(ya), 0, math.cos(ya)]])
-        Rx = np.array([[1, 0, 0],
-                       [0, math.cos(pa), -math.sin(pa)],
-                       [0, math.sin(pa), math.cos(pa)]])
-        R = Rx @ Ry
-
-        dist = radius * margin / math.tan(math.radians(fov_deg) / 2)
+        if center is None:
+            center = (V.min(axis=0) + V.max(axis=0)) / 2
+        center = np.asarray(center, dtype=float)
+        R = orbit_basis(yaw_deg, pitch_deg)
+        if dist is None and fit == "sphere":
+            radius = np.linalg.norm(V - center, axis=1).max()
+            dist = radius * margin / math.tan(math.radians(fov_deg) / 2)
+        elif dist is None:
+            dist = fit_distance(V, center, R, fov_deg, width / height, margin)
         Vc = (V - center) @ R.T
         Vc[:, 2] -= dist          # camera at origin looking down -Z
         Nc = N @ R.T

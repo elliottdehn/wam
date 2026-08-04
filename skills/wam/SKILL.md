@@ -25,6 +25,7 @@ cd "$CLAUDE_PLUGIN_ROOT"                        # or the wam repo checkout
 python3 -m wam.cli models/tauren.wam            # -> out/tauren_sheet.png + .gltf
 python3 -m wam.cli my.wam --anim walk --frames 6
 python3 -m wam.cli my.wam --bones               # skeleton overlay render
+python3 -m wam.cli my.wam --width 760 --height 560   # landscape, for long models
 ```
 
 To compile a model that lives in another project:
@@ -55,16 +56,35 @@ side; the compiler emits `.l`/`.r`.
 **Skeleton** — turtle graphics: `bone thigh parent=pelvis side=0.07 dir=down
 tilt=4 pitch=-12 len=0.21`. `pitch` rotates about +X (tips an `up` bone
 forward, a `down` bone backward, a `fwd` bone downward), `yaw` about +Y,
-`tilt` about +Z (side bones up/down, down bones splay).
+`tilt` about +Z (side bones up/down, down bones splay). `pin <bone>
+at=(x,y,z)` (or `tail=`) nails a bone's world position down so lengthening
+an ancestor doesn't drag everything mounted downstream — never hand-solve a
+compensating root offset.
 
-**Parts** — four generators, all closed and skinned automatically:
+**Parts** — five generators, all closed and skinned automatically:
 - `loft` — cross-section rings along a bone chain (`bones=a..b`) or a free
   ray (`bone=x at=0.5 dir=fwd len=0.1`). Rings: `ring 0.55 w=0.36 d=0.31
   fwd=0.01 material=steel` (`material=` makes color bands: belts, sleeves,
   boots). `tip` collapses to a point; caps `flat|dome|point|none`.
+  - `frame=up|fwd|side` / `refaxis=(x,y,z)` pins which axis `d` spans —
+    **always set it on a diagonal part**, or rings flip 90° at the automatic
+    frame's switchover and panels stand edge-on to what they should span.
+  - `wtop=/wbot=/dtop=/dbot=` make the section asymmetric about its depth
+    axis: keels, flat bellies, broad-shouldered trapezoid chests.
+  - `material_arc=belly:200-340` runs a stripe *around* the tube (0° = the
+    `w` axis, 90° = the `d` axis) — never author a belly as a separate part,
+    it always reads as a disconnected slab with a hard seam.
+  - `skin=boneA:0.6,boneB:0.4` overrides the computed binding for a ring.
 - `sweep` — curved tube from a point: segments with `len r` and bends.
   Use `curl=` (about the transported side axis) for horns/rings/spirals;
   `up=`/`fwd=` world bends degenerate when the tangent aligns with the axis.
+- `web` — **a membrane across a fan of bones**: wings, frills, fins, webbed
+  feet, capes, sails. `web wing anchor=wrist material=membrane
+  trailing=scallop` plus one `rib bones=a..b` line per spar (`inset=` stops
+  short of the tip, `from=` re-roots the leading edge). The compiler builds
+  one shared grid and blends each vertex across the ribs it lies between, so
+  the panels never crack apart and every digit deforms it independently.
+  Do not try to fake this with tubes — that is six failed topologies.
 - `attach` — stock parts: `hoof box sphere eye` with `size w d h taper`.
 - `group` — **compound props (weapons, etc.)**: author once in a clean local
   frame (spine along +Y), mount with one aim:
@@ -103,7 +123,14 @@ actions like a double-arm smash).
    folded surfaces read as invisible/missing faces.
 7. **Ground**: lint reports floating or sunken feet with the distance;
    adjust the root height or limb lengths, then re-check.
-8. **Study a reference model first** (`models/orc.wam` is the most complete:
+8. **Proportions**: write them as `checks` rather than doing the arithmetic
+   once in your head — `assert dist(shoulder.l,hip.l)/len(head) in 2.0..2.5`
+   is re-checked on every compile, and `measure <label> <expr>` prints any
+   measurement you want to watch while iterating.
+9. **Membranes**: a surface between bones is a `web`, never a flattened tube.
+10. **Framing**: if a model is longer than it is tall, render it landscape
+   (`--width 760 --height 560`) — the default panel is portrait.
+11. **Study a reference model first** (`models/orc.wam` is the most complete:
    groups, `on=`, `follow=`, six animations) and copy its patterns.
 
 ## Zones

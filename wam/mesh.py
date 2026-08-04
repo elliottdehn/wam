@@ -126,16 +126,53 @@ def mat_rgb(model, name):
     return (0.7, 0.5, 0.8)
 
 
-def _frame(tangent):
+FRAME_AXES = {"up": (0.0, 1.0, 0.0), "fwd": (0.0, 0.0, 1.0),
+              "side": (1.0, 0.0, 0.0)}
+
+
+def _section_extent(p):
+    """Widest full extent of a ring section, across every half-override."""
+    w, d = p.get("w", 0.0), p.get("d", 0.0)
+    return max(w, d, p.get("wtop", w), p.get("wbot", w),
+               p.get("dtop", d), p.get("dbot", d))
+
+
+def _explicit_skin(bones, spec, suffix, part_name):
+    """Resolve an authored `skin=` list to [(bone name, weight), ...]."""
+    resolved = []
+    for name, weight in spec:
+        try:
+            resolved.append((resolve_bone_ref(bones, name, suffix).name, weight))
+        except WamError:
+            raise WamError("part %r: skin= names unknown bone %r"
+                           % (part_name, name))
+    return resolved
+
+
+def _frame(tangent, ref=None):
     """Return (side, other) axes for a ring perpendicular to tangent.
 
-    'other' carries the ring depth d.  For mostly-vertical tangents the depth
-    axis is the forward (+Z) projection; for mostly-forward tangents it is the
-    up (+Y) projection.
+    'other' carries the ring depth d and is the projection of a reference axis
+    into the ring plane; 'side' carries w.  With no reference axis the choice
+    is automatic: the forward (+Z) projection for mostly-vertical tangents,
+    the up (+Y) projection for mostly-forward ones.  That switch happens at
+    |t·Z| = 0.75 and silently reorients rings near the threshold, so parts
+    that run diagonally should pin the axis with `frame=` / `refaxis=`.
     """
     t = tangent / np.linalg.norm(tangent)
     Z = np.array([0.0, 0.0, 1.0])
     Y = np.array([0.0, 1.0, 0.0])
+    if ref is not None:
+        ref = np.asarray(ref, dtype=float)
+        n = np.linalg.norm(ref)
+        if n > 1e-9:
+            r = ref / n
+            other = r - (r @ t) * t
+            if np.linalg.norm(other) > 1e-6:
+                other /= np.linalg.norm(other)
+                side = np.cross(other, t)
+                return side / np.linalg.norm(side), other
+        # ref parallel to the tangent (or zero): fall through to automatic
     if abs(t @ Z) < 0.75:
         other = Z - (Z @ t) * t
         other /= np.linalg.norm(other)
@@ -146,6 +183,60 @@ def _frame(tangent):
         side = np.cross(other, t)   # for t=+Z: Y x Z = +X
     side /= np.linalg.norm(side)
     return side, other
+
+
+def _frame_ref(part):
+    """Reference axis for a part's ring frame, or None for automatic."""
+    if part.get("refaxis") is not None:
+        return np.asarray(part["refaxis"], dtype=float)
+    name = part.get("frame", "auto")
+    if name == "auto":
+        return None
+    return np.array(FRAME_AXES[name], dtype=float)
+
+
+def _check_frame_ref(out, part, tangents, ref):
+    """Warn when a pinned reference axis degenerates against the path."""
+    if ref is None:
+        return
+    n = np.linalg.norm(ref)
+    if n < 1e-9:
+        raise WamError("part %r: refaxis= must not be the zero vector"
+                       % part["name"])
+    r = ref / n
+    for t in tangents:
+        if abs(float(r @ (t / np.linalg.norm(t)))) > 0.995:
+            out.warnings.append(
+                "part %r pins its ring frame to an axis nearly parallel to "
+                "the path — the rings there fall back to the automatic frame; "
+                "pick a reference axis across the part, not along it"
+                % part["name"])
+            return
+
+
+def _resolve_arcs(out, model, arcs, double_sided):
+    """Resolve [(material, lo, hi)] to [(material index, lo, hi)]."""
+    if not arcs:
+        return None
+    resolved = []
+    for name, lo, hi in arcs:
+        if double_sided:
+            out.double_sided_materials.add(name)
+        resolved.append((out.material(name, mat_rgb(model, name)), lo, hi))
+    return resolved
+
+
+def _arc_material(arcs, base, deg):
+    """Material index for a circumferential position, in degrees."""
+    if not arcs:
+        return base
+    a = deg % 360.0
+    for mat, lo, hi in arcs:
+        lo_n, hi_n = lo % 360.0, hi % 360.0
+        inside = (lo_n <= a <= hi_n) if lo_n <= hi_n else (a >= lo_n or a <= hi_n)
+        if inside:
+            return mat
+    return base
 
 
 def _superellipse(n_sides, exp):
@@ -169,7 +260,8 @@ def _lerp_rings(rings, t):
         if a["t"] <= t <= b["t"]:
             f = (t - a["t"]) / max(b["t"] - a["t"], 1e-9)
             out = dict(a)
-            for k in ("w", "d", "fwd", "side", "up", "roll"):
+            for k in ("w", "d", "fwd", "side", "up", "roll",
+                      "wtop", "wbot", "dtop", "dbot"):
                 va, vb = a.get(k), b.get(k)
                 if va is None and vb is None:
                     continue
@@ -355,16 +447,24 @@ def _orient_tube_components(out, t0, t1, roles, centers, axes, part_name):
 
 
 def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               cap_start, cap_end):
+               cap_start, cap_end, arcs=None):
     """Build a tube from per-ring data.
 
     centers: list of (3,), axes: list of (side, other, tangent),
-    params: list of dicts with w,d,exp,roll, mats: material idx per band,
-    skins: per-ring skin list.
+    params: list of dicts with w,d,exp,roll (plus optional wtop/wbot/dtop/dbot
+    half-section overrides), mats: material idx per band, skins: per-ring skin
+    list, arcs: optional per-ring [(material index, lo_deg, hi_deg)] giving
+    circumferential material bands.
+
+    Vertices are shared between neighbouring faces of the same material and
+    split across material boundaries — along the tube *and* around it — so
+    every color edge stays crisp without hand-authored seams.
     """
     nrings = len(centers)
+    arcs = arcs or [None] * nrings
 
-    def make_ring(ri):
+    def ring_geometry(ri):
+        """(points around the ring, collapsed?, v coordinate)."""
         c = centers[ri]
         side, other, tang = axes[ri]
         p = params[ri]
@@ -374,29 +474,36 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         if roll:
             R = rot_axis(tang, roll)
             side, other = R @ side, R @ other
-        w2, d2 = p["w"] / 2.0, p["d"] / 2.0
-        skin_at = skins[ri] if callable(skins[ri]) else (lambda pt, sk=skins[ri]: sk)
-        if w2 < 1e-6 and d2 < 1e-6:
-            vid = out.add_vert(c, skin_at(c), uv=(0.5, vcoord))
-            return [vid] * n_sides
-        ids = []
-        for si, (cx, sy) in enumerate(_superellipse(n_sides, exp)):
-            pt = c + side * (cx * w2) + other * (sy * d2)
-            ids.append(out.add_vert(pt, skin_at(pt),
-                                    uv=((si + 0.5) / n_sides, vcoord)))
-        return ids
+        # half-extents, per side of the ring's depth axis: the +other half
+        # takes wtop/dtop, the -other half wbot/dbot (each defaulting to the
+        # symmetric w/d), which is what makes keels and trapezoid chests
+        # expressible without leaving the ring language.
+        w_hi = p.get("wtop", p["w"]) / 2.0
+        w_lo = p.get("wbot", p["w"]) / 2.0
+        d_hi = p.get("dtop", p["d"]) / 2.0
+        d_lo = p.get("dbot", p["d"]) / 2.0
+        if max(w_hi, w_lo, d_hi, d_lo) < 1e-6:
+            return [c], True, vcoord
+        pts = []
+        for (cx, sy) in _superellipse(n_sides, exp):
+            wh, dh = (w_hi, d_hi) if sy >= 0 else (w_lo, d_lo)
+            pts.append(c + side * (cx * wh) + other * (sy * dh))
+        return pts, False, vcoord
 
-    # each band (ring ri -> ri+1) owns its boundary verts: duplicate rings at
-    # material changes so baked vertex colors keep crisp edges
-    ring_lower = [None] * nrings   # ids a band uses at its bottom ring
-    ring_upper = [None] * nrings   # ids the band below uses at its top ring
-    for ri in range(nrings):
-        ids = make_ring(ri)
-        ring_lower[ri] = ids
-        ring_upper[ri] = ids
-        if 0 < ri < nrings and ri < len(mats) and mats[ri - 1] != mats[min(ri, len(mats) - 1)]:
-            ring_lower[ri] = make_ring(ri)
-    ring_ids = ring_upper   # caps + legacy uses
+    geom = [ring_geometry(ri) for ri in range(nrings)]
+    cache = {}
+
+    def vert(ri, k, mat):
+        pts, collapsed, vcoord = geom[ri]
+        key = (ri, -1 if collapsed else k, mat)
+        if key in cache:
+            return cache[key]
+        pt = pts[0] if collapsed else pts[k]
+        sk = skins[ri]
+        sk = sk(pt) if callable(sk) else sk
+        uv = (0.5, vcoord) if collapsed else ((k + 0.5) / n_sides, vcoord)
+        cache[key] = out.add_vert(pt, sk, uv=uv)
+        return cache[key]
 
     roles = []
 
@@ -404,55 +511,66 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         out.add_tri(a, b, c, mat)
         roles.append(role)
 
-    def quad(a, b, c, d, mat):
-        tri(a, b, c, mat, "side")
-        tri(a, c, d, mat, "side")
+    def band_material(ri, k):
+        """Material of the quad between side index k and k+1 of band ri."""
+        return _arc_material(arcs[ri], mats[ri], 360.0 * (k + 1) / n_sides)
 
     for ri in range(nrings - 1):
-        A = ring_lower[ri] if ri == 0 else (
-            ring_lower[ri] if mats[ri - 1] != mats[ri] else ring_upper[ri])
-        B = ring_upper[ri + 1]
-        mat = mats[ri]
+        lo_flat = geom[ri][1]
+        hi_flat = geom[ri + 1][1]
+        if lo_flat and hi_flat:
+            continue
         for k in range(n_sides):
             k2 = (k + 1) % n_sides
-            if A[k] == A[k2] and B[k] == B[k2]:
-                continue
-            quad(A[k], A[k2], B[k2], B[k], mat)
+            mat = band_material(ri, k)
+            a, b = vert(ri, k, mat), vert(ri, k2, mat)
+            c, d = vert(ri + 1, k2, mat), vert(ri + 1, k, mat)
+            # A collapsed ring (a `tip`) contributes one triangle per column,
+            # not a quad with a zero-area half.
+            if lo_flat:
+                tri(a, c, d, mat, "side")
+            elif hi_flat:
+                tri(a, b, c, mat, "side")
+            else:
+                tri(a, b, c, mat, "side")
+                tri(a, c, d, mat, "side")
 
-    def cap(ring, center, skin, mat, outward, style, role):
-        if style == "none" or len(set(ring)) < 3:
+    def cap(ri, center, outward, style, role):
+        # A cap takes its own ring's material (the documented per-ring cap
+        # override), not the material of the band leading into it.
+        pts, collapsed, _ = geom[ri]
+        if style == "none" or collapsed:
             return
-        # flat fan (dome = raised fan)
         raise_amt = 0.0
         if style in ("dome", "point"):
-            # apex raised along tangent by 40% of mean radius
-            pts = [out.verts[i] for i in ring]
-            r = np.mean([np.linalg.norm(p - center) for p in pts])
+            # apex raised along tangent by a fraction of the mean radius
+            r = float(np.mean([np.linalg.norm(p - center) for p in pts]))
             raise_amt = r * (0.45 if style == "dome" else 1.0)
         apex = center + outward * raise_amt
-        apex_v = 0.0 if ring is ring_ids[0] else 1.0
-        cid = out.add_vert(apex, skin(apex) if callable(skin) else skin,
-                           uv=(0.5, apex_v))
+        apex_v = 0.0 if role == "start_cap" else 1.0
+        sk = skins[ri]
+        sk = sk(apex) if callable(sk) else sk
+        apex_ids = {}
         for k in range(n_sides):
             k2 = (k + 1) % n_sides
-            if ring[k] == ring[k2]:
-                continue
+            mat = band_material(ri, k)
+            if mat not in apex_ids:
+                apex_ids[mat] = out.add_vert(apex, sk, uv=(0.5, apex_v))
+            cid = apex_ids[mat]
             if role == "start_cap":
                 # Ring vertices are CCW when viewed along +tangent. The start
                 # cap must therefore reverse that order to face -tangent.
-                tri(ring[k2], ring[k], cid, mat, role)
+                tri(vert(ri, k2, mat), vert(ri, k, mat), cid, mat, role)
             else:
                 # The end cap faces +tangent and keeps the ring order.
-                tri(ring[k], ring[k2], cid, mat, role)
+                tri(vert(ri, k, mat), vert(ri, k2, mat), cid, mat, role)
 
     # start cap faces along -tangent, end cap along +tangent
     s_tang = np.asarray(axes[0][2], dtype=float)
     e_tang = np.asarray(axes[-1][2], dtype=float)
-    cap(ring_ids[0], centers[0], skins[0], mats[0], -s_tang,
-        cap_start, "start_cap")
-    cap(ring_ids[-1], centers[-1], skins[-1], mats[-1], e_tang,
-        cap_end, "end_cap")
-    return ring_ids, roles
+    cap(0, centers[0], -s_tang, cap_start, "start_cap")
+    cap(nrings - 1, centers[-1], e_tang, cap_end, "end_cap")
+    return roles
 
 
 def build_loft(out, model, bones, part, suffix="", reflect=False):
@@ -487,29 +605,48 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         raise WamError("loft %r needs bones=a..b or bone=" % part["name"])
 
     # sample a ring at every authored ring position
-    centers, axes, params, mats, skins = [], [], [], [], []
+    ref = _frame_ref(part)
+    part_arcs = part.get("material_arc")
+    centers, axes, params, mats, skins, arcs = [], [], [], [], [], []
+    tangents = []
     for r in rings:
         t = r["t"]
         c = sampler.point(t)
         tang = sampler.tangent(t)
-        side, other = _frame(tang)
+        tangents.append(tang)
+        side, other = _frame(tang, ref)
+        roll = r.get("roll", 0.0)
+        if roll:
+            # Roll first, then offset: `fwd`/`side` name the axes of the
+            # section the author is looking at, not the unrolled frame.
+            R = rot_axis(tang, roll)
+            side, other = R @ side, R @ other
         c = c + other * r.get("fwd", 0.0) + side * r.get("side", 0.0)
         if "up" in r:
             c = c + np.array([0.0, r["up"], 0.0])
+        exp = SHAPE_EXP.get(r.get("shape", ""), default_exp)
         w = r["w"]
         d = r.get("d", w)
+        sect = dict(w=w, d=d, exp=exp, roll=0.0, t=t)
+        for key in ("wtop", "wbot", "dtop", "dbot"):
+            if key in r:
+                sect[key] = r[key]
         if r.get("tip"):
-            w = d = 0.0
-        exp = SHAPE_EXP.get(r.get("shape", ""), default_exp)
+            sect = dict(w=0.0, d=0.0, exp=exp, roll=0.0, t=t)
         centers.append(c)
         axes.append((side, other, tang))
-        params.append(dict(w=w, d=d, exp=exp, roll=r.get("roll", 0.0), t=t))
+        params.append(sect)
         mat_name = r.get("material", base_mat)
         mats.append(out.material(mat_name, mat_rgb(model, mat_name)))
         if part.get("double_sided"):
             out.double_sided_materials.add(mat_name)
+        arcs.append(_resolve_arcs(out, model, r.get("material_arc", part_arcs),
+                                  part.get("double_sided")))
         base_skin = skin_for(t)
-        if "follow" in r:
+        if "skin" in r or "skin" in part:
+            skins.append(_explicit_skin(bones, r.get("skin") or part["skin"],
+                                        suffix, part["name"]))
+        elif "follow" in r:
             # cloth skinning: ring verts partially follow a mirrored bone pair,
             # split left/right by vertex x. follow=thigh:0.8
             spec = r["follow"]
@@ -523,7 +660,10 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
             br = find(fname + ".r") or find(fname)
             if bl is None:
                 raise WamError("follow bone %r not found" % fname)
-            half_w = max(w, 1e-6) / 2.0
+            # The falloff is lateral (world x), so it must be measured against
+            # the ring's widest horizontal extent: on a flat sheet `w` is the
+            # thickness, and dividing by it saturates the term at 1.0.
+            half_w = max(w, d, 1e-6) / 2.0
 
             def cloth_skin(pt, bl=bl, br=br, frac=frac, base=base_skin, hw=half_w):
                 lat = min(1.0, abs(pt[0]) / (0.5 * hw))
@@ -546,8 +686,7 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         theta = math.acos(c)
         L = float(np.linalg.norm(centers[i + 1] - centers[i]))
         reach = L / (2.0 * math.sin(theta / 2.0) + 1e-9)
-        rmax = max(params[i]["w"], params[i]["d"],
-                   params[i + 1]["w"], params[i + 1]["d"]) / 2.0
+        rmax = max(_section_extent(params[i]), _section_extent(params[i + 1])) / 2.0
         if rmax > reach:
             out.warnings.append(
                 "loft %r folds between rings %.2f and %.2f (path bends %.0f\u00b0 "
@@ -557,11 +696,13 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
                 % (part["name"], rings[i]["t"], rings[i + 1]["t"],
                    math.degrees(theta), rmax, reach))
 
+    _check_frame_ref(out, part, tangents, ref)
+
     v0 = len(out.verts)
     t0 = len(out.tris)
-    _, roles = _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-                          part.get("cap_start", "flat"),
-                          part.get("cap_end", "flat"))
+    roles = _emit_tube(out, centers, axes, params, mats, skins, n_sides,
+                       part.get("cap_start", "flat"),
+                       part.get("cap_end", "flat"), arcs=arcs)
     if reflect:
         _reflect_range(out, v0, suffix)
         refl = np.array([-1.0, 1.0, 1.0])
@@ -592,26 +733,41 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
                     part.get("yaw", 0.0), part.get("tilt", 0.0))
 
     # local frame transported along the sweep
-    side, other = _frame(d)
+    ref = _frame_ref(part)
+    side, other = _frame(d, ref)
+    _check_frame_ref(out, part, [d], ref)
     tang = d.copy()
-    centers, axes, params, mats, skins = [], [], [], [], []
-    skin = [(host.name, 1.0)]
+    centers, axes, params, mats, skins, arcs = [], [], [], [], [], []
+    part_arcs = _resolve_arcs(out, model, part.get("material_arc"),
+                              part.get("double_sided"))
+    skin = ( _explicit_skin(bones, part["skin"], suffix, part["name"])
+             if "skin" in part else [(host.name, 1.0)])
 
     total_len = sum(sg["len"] for sg in part["segs"]) or 1.0
     acc_len = [0.0]
 
-    def push(c, r):
+    def push(c, r, seg=None):
+        seg = seg or {}
         centers.append(c.copy())
         axes.append((side.copy(), other.copy(), tang.copy()))
         params.append(dict(w=2 * r, d=2 * r, exp=2.0, t=acc_len[0] / total_len))
-        mats.append(mat)
-        skins.append(skin)
+        if "material" in seg:
+            if part.get("double_sided"):
+                out.double_sided_materials.add(seg["material"])
+            mats.append(out.material(seg["material"],
+                                     mat_rgb(model, seg["material"])))
+        else:
+            mats.append(mat)
+        skins.append(_explicit_skin(bones, seg["skin"], suffix, part["name"])
+                     if "skin" in seg else skin)
+        arcs.append(part_arcs)
 
     Y = np.array([0.0, 1.0, 0.0])
     Z = np.array([0.0, 0.0, 1.0])
+    segs = part["segs"]
     pos = origin.copy()
-    push(pos, part["segs"][0]["r"])
-    for seg in part["segs"]:
+    push(pos, segs[0]["r"], segs[0])
+    for si, seg in enumerate(segs):
         # bends are world-referenced: up=+deg tips the tangent toward +Y,
         # fwd=+deg toward +Z (negative values bend the other way)
         R = np.eye(3)
@@ -633,14 +789,17 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         pos = pos + tang * seg["len"]
         acc_len[0] += seg["len"]
         r = 0.0 if seg.get("tip") else seg["r"]
-        push(pos, r)
+        # a ring carries the material/skin of the band that starts at it, so
+        # `material=` on a seg colors that seg, not the one before it
+        push(pos, r, segs[si + 1] if si + 1 < len(segs) else seg)
 
     v0 = len(out.verts)
     t0 = len(out.tris)
-    _, roles = _emit_tube(
+    roles = _emit_tube(
         out, centers, axes, params, mats, skins, n_sides,
         part.get("cap_start", "flat"),
-        "none" if part["segs"][-1].get("tip") else part.get("cap_end", "dome"))
+        "none" if part["segs"][-1].get("tip") else part.get("cap_end", "dome"),
+        arcs=arcs)
     if reflect:
         _reflect_range(out, v0, suffix)
         refl = np.array([-1.0, 1.0, 1.0])
@@ -652,6 +811,225 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
                             orient_centers, orient_axes,
                             part["name"] + (".r" if reflect else suffix))
     out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))
+
+
+def _blend_skin(a, b, f, limit=4):
+    """Blend two skin lists, keeping the `limit` strongest influences."""
+    if f <= 0.0:
+        return list(a)
+    if f >= 1.0:
+        return list(b)
+    acc = {}
+    for name, w in a:
+        acc[name] = acc.get(name, 0.0) + w * (1.0 - f)
+    for name, w in b:
+        acc[name] = acc.get(name, 0.0) + w * f
+    kept = sorted(acc.items(), key=lambda nw: -nw[1])[:limit]
+    total = sum(w for _, w in kept) or 1.0
+    return [(n, w / total) for n, w in kept]
+
+
+class _Rib:
+    """One spar of a web: a path plus the bones it is skinned to."""
+
+    def __init__(self, sampler, chain, lo, hi, override=None):
+        self.sampler = sampler
+        self.chain = chain
+        self.lo = lo
+        self.hi = hi
+        self.override = override
+
+    def at(self, v):
+        x = self.lo + float(np.clip(v, 0.0, 1.0)) * (self.hi - self.lo)
+        skin = self.override or _chain_skin(self.sampler, self.chain, x)
+        return self.sampler.point(x), skin
+
+
+def build_web(out, model, bones, part, suffix="", reflect=False):
+    """A membrane stretched across a fan of ribs.
+
+    Tubes cannot express a surface that spans several bones — wings, frills,
+    fins, webbed feet, capes, sails. A web samples each rib (a bone chain,
+    optionally rooted at a shared anchor), lofts the surface between adjacent
+    ribs as one grid, and blends the ribs' skin weights across it, so the
+    membrane deforms with every bone it touches and shares its boundary edges
+    with its neighbours by construction.
+    """
+    ribs = part.get("ribs") or []
+    if len(ribs) < 2:
+        raise WamError("web %r needs at least 2 rib lines" % part["name"])
+    base_mat = part.get("material") or "default"
+    mat = out.material(base_mat, mat_rgb(model, base_mat))
+    thickness = float(part.get("thickness", 0.0))
+    if thickness <= 0.0 or part.get("double_sided"):
+        # A bare membrane has no inside; it must render from both faces.
+        out.double_sided_materials.add(base_mat)
+    steps = max(2, int(part.get("steps", 6)))
+    usteps = max(1, int(part.get("usteps", 2)))
+    scallop = 0.0
+    if part.get("trailing", "straight") == "scallop":
+        scallop = 0.2
+    scallop = float(part.get("scallop", scallop))
+
+    anchor_bone = anchor_pt = None
+    if "anchor" in part:
+        anchor_bone = resolve_bone_ref(bones, part["anchor"][0], suffix)
+        anchor_pt = (anchor_bone.point_at(part["anchor"][1])
+                     + np.array(part.get("offset", (0, 0, 0)), dtype=float))
+
+    def make_rib(rib):
+        chain = chain_bones(bones, rib["chain"][0], rib["chain"][1], suffix)
+        head0 = chain[0].head
+        src_bone, src_pt = anchor_bone, anchor_pt
+        if "from" in rib:
+            src_bone = resolve_bone_ref(bones, rib["from"][0], suffix)
+            src_pt = src_bone.point_at(rib["from"][1])
+        pts, blist = [], []
+        if src_pt is not None and np.linalg.norm(head0 - src_pt) > 1e-6:
+            pts.append(src_pt)
+            blist.append(src_bone or chain[0])
+        pts.append(head0)
+        for b in chain:
+            pts.append(b.tail)
+            blist.append(b)
+        override = (_explicit_skin(bones, rib["skin"], suffix, part["name"])
+                    if "skin" in rib else
+                    (_explicit_skin(bones, part["skin"], suffix, part["name"])
+                     if "skin" in part else None))
+        return _Rib(PathSampler(pts), blist, rib.get("start", 0.0),
+                    1.0 - rib.get("inset", 0.0), override)
+
+    spars = [make_rib(r) for r in ribs]
+    ncols = (len(spars) - 1) * usteps + 1
+    nrows = steps + 1
+
+    pts = [[None] * ncols for _ in range(nrows)]
+    skins = [[None] * ncols for _ in range(nrows)]
+    for ci in range(ncols):
+        u = ci / float(usteps)
+        i = min(int(math.floor(u)), len(spars) - 2)
+        f = u - i
+        # The trailing edge bows back toward the anchor between ribs and
+        # touches each rib's tip exactly. The bow grows with v so it vanishes
+        # at the root: a uniform dip would push interior rows backwards faster
+        # than neighbouring ribs pull them apart, folding the surface where
+        # the fan is narrowest.
+        bow = scallop * (4.0 * f * (1.0 - f))
+        for rj in range(nrows):
+            v = rj / float(steps)
+            v *= 1.0 - bow * v
+            pa, ska = spars[i].at(v)
+            pb, skb = spars[i + 1].at(v)
+            pts[rj][ci] = pa * (1.0 - f) + pb * f
+            skins[rj][ci] = _blend_skin(ska, skb, f)
+
+    # surface normal per grid point, for the thick variant and for winding
+    def grid_normal(rj, ci):
+        r0, r1 = max(rj - 1, 0), min(rj + 1, nrows - 1)
+        c0, c1 = max(ci - 1, 0), min(ci + 1, ncols - 1)
+        du = pts[rj][c1] - pts[rj][c0]
+        dv = pts[r1][ci] - pts[r0][ci]
+        n = np.cross(du, dv)
+        ln = float(np.linalg.norm(n))
+        return n / ln if ln > 1e-12 else np.array([0.0, 1.0, 0.0])
+
+    v0 = len(out.verts)
+    t0 = len(out.tris)
+
+    def sheet(offset_sign):
+        """Emit one layer of grid vertices; returns the id grid."""
+        ids = [[None] * ncols for _ in range(nrows)]
+        for rj in range(nrows):
+            for ci in range(ncols):
+                p = pts[rj][ci]
+                if offset_sign:
+                    p = p + grid_normal(rj, ci) * (offset_sign * thickness / 2.0)
+                # ribs that share an anchor land on the same point; reuse the
+                # vertex so the root of the fan is a seam, not a crack
+                if ci and np.linalg.norm(p - out.verts[ids[rj][ci - 1]]) < 1e-7:
+                    ids[rj][ci] = ids[rj][ci - 1]
+                    continue
+                ids[rj][ci] = out.add_vert(
+                    p, skins[rj][ci],
+                    uv=(ci / max(ncols - 1, 1), rj / max(nrows - 1, 1)))
+        return ids
+
+    def tri(a, b, c):
+        # the fan root is a genuine singularity: ribs that share an anchor
+        # meet there, so the first row of faces can pinch to nothing
+        n = np.cross(out.verts[b] - out.verts[a], out.verts[c] - out.verts[a])
+        if float(n @ n) < 1e-20:
+            return
+        out.add_tri(a, b, c, mat)
+
+    def quad(a, b, c, d):
+        """Emit a quad, degrading to a triangle where an edge collapsed."""
+        corners = [a, b, c, d]
+        uniq = [x for i, x in enumerate(corners) if x != corners[i - 1]]
+        if len(uniq) == 4:
+            tri(a, b, c)
+            tri(a, c, d)
+        elif len(uniq) == 3:
+            tri(uniq[0], uniq[1], uniq[2])
+
+    front = sheet(1 if thickness > 0 else 0)
+    for rj in range(nrows - 1):
+        for ci in range(ncols - 1):
+            quad(front[rj][ci], front[rj][ci + 1],
+                 front[rj + 1][ci + 1], front[rj + 1][ci])
+
+    if thickness > 0:
+        back = sheet(-1)
+        for rj in range(nrows - 1):
+            for ci in range(ncols - 1):
+                quad(back[rj][ci], back[rj + 1][ci],
+                     back[rj + 1][ci + 1], back[rj][ci + 1])
+        # rim: walk the grid boundary once, front layer to back layer
+        loop = ([(0, ci) for ci in range(ncols - 1)]
+                + [(rj, ncols - 1) for rj in range(nrows - 1)]
+                + [(nrows - 1, ci) for ci in range(ncols - 1, 0, -1)]
+                + [(rj, 0) for rj in range(nrows - 1, 0, -1)])
+        for (r0, c0), (r1, c1) in zip(loop, loop[1:] + loop[:1]):
+            quad(front[r0][c0], back[r0][c0], back[r1][c1], front[r1][c1])
+
+    if reflect:
+        _reflect_range(out, v0, suffix)
+    if thickness > 0:
+        # a slab encloses a volume: orient it the same way as any other solid
+        _fix_winding(out, t0, len(out.tris))
+    else:
+        _fix_sheet_winding(out, v0, len(out.verts), t0, len(out.tris))
+    out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))
+
+
+def _fix_sheet_winding(out, v0, v1, t0, t1):
+    """Point a web's faces away from the model's centerline.
+
+    A membrane has no enclosed volume to orient against, so the only stable
+    reference is which way it faces. Mirroring reflects vertices without
+    reversing triangles, so without this the `.r` copy of a wing would be
+    wound inside out relative to its twin, and the two would shade
+    differently. Double-sided materials make the choice cosmetic; consistency
+    across the mirrored pair is not.
+    """
+    tris = list(range(t0, t1))
+    if not tris:
+        return
+    verts = np.array([out.verts[i] for i in range(v0, v1)])
+    center = verts.mean(axis=0)
+    axis = np.array([center[0], 0.0, 0.0])
+    if np.linalg.norm(axis) < 1e-9:
+        axis = np.array([0.0, 1.0, 0.0])
+    axis = axis / np.linalg.norm(axis)
+    vote = 0.0
+    for ti in tris:
+        i, j, k = out.tris[ti]
+        n = np.cross(out.verts[j] - out.verts[i], out.verts[k] - out.verts[i])
+        vote += float(n @ axis)
+    if vote < 0.0:
+        for ti in tris:
+            i, j, k = out.tris[ti]
+            out.tris[ti] = (i, k, j)
 
 
 def _reflect_range(out, v0, suffix):
@@ -759,7 +1137,8 @@ def _fix_winding(out, t0, t1):
 
 def build(model, bones):
     out = MeshOut()
-    builders = {"loft": build_loft, "sweep": build_sweep, "attach": build_attach}
+    builders = {"loft": build_loft, "sweep": build_sweep,
+                "attach": build_attach, "web": build_web}
     pending = [None, 0]   # [group dict, vert start]
 
     def finalize_group():
@@ -795,6 +1174,10 @@ def build(model, bones):
         if g is not None and pending[0] is None:
             pending[0], pending[1] = g, len(out.verts)
         fn = builders[part["kind"]]
+        if g is not None and part["kind"] == "web":
+            raise WamError("web %r cannot live in a group: a membrane is "
+                           "defined by the bones it spans, and a group is a "
+                           "rigid frame with none" % part["name"])
         if g is not None:
             # build in the group's local frame around a synthetic origin bone
             fake = {"__group__": Bone("__group__", None, (0, 0, 0), (0, 1, 0), 0.0)}

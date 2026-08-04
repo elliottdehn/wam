@@ -173,10 +173,11 @@ colors = [rgb for _, rgb in mats]
 UV = np.concatenate(all_uv)
 
 os.makedirs("out", exist_ok=True)
-img = wr.render_view(V, T, M, colors, yaw_deg=205, pitch_deg=22,
+# margins tuned against the bounding-sphere fit; keep it
+img = wr.render_view(V, T, M, colors, yaw_deg=205, pitch_deg=22, fit="sphere",
                      width=1100, height=700, fov_deg=30, margin=0.82, uv=UV, tex=mega)
 wr.write_png("out/town_wide.png", img)
-img = wr.render_view(V, T, M, colors, yaw_deg=155, pitch_deg=13,
+img = wr.render_view(V, T, M, colors, yaw_deg=155, pitch_deg=13, fit="sphere",
                      width=1100, height=700, fov_deg=24, margin=0.55, uv=UV, tex=mega)
 wr.write_png("out/town_close.png", img)
 

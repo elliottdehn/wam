@@ -850,9 +850,10 @@ def compile_zone(path, out_prefix):
     img = wr.render_view(V, T, M, colors, width=1200, height=650, fov_deg=55,
                          uv=UV, tex=mega, sky=sky, fog=fog, eye=eye, look=look)
     wr.write_png(out_prefix + "_vista.png", img)
+    # margin tuned against the bounding-sphere fit; keep it
     img = wr.render_view(V, T, M, colors, yaw_deg=215, pitch_deg=24,
                          width=1200, height=700, fov_deg=30, margin=0.78,
-                         uv=UV, tex=mega, sky=sky)
+                         uv=UV, tex=mega, sky=sky, fit="sphere")
     wr.write_png(out_prefix + "_high.png", img)
     wr.write_png(out_prefix + "_tex.png", mega)
 

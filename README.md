@@ -8,11 +8,12 @@ glTF 2.0 with software-rendered turntables for visual iteration.
 
 The founding rule: the author only makes **discrete, named, relative,
 symmetric** decisions — bone angles as words+degrees, body masses as
-cross-section rings, symmetry via `mirror` blocks, props in local-frame
-`group`s. The compiler generates every vertex, skin weight, normal, and
-winding, and a semantic linter rejects the classes of silent geometry bugs
-we hit while building the reference models (folds, wrong-bone bindings,
-floating feet, inside-out faces).
+cross-section rings, membranes as fans of ribs, symmetry via `mirror`
+blocks, props in local-frame `group`s. The compiler generates every vertex,
+skin weight, normal, and winding, and a semantic linter rejects the classes
+of silent geometry bugs we hit while building the reference models (folds,
+wrong-bone bindings, floating feet, inside-out faces) — plus whatever
+proportions you write down yourself in a `checks` section.
 
 | | | |
 |---|---|---|
@@ -38,6 +39,7 @@ baked into an auto-unwrapped texel atlas that ships inside the glTF:
 python3 -m wam.cli models/tauren.wam            # compile + render 4-view sheet
 python3 -m wam.cli models/tauren.wam --anim walk --frames 6
 python3 -m wam.cli models/tauren.wam --bones    # skeleton overlay
+python3 -m wam.cli models/dragon.wam --width 760 --height 560   # landscape panels
 ```
 
 Outputs land in `out/`: a skinned, animated `.gltf` (drops into

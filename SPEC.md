@@ -13,7 +13,13 @@ plus turntable PNG renders for visual iteration.
 python3 -m wam.cli models/tauren.wam            # sheet PNG + glTF + viewer JSON
 python3 -m wam.cli models/tauren.wam --bones    # also render skeleton overlay
 python3 -m wam.cli models/tauren.wam --anim walk --frames 6
+python3 -m wam.cli models/dragon.wam --width 760 --height 560   # landscape
 ```
+
+Panels default to 480×600 portrait; pass `--width/--height` for anything
+longer than it is tall. The camera fits the model's **projected extents** in
+each view (not its bounding sphere) and uses one distance for the whole
+sheet, so panels share a scale and nothing crops off the sides.
 
 Every compile also writes `out/<name>_viewer.json` — open
 `viewer/template.html` in a browser and drop the JSON on it to inspect the
@@ -33,9 +39,9 @@ model interactively (orbit, wireframe, skeleton, animation playback).
     splays a `down` bone outward (+).
 - Comments start with `#` (hex colors like `#6b4a33` are still parsed).
 - Sections appear in order: `model`, `palette`, `skeleton`, `parts`,
-  `textures` (optional), `animations`. A `mirror` … `end` block inside
-  `skeleton`/`parts` authors the left side only; the compiler emits `.l` and
-  a reflected `.r`.
+  `textures` (optional), `animations`, `checks` (optional). A `mirror` … `end`
+  block inside `skeleton`/`parts` authors the left side only; the compiler
+  emits `.l` and a reflected `.r`.
 
 ## `model`
 
@@ -79,10 +85,27 @@ skeleton
 - Inside `mirror`, `parent=` references resolve to the same-side bone first
   (`clavicle` → `clavicle.l`), falling back to central bones.
 
+**Pinning** — every bone's position is derived from its ancestors, so
+lengthening the trunk moves every wing, limb, and prop mounted downstream.
+Rather than hand-solving a compensating offset, nail the bone down:
+
+```
+skeleton
+  ...
+  pin wing_root at=(0.09,1.66,0.20)      # absolute head, whatever the spine does
+  pin chest tail=(0,1.07,0)              # or hold the tip and let the head follow
+  bone horn parent=skull head=(0.05,1.9,0.1) dir=up len=0.10   # same, inline
+```
+
+A pin overrides where the parent chain would have put the bone; the bone
+still belongs to the hierarchy and still animates with its parent. Inside a
+`mirror` block the pin coordinates reflect for the `.r` copy like any other
+offset — write `pin wing_root.r` to target one side literally.
+
 ## `parts`
 
-Three generators (`loft`, `sweep`, `attach`) plus the `group` construct for
-compound props. Everything is closed and skinned automatically; ring/segment
+Four generators (`loft`, `sweep`, `web`, `attach`) plus the `group` construct
+for compound props. Everything is closed and skinned automatically; ring/segment
 counts come from `style` (override per part with `sides=`). `shape=` on a
 loft line sets the default cross-section for all its rings.
 
@@ -104,13 +127,79 @@ loft torso bones=pelvis..neck material=fur
 - Ring options: `d=` depth (defaults to `w`), `fwd= side= up=` center offsets,
   `shape=round|squarish|box`, `roll=`, `material=` (band + cap override),
   `tip` (converge to a point).
-- `w` spans the side axis, `d` spans forward (for vertical chains) or up (for
-  forward chains).
+- `w` spans the side axis, `d` spans the **depth axis** — see `frame=` below.
+- `fwd=`/`side=` offsets move the ring center along its own axes *after*
+  `roll=`, so they mean what the rolled section looks like; `up=` is always
+  world +Y.
 - Skinning: each ring binds to the chain bone under it, blending near joints.
 - **Cloth**: `follow=<bone>:<frac>` on a ring makes its vertices partially
   follow a mirrored bone pair, split left/right per vertex — the kilt idiom:
   `ring 1.00 w=0.41 follow=thigh:0.85` makes the hem swing with the legs
   instead of letting them clip through.
+
+#### `frame=` — pin the ring's depth axis
+
+By default the depth axis is chosen automatically: forward (+Z) for
+mostly-vertical paths, up (+Y) for mostly-forward ones, switching at 45°-ish
+of path tilt. A part that runs diagonally sits near that switch, and rings on
+either side of it stand at right angles to each other for no visible reason.
+Say which axis you meant:
+
+```
+loft body bones=pelvis..neck frame=up      # d spans up/down, w spans left/right
+loft blade bone=hand dir=fwd len=0.4 refaxis=(0.3,1,0)
+```
+
+`frame=auto|up|fwd|side` picks a world axis; `refaxis=(x,y,z)` gives an
+arbitrary one. Either way `d` spans the reference axis projected into the
+ring plane, and `w` spans the perpendicular. Lint warns if the axis you named
+runs along the part instead of across it.
+
+#### Asymmetric sections
+
+Rings are centered superellipses, so `w`/`d` are symmetric about the center —
+which makes a keel, a flat belly, or a broad-shouldered inverted trapezoid
+inexpressible. Override either half of the depth axis independently:
+
+```
+ring 0.60 w=0.34 wtop=0.34 wbot=0.22 dtop=0.22 dbot=0.34
+```
+
+`wtop`/`dtop` apply to the +depth half of the section, `wbot`/`dbot` to the
+−depth half; each falls back to plain `w`/`d`. Pair this with `frame=up` so
+"top" reliably means up.
+
+#### `material_arc=` — bands *around* the tube
+
+`material=` on a ring bands the tube along its length. To run a stripe down
+it instead — a pale belly, a dorsal ridge, a painted panel — name an arc in
+degrees, where 0° is the +side axis (`w`) and 90° the +depth axis (`d`):
+
+```
+loft body bones=pelvis..neck frame=up material=hide material_arc=belly:200-340
+  ...
+  ring 0.60 w=0.34 material_arc=belly:190-350,ridge:80-100   # per-ring override
+```
+
+Arcs may wrap past 360 (`330-30`). This replaces the old workaround of
+authoring the belly as a separate part, which always read as a disconnected
+slab with a hard seam. Vertices split at every material boundary — along the
+tube *and* around it — so the color edge stays crisp.
+
+#### Explicit skin weights
+
+`skin=<bone>[:<w>],…` on a ring (or on the `loft`/`sweep` line, or a `seg`)
+replaces the computed binding for those vertices. Weights are relative and
+get normalized; glTF keeps the four strongest:
+
+```
+ring 0.40 w=0.30 skin=wf2:0.6,wf3:0.4
+```
+
+Use it when a surface belongs to several bones at once and `follow=` (which
+resolves exactly one mirrored pair, split by world x) is the wrong shape —
+though for a membrane spanning a fan of bones, reach for `web` instead, which
+computes the blend for you.
 
 ### `sweep` — a curved tube from a point (horns, tusks)
 
@@ -126,6 +215,45 @@ sweep horn bone=head at=0.50 offset=(0.085,0.035,0) dir=side yaw=12 material=hor
   seg len=0.055 r=0.016 up=55 fwd=15
   seg len=0.045 r=0.008 up=35 fwd=20 tip
 ```
+
+Segments also take `material=` (a band from that segment onward) and `skin=`.
+A sweep honours `frame=`/`refaxis=` for its starting cross-section.
+
+### `web` — a membrane across a fan of bones
+
+`loft` and `sweep` both emit closed tubes, so a surface spanning several
+bones — a wing, a frill, a fin, a webbed foot, a cape, a sail — cannot be
+built out of them. A `web` lofts the surface *between* ribs:
+
+```
+mirror
+  web wing anchor=wrad:0.0 material=membrane trailing=scallop scallop=0.22
+    rib bones=whum..wf1 from=spine2:0.9      # leading edge, rooted at the body
+    rib bones=wf1..wf1 inset=0.06
+    rib bones=wf2..wf2 inset=0.06
+    rib bones=wf3..wf3 inset=0.06
+    rib bones=wf4..wf4 inset=0.10
+end
+```
+
+- Each `rib` is a bone chain (`bones=a..b` or `bone=x`) running out from the
+  shared `anchor=<bone>[:<t>]`, or from its own `from=<bone>[:<t>]`.
+- `inset=` stops the membrane short of the rib tip (claws stick out past it);
+  `start=` moves where it begins.
+- `trailing=scallop` bows the outer edge back between rib tips —
+  `scallop=` sets how far (default 0.2 of the span). `trailing=straight`
+  (the default) runs the edge tip to tip.
+- `steps=` rows along the ribs, `usteps=` columns per panel (default 6 / 2).
+- `thickness=` makes the membrane a closed slab instead of a single surface;
+  a zero-thickness web is emitted as one sheet and its material is marked
+  double-sided automatically.
+
+Two things the compiler does that you would otherwise do by hand and get
+wrong: the whole fan is **one grid**, so adjacent panels share their boundary
+vertices instead of cracking apart, and every vertex is skinned to a
+**blend of the ribs it lies between**, so the membrane stretches with each
+digit independently. A web must reference real bones, so it cannot live
+inside a `group`.
 
 ### `attach` — parametric stock parts
 
@@ -251,6 +379,35 @@ animations
 - Anims export to glTF as sampled quaternion tracks; `--anim NAME` renders a
   preview strip via CPU skinning.
 
+## `checks` — proportions the compiler enforces
+
+Proportion is the thing hand-verification is worst at: "shoulder to hip
+should be two to two and a half head lengths" turns into arithmetic done once
+and never re-checked after the next edit. Write it down instead and let every
+compile re-run it:
+
+```
+checks
+  assert dist(shoulder.l, hip.l) / len(head) in 2.0..2.5
+  assert y(hoof.l.tail) < 0.02              # feet on the ground
+  assert width / height == 0.45 +- 0.05
+  measure snout dist(skull, jaw.tail)       # just report it every compile
+```
+
+- `assert <expr> in <lo>..<hi>`, or `<expr> <op> <value>` with
+  `< > <= >= ==`, optionally `== <value> +- <tol>`.
+- `measure <label> <expr>` prints the value as an info line.
+- **Points**: a bone name is its head; `bone.tail` and `bone.mid` are the
+  other two; a part name is its bounding-box center. Mirrored names resolve
+  to the `.l` side when unsuffixed.
+- **Functions**: `dist(a,b)`, `len(bone)`, `x/y/z(point)`,
+  `width/height/depth/span(part)`, `abs`, `min`, `max`.
+- **Globals**: `height`, `width`, `depth` (the whole model's bbox), `ground`
+  (lowest vertex), `top`, `pi`. Arithmetic is `+ - * / **` and parentheses.
+
+Failures are reported as lint warnings naming the measured value and the
+expectation; passing checks print as info so the numbers stay visible.
+
 ## Zones — environments from landforms and rules
 
 Beyond single models, `wam.zone` compiles a `.zone` file — terrain,
@@ -324,9 +481,15 @@ The load-bearing rules, each learned the hard way:
 feet dipping below / floating above ground, asymmetry, degenerate triangles,
 **loft folds** (a ring wider than the bend it sits on doubles the surface
 back — the classic "invisible faces" bug; split the loft at the joint),
-parts hosted on the wrong bone, plus a proportion report (head-heights,
-bbox). Warnings name the fix — the intended workflow is *compile → read
-warnings → look at the render sheet → edit angles/ratios → repeat*.
+parts hosted on the wrong bone, ring frames pinned along the path instead of
+across it, your own `checks`, plus a proportion report (head-heights, bbox).
+Warnings name the fix — the intended workflow is *compile → read warnings →
+look at the render sheet → edit angles/ratios → repeat*.
+
+Every generator now collapses cleanly (a `tip` ring emits triangles, not
+zero-area quad halves), so **any** degenerate triangle is a real defect and
+the lint reports it from the first one — the warning list is meant to be
+empty, not skimmed.
 
 ## Files
 

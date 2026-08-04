@@ -112,8 +112,11 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
     JOINTS = np.zeros((len(V), 4), dtype=np.uint16)
     WEIGHTS = np.zeros((len(V), 4), dtype=np.float32)
     for vi, sk in enumerate(mesh.skin):
+        # glTF carries four influences per vertex; normalize over the four
+        # that survive so a truncated blend still sums to one.
+        sk = sorted(sk, key=lambda nw: -nw[1])[:4]
         total = sum(w for _, w in sk) or 1.0
-        for si, (bn, w) in enumerate(sk[:4]):
+        for si, (bn, w) in enumerate(sk):
             JOINTS[vi, si] = joint_index[bn]
             WEIGHTS[vi, si] = w / total
 
