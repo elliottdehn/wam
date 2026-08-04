@@ -1,0 +1,6 @@
+{
+  "name": "wam",
+  "description": "Author low-poly WoW-style 3D characters (mesh, rig, animations) in the WAM text language; compiles to glTF with turntable renders for visual iteration.",
+  "version": "0.1.0",
+  "author": { "name": "elliottdehn" }
+}

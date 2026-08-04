@@ -1,0 +1,197 @@
+# Tauren — WoW-style minotaur. All lengths are fractions of height.
+model tauren
+  height 2.6
+  style chunky
+
+palette
+  fur      #6b4a33
+  fur_dark #4a3323
+  mane     #2e2117
+  horn     #cbbfa4
+  hoof     #3a2c1f
+  nose     #4a3830
+  eye      #f2c14e
+  gold     #d8a83c
+  cloth    #7a2f26
+  leather  #4e3423
+
+skeleton
+  root pelvis at 0.55
+  bone spine1 parent=pelvis dir=up pitch=10 len=0.13
+  bone spine2 parent=spine1 dir=up pitch=16 len=0.13
+  bone neck   parent=spine2 dir=fwd pitch=-56 len=0.12
+  bone head   parent=neck   dir=fwd pitch=-16 len=0.14
+  bone tail1  parent=pelvis dir=down pitch=38 len=0.10
+  bone tail2  parent=tail1  dir=down pitch=15 len=0.10
+  mirror
+    bone clavicle parent=spine2 dir=side tilt=-14 len=0.21
+    bone upperarm parent=clavicle dir=down tilt=12 pitch=-6 len=0.21
+    bone forearm  parent=upperarm dir=down tilt=6 pitch=-16 len=0.18
+    bone hand     parent=forearm  dir=down tilt=6 pitch=-14 len=0.08
+    bone thigh    parent=pelvis side=0.075 dir=down tilt=4 pitch=-12 len=0.21
+    bone shin     parent=thigh  dir=down pitch=16 len=0.19
+    bone cannon   parent=shin   dir=down pitch=-14 len=0.11
+    bone hoofb    parent=cannon dir=fwd pitch=55 len=0.055
+  end
+
+parts
+  loft torso bones=pelvis..spine2 material=fur
+    ring 0.00 w=0.33 d=0.28
+    ring 0.29 w=0.32 d=0.30 fwd=0.010
+    ring 0.58 w=0.34 d=0.33 fwd=0.015
+    ring 0.85 w=0.40 d=0.32
+    ring 1.00 w=0.41 d=0.30 fwd=-0.008
+    cap start=dome end=dome
+
+  loft neckm bones=neck..neck material=fur
+    ring 0.00 w=0.20 d=0.18
+    ring 1.00 w=0.16 d=0.15
+    cap start=flat end=flat
+
+  loft skull bones=head..head material=fur
+    ring 0.00 w=0.17 d=0.19
+    ring 0.55 w=0.21 d=0.21
+    ring 1.00 w=0.145 d=0.14
+    cap start=dome end=flat
+
+  loft muzzle bone=head at=0.88 offset=(0,-0.035,0) dir=fwd pitch=10 len=0.15 material=fur
+    ring 0.00 w=0.125 d=0.11
+    ring 0.60 w=0.110 d=0.095
+    ring 1.00 w=0.080 d=0.070 material=nose
+    cap start=none end=flat
+
+  loft tail bones=tail1..tail2 material=fur
+    ring 0.00 w=0.045 d=0.045
+    ring 0.70 w=0.032 d=0.032
+    ring 0.80 w=0.062 d=0.062 material=mane
+    ring 1.00 w=0.018 d=0.018 tip material=mane
+    cap start=flat end=none
+
+  loft beard bone=head at=0.82 offset=(0,-0.055,0.050) dir=down pitch=-18 len=0.08 material=mane
+    ring 0.00 w=0.055 d=0.045
+    ring 0.55 w=0.042 d=0.034
+    ring 1.00 w=0.015 d=0.012 tip
+    cap start=flat end=none
+
+  loft mane bone=spine2 at=0.90 offset=(0,0,-0.065) dir=up pitch=30 len=0.22 material=mane
+    ring 0.00 w=0.18 d=0.085
+    ring 0.35 w=0.15 d=0.075
+    ring 0.70 w=0.11 d=0.060
+    ring 1.00 w=0.05 d=0.030 tip
+    cap start=flat end=none
+
+  sweep nosering bone=head at=1.0 offset=(0,-0.088,0.146) dir=down pitch=-12 material=gold
+    seg len=0.019 r=0.007 curl=52
+    seg len=0.019 r=0.007 curl=52
+    seg len=0.019 r=0.007 curl=52
+    seg len=0.019 r=0.007 curl=52
+    seg len=0.019 r=0.007 curl=52
+    seg len=0.019 r=0.007 curl=52
+
+  loft kilt bone=pelvis at=0 offset=(0,0.06,0) dir=down len=0.28 material=cloth shape=squarish
+    ring 0.00 w=0.37 d=0.31 material=leather
+    ring 0.16 w=0.36 d=0.31
+    ring 0.55 w=0.35 d=0.31 follow=thigh:0.55
+    ring 1.00 w=0.41 d=0.35 follow=thigh:0.85
+    cap start=flat end=flat
+
+  mirror
+    sweep horn bone=head at=0.50 offset=(0.085,0.035,0) dir=side yaw=12 material=horn
+      seg len=0.05 r=0.036 up=15
+      seg len=0.06 r=0.027 up=45
+      seg len=0.055 r=0.016 up=55 fwd=15
+      seg len=0.045 r=0.008 up=35 fwd=20 tip
+
+    loft ear bone=head at=0.28 offset=(0.092,-0.012,0) dir=side tilt=-45 yaw=38 len=0.10 material=fur
+      ring 0.00 w=0.050 d=0.022
+      ring 0.50 w=0.065 d=0.020
+      ring 1.00 w=0.032 d=0.010
+      cap start=flat end=flat
+
+    attach eye_l bone=head kind=eye at=0.84 offset=(0.060,0.020,0.028) size=0.022 material=eye
+
+    loft arm bones=upperarm..forearm material=fur
+      ring 0.00 w=0.15 d=0.15
+      ring 0.25 w=0.12 d=0.12
+      ring 0.50 w=0.095 d=0.095
+      ring 0.72 w=0.10 d=0.10 material=leather
+      ring 1.00 w=0.075 d=0.075 material=leather
+      cap start=dome end=flat
+
+    loft fist bones=hand..hand material=fur_dark
+      ring 0.00 w=0.075 d=0.055
+      ring 1.00 w=0.060 d=0.050
+      cap start=none end=dome
+
+    loft leg bones=thigh..cannon material=fur
+      ring 0.00 w=0.17 d=0.18
+      ring 0.30 w=0.15 d=0.16
+      ring 0.55 w=0.115 d=0.125
+      ring 0.78 w=0.082 d=0.088
+      ring 0.90 w=0.100 d=0.105 material=fur_dark
+      ring 1.00 w=0.065 d=0.070 material=fur_dark
+      cap start=flat end=flat
+
+    attach hoof_in  bone=hoofb kind=hoof at=0.25 offset=(-0.026,0,0) size=0.055 w=0.048 d=0.115 material=hoof
+    attach hoof_out bone=hoofb kind=hoof at=0.25 offset=(0.026,0,0) size=0.055 w=0.048 d=0.115 material=hoof
+  end
+
+animations
+  pose breathe
+    spine2 pitch=2
+    clavicle.* roll=2
+
+  anim idle loop dur=3.0
+    key 0% pose=rest
+    key 50% pose=breathe
+    key 100% pose=rest
+
+  anim walk loop dur=1.1
+    ch thigh.l pitch 0%=-21 50%=18 100%=-21
+    ch shin.l pitch 0%=6 40%=14 55%=26 75%=46 100%=6
+    ch cannon.l pitch 0%=-5 50%=6 75%=-16 100%=-5
+    ch upperarm.l pitch 0%=18 50%=-16 100%=18
+    ch forearm.l pitch 0%=4 50%=-18 100%=4
+    ch spine1 roll 0%=3 50%=-3 100%=3
+    ch spine2 yaw 0%=-4 50%=4 100%=-4
+    ch head yaw 0%=3 50%=-3 100%=3
+    mirrorphase 50%
+
+  anim run loop dur=0.65
+    ch thigh.l pitch 0%=-38 50%=30 100%=-38
+    ch shin.l pitch 0%=10 40%=20 60%=45 78%=70 100%=10
+    ch cannon.l pitch 0%=-6 50%=10 75%=-24 100%=-6
+    ch upperarm.l pitch 0%=26 50%=-24 100%=26
+    ch forearm.l pitch 0%=-24 50%=-38 100%=-24
+    ch spine1 pitch 0%=6 25%=8 50%=6 75%=8 100%=6
+    ch spine1 roll 0%=4 50%=-4 100%=4
+    mirrorphase 50%
+
+  pose stagger
+    spine1 pitch=-8
+    head pitch=-14
+    upperarm.* pitch=-35
+    forearm.* pitch=-20
+
+  pose fallen
+    pelvis pitch=-78
+    thigh.* pitch=24
+    shin.* pitch=-30
+    upperarm.* pitch=-30
+    head pitch=-24
+
+  anim death dur=1.4
+    key 0% pose=rest
+    key 25% pose=stagger
+    key 65% pose=fallen
+    key 100% pose=fallen
+
+  anim attack dur=0.9
+    ch spine2 yaw 0%=14 35%=18 60%=-26 100%=0
+    ch spine1 yaw 0%=6 35%=8 60%=-12 100%=0
+    ch clavicle.r pitch 0%=0 35%=-20 60%=10 100%=0
+    ch upperarm.r pitch 0%=10 35%=-150 60%=35 100%=0
+    ch upperarm.r yaw 0%=0 35%=-25 60%=10 100%=0
+    ch forearm.r pitch 0%=-8 35%=-40 60%=-6 100%=-8
+    ch upperarm.l pitch 0%=0 35%=25 60%=-15 100%=0
+    ch head yaw 0%=6 35%=10 60%=-10 100%=0

@@ -1,0 +1,11 @@
+{
+  "name": "wam",
+  "owner": { "name": "elliottdehn" },
+  "plugins": [
+    {
+      "name": "wam",
+      "source": "./",
+      "description": "WAM: a text language + compiler for LLM-authored low-poly WoW-style characters — models, rigs, and animations from ~150 lines of readable source."
+    }
+  ]
+}
