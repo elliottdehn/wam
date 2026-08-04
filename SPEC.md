@@ -251,6 +251,73 @@ animations
 - Anims export to glTF as sampled quaternion tracks; `--anim NAME` renders a
   preview strip via CPU skinning.
 
+## Zones — environments from landforms and rules
+
+Beyond single models, `wam.zone` compiles a `.zone` file — terrain,
+surfacing, waterways, and prop placement as named, discrete decisions —
+into one textured scene (viewer JSON + vista renders):
+
+```
+python3 -m wam.zone models/zone/myzone.zone
+```
+
+```
+zone myzone
+  size 640 480                 # meters; terrain continues past the rim
+  water level=1.2              # everything carved below this becomes water
+camera at=(x,z) look=(x,z) height=6
+
+textures
+  texture grass base=#6f7c43 ...      # same operator language as models
+
+terrain                        # landform ops, blended by max/min
+  base height=4                # the plain the valley floor sits on
+  rim height=64 width=115 wobble=30   # enclosing wall; wobble = organic edge
+  opening at=(315,40) width=60        # a pass through rim/ridge ops
+  ridge from=(330,-330) to=(330,330) height=52 width=64
+  plateau at=(-200,-120) radius=70 height=26 terrace=4.5  # stepped mesa
+  hill at=(120,140) radius=55 height=8
+  basin at=(58,-12) radius=42 depth=8 wobble=10   # dips below water = lake
+  level at=(-184,-112) radius=30 height=26 falloff=8      # flat pad
+  noise scale=70 amount=2.0
+
+surface                        # splat rules, evaluated per texel, later wins
+  grass
+  scrub where height>7
+  rock where slope>32
+  sand where shore<5
+  dirt where road
+
+river from=(..) via=(..) to=(..) width=8 depth=4 meander=18 mwave=64
+road  from=(..) via=(..) to=(..) width=6.5 meander=9
+bridge from=(x1,z1) to=(x2,z2) width=3.8
+
+props
+  place tipi at=(x,z) yaw=25 [scale=] [raise=] [float]
+  scatter pine count=85 slope<26 scale=0.75..1.3 seed=3
+```
+
+The load-bearing rules, each learned the hard way:
+
+- **Rivers beat roads**: rivers carve first; road flattening is masked to
+  zero inside a channel, so roads dead-end at banks and bridges mean
+  something. `meander` is a chirped oscillation (never a visible sine);
+  basins union into lobed lakes rather than circles.
+- **`bridge` is generated, not placed**: the compiler samples terrain at
+  both anchors, slopes the deck between them, solves the arch to clear
+  terrain across the full deck width, rides the ground at the approaches,
+  and lints if the span can't work ("terrain rises 0.9m above the deck at
+  (x,z)"). Never hand-place a span.
+- **Scatter respects the world**: seeded, with slope/water/road masks,
+  min-spacing, and exclusion around `place`d props and the camera. `place`
+  snaps to terrain height; `raise=` lifts (bridged decks, chimney smoke),
+  `float` sits a prop on the waterline.
+- **The world doesn't end**: terrain extends ~70m past the rim as an apron
+  fading into fog, so no edge is ever visible from inside.
+- Renders: a first-person vista from the `camera` directive (with sky
+  gradient + distance fog) and a fogless overview; the viewer JSON ships
+  the packed scene atlas.
+
 ## The compiler fights back (by design)
 
 `wam.cli` runs a semantic lint on every compile: bones with no geometry,
@@ -270,6 +337,11 @@ warnings → look at the render sheet → edit angles/ratios → repeat*.
   buildings/props
 - `scripts/compose_town.py` — composes town props into a scene (renders +
   merged viewer JSON with a packed mega-atlas)
+- `wam/zone.py` — the zone compiler (see **Zones**); `models/zone/` —
+  environment props: terrain-scale (mesa-country trees, rocks, standing
+  stones, cave mouth) and story-scale (tipi, campfire, totem, gate, ruin,
+  kodo ribcage, spear, burial mound, dock, crop field, rowboat, banner,
+  smoke plume)
 - `viewer/template.html` — standalone WebGL viewer (open directly, drop any
   `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
   preloaded

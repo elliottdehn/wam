@@ -1,0 +1,30 @@
+# War spear stuck in the ground at an angle, tattered pennant.
+model spear
+  height 2.6
+  style chunky
+
+palette
+  wood  #5c4430
+  iron  #6e6a66
+  rag   #7a2a20
+
+textures
+  texture wood base=#5c4430
+    streaks along=v amount=0.12 scale=1.5
+
+skeleton
+  root base at 0
+  bone shaft parent=base dir=up pitch=14 yaw=30 len=1.0
+
+parts
+  loft pole bones=shaft..shaft material=wood
+    ring 0.00 w=0.035 d=0.035
+    ring 1.00 w=0.028 d=0.028
+    cap start=flat end=flat
+
+  loft head bone=shaft at=1.0 dir=up pitch=14 yaw=30 len=0.14 material=iron shape=box
+    ring 0.00 w=0.06 d=0.015
+    ring 1.00 w=0.012 d=0.008 tip
+    cap start=flat end=none
+
+  attach flag bone=shaft kind=box at=0.82 offset=(0.09,0,0) w=0.16 h=0.10 d=0.012 material=rag

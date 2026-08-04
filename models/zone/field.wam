@@ -1,0 +1,30 @@
+# Tilled crop plot: low soil bed with green crop rows.
+model field
+  height 0.5
+  style chunky
+
+palette
+  soil #5f4a34
+  crop #7a8a3c
+
+textures
+  texture soil base=#5f4a34
+    noise scale=1.2 amount=0.10
+  texture crop base=#7a8a3c
+    planks dir=u count=9 width=0.22 seam=#5f4a34
+    noise scale=0.8 amount=0.10
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft bed bones=core..core material=soil shape=box
+    ring 0.00 w=16.0 d=11.0
+    ring 0.55 w=15.6 d=10.7
+    cap start=none end=none
+
+  loft crops bone=core at=0.55 dir=up len=0.4 material=crop shape=box
+    ring 0.00 w=15.2 d=10.4
+    ring 1.00 w=14.8 d=10.1
+    cap start=none end=flat

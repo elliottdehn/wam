@@ -1,0 +1,38 @@
+# Conifer: trunk + three stacked foliage cones.
+model pine
+  height 9.0
+  style chunky
+
+palette
+  bark #5c4834
+  leaf #3d5c33
+
+textures
+  texture bark base=#5c4834
+    streaks along=v amount=0.14 scale=1.5
+  texture leaf base=#3d5c33
+    gradient axis=v from=-0.16 to=0.12
+    noise scale=0.08 amount=0.10
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft trunk bones=core..core material=bark
+    ring 0.00 w=0.10 d=0.10
+    ring 0.30 w=0.07 d=0.07
+    cap start=flat end=flat
+
+  loft cone1 bone=core at=0.18 dir=up len=0.30 material=leaf
+    ring 0.00 w=0.62 d=0.58
+    ring 1.00 w=0.30 d=0.28
+    cap start=flat end=flat
+  loft cone2 bone=core at=0.42 dir=up len=0.30 material=leaf
+    ring 0.00 w=0.48 d=0.45
+    ring 1.00 w=0.20 d=0.19
+    cap start=flat end=flat
+  loft cone3 bone=core at=0.66 dir=up len=0.34 material=leaf
+    ring 0.00 w=0.34 d=0.32
+    ring 1.00 w=0.03 d=0.03 tip
+    cap start=flat end=none

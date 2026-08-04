@@ -1,0 +1,40 @@
+# Campfire: stone ring, crossed logs, glowing embers.
+model campfire
+  height 0.9
+  style chunky
+
+palette
+  stone #777062
+  log   #4e3a28
+  ember #e8963c
+  flame #f2c14e
+
+textures
+  texture stone base=#777062
+    noise scale=0.3 amount=0.10
+  texture ember base=#e8963c
+    noise scale=0.15 amount=0.18
+    gradient axis=v from=0.10 to=-0.05
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  attach s1 bone=core kind=sphere at=0.09 offset=(0.42,0,0.0) size=0.2 w=0.24 h=0.18 d=0.20 material=stone
+  attach s2 bone=core kind=sphere at=0.09 offset=(0.13,0,0.40) size=0.2 w=0.22 h=0.16 d=0.20 material=stone
+  attach s3 bone=core kind=sphere at=0.09 offset=(-0.34,0,0.25) size=0.2 w=0.24 h=0.17 d=0.19 material=stone
+  attach s4 bone=core kind=sphere at=0.09 offset=(-0.34,0,-0.25) size=0.2 w=0.22 h=0.18 d=0.21 material=stone
+  attach s5 bone=core kind=sphere at=0.09 offset=(0.13,0,-0.40) size=0.2 w=0.23 h=0.16 d=0.20 material=stone
+
+  loft log1 bone=core at=0.10 offset=(-0.28,0,-0.10) dir=side tilt=14 yaw=20 len=0.55 material=log
+    ring 0.00 w=0.09 d=0.09
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+  loft log2 bone=core at=0.10 offset=(0.10,0,-0.26) dir=fwd pitch=-12 yaw=-25 len=0.52 material=log
+    ring 0.00 w=0.09 d=0.09
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+
+  attach embers bone=core kind=sphere at=0.10 offset=(0,0,0) size=0.3 w=0.45 h=0.16 d=0.42 material=ember
+  attach flame bone=core kind=eye at=0.24 offset=(0,0,0) size=0.2 w=0.22 h=0.30 d=0.20 material=flame

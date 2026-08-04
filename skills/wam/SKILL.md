@@ -106,6 +106,19 @@ actions like a double-arm smash).
 8. **Study a reference model first** (`models/orc.wam` is the most complete:
    groups, `on=`, `follow=`, six animations) and copy its patterns.
 
+## Zones
+
+`python3 -m wam.zone myzone.zone` compiles whole environments: `terrain`
+landform ops (base/rim/opening/ridge/plateau/hill/basin/level, all with
+optional `wobble` for organic edges), per-texel `surface` splat rules
+(`rock where slope>32`, `sand where shore<5`, `dirt where road`), `river`/
+`road` splines with chirped `meander`, generated `bridge from= to=` spans
+(terrain-seated, arch-solved, clearance-linted), `water level=`, and
+`place`/`scatter` prop placement (terrain-snapped, masked, seeded;
+`raise=`/`float` modifiers). Read the Zones section of SPEC.md before
+authoring; the same visual iteration loop applies — compile, read
+warnings, look at the vista/overview renders, adjust named values.
+
 ## Outputs
 
 - `out/<name>.gltf` — glTF 2.0, skinned + animated, imports into

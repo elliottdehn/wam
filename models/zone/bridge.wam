@@ -1,0 +1,62 @@
+# Wooden footbridge: arched plank deck, rails, end posts. Spans along +Z.
+model bridge
+  height 3.2
+  style chunky
+
+palette
+  wood  #6e5238
+  wood2 #55402c
+
+textures
+  texture wood base=#6e5238
+    planks dir=v count=16 width=0.05 seam=#523c28
+    streaks along=u amount=0.08 scale=1.4
+    gradient axis=v from=-0.05 to=0.05
+  texture wood2 base=#55402c
+    streaks along=v amount=0.12 scale=1.4
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft deck bone=core at=0.30 offset=(0,0,-2.8) dir=fwd len=5.6 material=wood
+    ring 0.00 w=1.05 d=0.10
+    ring 0.25 w=1.00 d=0.10 fwd=0.12
+    ring 0.50 w=1.00 d=0.10 fwd=0.17
+    ring 0.75 w=1.00 d=0.10 fwd=0.12
+    ring 1.00 w=1.05 d=0.10
+    cap start=flat end=flat
+
+  loft rail1 bone=core at=0.52 offset=(0.48,0,-2.6) dir=fwd len=5.2 material=wood2
+    ring 0.00 w=0.07 d=0.07
+    ring 0.25 w=0.07 d=0.07 fwd=0.12
+    ring 0.50 w=0.07 d=0.07 fwd=0.17
+    ring 0.75 w=0.07 d=0.07 fwd=0.12
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+
+  loft rail2 bone=core at=0.52 offset=(-0.48,0,-2.6) dir=fwd len=5.2 material=wood2
+    ring 0.00 w=0.07 d=0.07
+    ring 0.25 w=0.07 d=0.07 fwd=0.12
+    ring 0.50 w=0.07 d=0.07 fwd=0.17
+    ring 0.75 w=0.07 d=0.07 fwd=0.12
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+
+  loft post1 bone=core at=0.05 offset=(0.48,0,-2.7) dir=up len=0.50 material=wood2 shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 1.00 w=0.09 d=0.09
+    cap start=none end=flat
+  loft post2 bone=core at=0.05 offset=(-0.48,0,-2.7) dir=up len=0.50 material=wood2 shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 1.00 w=0.09 d=0.09
+    cap start=none end=flat
+  loft post3 bone=core at=0.05 offset=(0.48,0,2.7) dir=up len=0.50 material=wood2 shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 1.00 w=0.09 d=0.09
+    cap start=none end=flat
+  loft post4 bone=core at=0.05 offset=(-0.48,0,2.7) dir=up len=0.50 material=wood2 shape=box
+    ring 0.00 w=0.10 d=0.10
+    ring 1.00 w=0.09 d=0.09
+    cap start=none end=flat

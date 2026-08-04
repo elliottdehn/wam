@@ -63,32 +63,42 @@ def vertex_normals(V, T):
 def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 width=480, height=600, fov_deg=28.0, bg=(0.92, 0.92, 0.94),
                 ground_y=None, margin=1.12, vert_colors=None,
-                uv=None, tex=None):
-    """Render one view. Camera orbits around Y axis; yaw=0 looks at +Z face."""
+                uv=None, tex=None, sky=None, fog=None,
+                eye=None, look=None, detail=None, detail_scale=180.0):
+    """Render one view: orbit camera by default, or first-person when
+    eye=(x,y,z) and look=(x,y,z) are given."""
     V = np.asarray(V, dtype=np.float64)
     N = vertex_normals(V, T)
 
-    center = (V.min(axis=0) + V.max(axis=0)) / 2
-    radius = np.linalg.norm(V - center, axis=1).max()
-    if ground_y is not None:
-        # keep the ground line stable across views
-        center = center.copy()
+    if eye is not None:
+        eye = np.asarray(eye, dtype=float)
+        f = np.asarray(look, dtype=float) - eye
+        f = f / np.linalg.norm(f)
+        upv = np.array([0.0, 1.0, 0.0])
+        r = np.cross(f, upv)
+        r = r / max(np.linalg.norm(r), 1e-9)
+        u2 = np.cross(r, f)
+        R = np.stack([r, u2, -f])
+        Vc = (V - eye) @ R.T
+        Nc = N @ R.T
+    else:
+        center = (V.min(axis=0) + V.max(axis=0)) / 2
+        radius = np.linalg.norm(V - center, axis=1).max()
 
-    # world -> camera: rotate so camera looks down -Z at the model
-    ya = math.radians(yaw_deg)
-    pa = math.radians(pitch_deg)
-    Ry = np.array([[math.cos(ya), 0, -math.sin(ya)],
-                   [0, 1, 0],
-                   [math.sin(ya), 0, math.cos(ya)]])
-    Rx = np.array([[1, 0, 0],
-                   [0, math.cos(pa), -math.sin(pa)],
-                   [0, math.sin(pa), math.cos(pa)]])
-    R = Rx @ Ry
+        ya = math.radians(yaw_deg)
+        pa = math.radians(pitch_deg)
+        Ry = np.array([[math.cos(ya), 0, -math.sin(ya)],
+                       [0, 1, 0],
+                       [math.sin(ya), 0, math.cos(ya)]])
+        Rx = np.array([[1, 0, 0],
+                       [0, math.cos(pa), -math.sin(pa)],
+                       [0, math.sin(pa), math.cos(pa)]])
+        R = Rx @ Ry
 
-    dist = radius * margin / math.tan(math.radians(fov_deg) / 2)
-    Vc = (V - center) @ R.T
-    Vc[:, 2] -= dist          # camera at origin looking down -Z
-    Nc = N @ R.T
+        dist = radius * margin / math.tan(math.radians(fov_deg) / 2)
+        Vc = (V - center) @ R.T
+        Vc[:, 2] -= dist          # camera at origin looking down -Z
+        Nc = N @ R.T
 
     f = 1.0 / math.tan(math.radians(fov_deg) / 2)
     aspect = width / height
@@ -97,20 +107,25 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
     sx = (Vc[:, 0] * f / aspect / z * 0.5 + 0.5) * width
     sy = (0.5 - Vc[:, 1] * f / z * 0.5) * height
 
-    # lighting: key from upper-front-left of camera, plus fill and rim
-    L1 = np.array([-0.35, 0.55, 0.76])
+    # lighting: fixed world-space sun + soft fill (matches the viewer)
+    L1 = np.array([-0.45, 0.85, 0.40])
     L1 /= np.linalg.norm(L1)
-    L2 = np.array([0.6, -0.1, 0.5])
+    L2 = np.array([0.55, 0.15, -0.60])
     L2 /= np.linalg.norm(L2)
-    lam1 = np.clip(Nc @ L1, 0, None)
-    lam2 = np.clip(Nc @ L2, 0, None)
-    shade = 0.34 + 0.62 * lam1 + 0.18 * lam2
+    lam1 = np.clip(N @ L1, 0, None)
+    lam2 = np.clip(N @ L2, 0, None)
+    shade = 0.34 + 0.60 * lam1 + 0.16 * lam2
 
     img = np.ones((height, width, 3))
-    img[:] = np.array(bg)
-    # subtle vertical gradient
-    grad = np.linspace(1.03, 0.93, height)[:, None, None]
-    img *= grad
+    if sky is not None:
+        top = np.array(sky[0])
+        horizon = np.array(sky[1])
+        tgrad = np.linspace(0.0, 1.0, height)[:, None, None] ** 1.6
+        img[:] = top[None, None, :] * (1 - tgrad) + horizon[None, None, :] * tgrad
+    else:
+        img[:] = np.array(bg)
+        grad = np.linspace(1.03, 0.93, height)[:, None, None]
+        img *= grad
     zbuf = np.full((height, width), np.inf)
 
     order = None
@@ -124,11 +139,14 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         keep = np.abs(area2) > 1e-9
         order = np.nonzero(keep)[0]
 
+    near_clip = 0.15 if eye is not None else 1e-6
     for ti in order if order is not None else []:
         ia, ib, ic = T[ti]
+        zs = np.array([z[ia], z[ib], z[ic]])
+        if zs.min() < near_clip:
+            continue          # crosses the near plane: skip (no clipping)
         xs = np.array([sx[ia], sx[ib], sx[ic]])
         ys_ = np.array([sy[ia], sy[ib], sy[ic]])
-        zs = np.array([z[ia], z[ib], z[ic]])
         sh = np.array([shade[ia], shade[ib], shade[ic]])
         x0, x1 = int(max(0, math.floor(xs.min()))), int(min(width - 1, math.ceil(xs.max())))
         y0, y1 = int(max(0, math.floor(ys_.min()))), int(min(height - 1, math.ceil(ys_.max())))
@@ -157,13 +175,29 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
             th, tw = tex.shape[:2]
             txi = np.clip((uu * tw).astype(int), 0, tw - 1)
             tyi = np.clip((vv * th).astype(int), 0, th - 1)
-            px = tex[tyi, txi] * shi[..., None]
+            base_px = tex[tyi, txi]
+            if detail is not None:
+                dh, dw = detail.shape[:2]
+                def dsamp(scale, phase):
+                    du = np.abs(((uu * scale + phase) % 2.0) - 1.0)
+                    dv = np.abs(((vv * scale + phase) % 2.0) - 1.0)
+                    dxi = np.clip((du * (dw - 1)).astype(int), 0, dw - 1)
+                    dyi = np.clip((dv * (dh - 1)).astype(int), 0, dh - 1)
+                    return detail[dyi, dxi]
+                dmix = 0.55 * dsamp(detail_scale, 0.0) +                        0.45 * dsamp(detail_scale * 0.27, 0.37)
+                base_px = base_px * (0.82 + 0.36 * dmix)
+            px = base_px * shi[..., None]
         elif vert_colors is not None:
             ca, cb, cc = vert_colors[ia], vert_colors[ib], vert_colors[ic]
             px = (w0[..., None] * ca + w1[..., None] * cb + w2[..., None] * cc) * shi[..., None]
         else:
             color = np.asarray(mat_colors[tri_mat[ti]])
             px = color[None, None, :] * shi[..., None]
+        if fog is not None:
+            f = np.clip((zi - fog["start"]) / max(fog["end"] - fog["start"], 1e-6),
+                        0, 1) * fog.get("max", 0.85)
+            fc = np.array(fog["color"])
+            px = px * (1 - f[..., None]) + fc[None, None, :] * f[..., None]
         win = img[y0:y1 + 1, x0:x1 + 1]
         win[upd] = np.clip(px[upd], 0, 1)
         zwin[upd] = zi[upd]

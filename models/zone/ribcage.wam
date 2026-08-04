@@ -1,0 +1,55 @@
+# Kodo skeleton: half-buried spine and ribs, bleached bone.
+model ribcage
+  height 3.4
+  style chunky
+
+palette
+  bone2 #ddd4bc
+  bone3 #c2b89e
+
+textures
+  texture bone2 base=#ddd4bc
+    gradient axis=v from=-0.12 to=0.08
+    noise scale=0.5 amount=0.07
+  texture bone3 base=#c2b89e
+    noise scale=0.4 amount=0.08
+
+skeleton
+  root base at 0
+  bone spine parent=base dir=fwd pitch=-4 offset=(0,0.09,-1.1) len=2.4
+  bone skullb parent=spine at=1.0 dir=fwd len=0.5
+
+parts
+  loft spinal bones=spine..spine material=bone3
+    ring 0.00 w=0.14 d=0.14
+    ring 0.55 w=0.17 d=0.17
+    ring 1.00 w=0.15 d=0.15
+    cap start=dome end=flat
+
+  loft skull bones=skullb..skullb material=bone2
+    ring 0.00 w=0.34 d=0.26
+    ring 0.55 w=0.30 d=0.22
+    ring 1.00 w=0.16 d=0.12
+    cap start=none end=dome
+
+  mirror
+    sweep rib1 bone=spine at=0.15 offset=(0.05,0,0) dir=side on=spinal material=bone2
+      seg len=0.30 r=0.045 curl=38
+      seg len=0.30 r=0.040 curl=44
+      seg len=0.26 r=0.030 curl=40
+      seg len=0.20 r=0.016 curl=30 tip
+    sweep rib2 bone=spine at=0.38 offset=(0.05,0,0) dir=side on=spinal material=bone2
+      seg len=0.34 r=0.05 curl=36
+      seg len=0.33 r=0.042 curl=44
+      seg len=0.28 r=0.030 curl=42
+      seg len=0.22 r=0.016 curl=30 tip
+    sweep rib3 bone=spine at=0.60 offset=(0.05,0,0) dir=side on=spinal material=bone2
+      seg len=0.32 r=0.048 curl=37
+      seg len=0.31 r=0.040 curl=45
+      seg len=0.26 r=0.028 curl=41
+      seg len=0.20 r=0.015 curl=31 tip
+    sweep rib4 bone=spine at=0.80 offset=(0.05,0,0) dir=side on=spinal material=bone2
+      seg len=0.28 r=0.042 curl=38
+      seg len=0.27 r=0.034 curl=44
+      seg len=0.22 r=0.024 curl=40 tip
+  end

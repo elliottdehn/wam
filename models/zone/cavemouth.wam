@@ -1,0 +1,32 @@
+# Cave mouth: rocky arch masses around a dark opening; faces +Z.
+model cavemouth
+  height 13.0
+  style chunky
+
+palette
+  rock #8a6248
+  dark #17120e
+
+textures
+  texture rock base=#8a6248
+    gradient axis=v from=-0.12 to=0.10
+    noise scale=1.8 amount=0.12
+    planks dir=v count=7 width=0.05 seam=#6e4c36
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft arch bones=core..core material=rock shape=squarish
+    ring 0.00 w=1.30 d=0.75
+    ring 0.35 w=1.15 d=0.68 side=0.03
+    ring 0.70 w=0.90 d=0.55 fwd=-0.04
+    ring 1.00 w=0.45 d=0.35 tip
+    cap start=flat end=none
+
+  attach lump1 bone=core kind=sphere at=0.23 offset=(0.62,0,0.10) w=0.55 h=0.45 d=0.45 material=rock
+  attach lump2 bone=core kind=sphere at=0.21 offset=(-0.60,0,0.08) w=0.50 h=0.40 d=0.42 material=rock
+
+  # the opening: a dark half-dome sunk into the front face
+  attach maw bone=core kind=sphere at=0.16 offset=(0,0,0.28) w=0.62 h=0.52 d=0.30 material=dark

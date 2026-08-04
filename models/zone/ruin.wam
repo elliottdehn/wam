@@ -1,0 +1,50 @@
+# Burned-out cottage ruin: broken walls, charred beams, rubble.
+model ruin
+  height 3.6
+  style chunky
+
+palette
+  stone #7e7668
+  char  #2e2a26
+  soot  #4a443c
+
+textures
+  texture stone base=#7e7668
+    bricks courses=6 ratio=1.7 width=0.08 seam=#635c50
+    noise scale=0.4 amount=0.10
+    gradient axis=v from=-0.10 to=0.06
+  texture char base=#2e2a26
+    streaks along=v amount=0.16 scale=1.6
+  texture soot base=#4a443c
+    noise scale=0.3 amount=0.14
+
+skeleton
+  root base at 0
+  bone core parent=base dir=up len=1.0
+
+parts
+  loft wall1 bone=core at=0.0 offset=(-0.55,0,0) dir=up len=0.62 material=stone shape=box
+    ring 0.00 w=0.14 d=1.30
+    ring 0.75 w=0.12 d=1.28
+    ring 0.85 w=0.11 d=0.90 fwd=-0.18
+    ring 1.00 w=0.10 d=0.45 fwd=-0.40
+    cap start=none end=flat
+
+  loft wall2 bone=core at=0.0 offset=(0.1,0,-0.62) dir=up len=0.44 material=stone shape=box
+    ring 0.00 w=1.20 d=0.13
+    ring 0.70 w=1.18 d=0.12
+    ring 1.00 w=0.65 d=0.11 side=-0.25
+    cap start=none end=flat
+
+  loft beam1 bone=core at=0.55 offset=(-0.30,0,-0.30) dir=fwd pitch=38 yaw=25 len=0.85 material=char
+    ring 0.00 w=0.09 d=0.09
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+  loft beam2 bone=core at=0.05 offset=(0.35,0,0.15) dir=fwd pitch=-8 yaw=-60 len=0.95 material=char
+    ring 0.00 w=0.09 d=0.09
+    ring 1.00 w=0.07 d=0.07
+    cap start=dome end=dome
+
+  attach rubble1 bone=core kind=sphere at=0.10 offset=(0.35,0,-0.35) w=0.5 h=0.22 d=0.45 material=soot
+  attach rubble2 bone=core kind=sphere at=0.09 offset=(-0.1,0,0.42) w=0.42 h=0.18 d=0.38 material=stone
+  attach rubble3 bone=core kind=sphere at=0.08 offset=(0.55,0,0.42) w=0.3 h=0.14 d=0.28 material=soot
