@@ -708,7 +708,69 @@ The vocabulary is `height` `width` `depth`/`length` `span` `ground` `top`
 `assert`/`measure` forms as a model's own checks — the two levels share one
 parser and one evaluator, so an assertion means the same thing in both. A
 bare name is a whole model; a dotted one (`ogre.helmet`) is a part inside it.
-`noclip` is model-local and is rejected here.
+`noclip` is model-local and is rejected in `checks`; it belongs in `every`.
+
+### `every` — conventions each model must satisfy
+
+`checks` compares models to each other. `every` runs ordinary **model-level**
+checks inside each member's own namespace, so the conventions a whole cast
+shares live in one file instead of being copy-pasted into the top of every
+model:
+
+```
+every
+  assert ground == 0 +- 0.02        # everyone stands on the floor
+  assert height > 0.9               # everyone fills the height it declares
+  assert tris < 8000
+  assert asymmetry < 0.35
+  noclip                            # nothing intersects anything, anywhere
+  measure headroom height
+```
+
+The full model vocabulary is available, `noclip` included, and failures name
+the model they came from:
+
+```
+WARN: check failed — [stalker] line 6: tris = 9104.0000, expected < 8000
+```
+
+A check naming a part (`assert bottom(foot.l) < 0.01`) fails for any member
+that has no such part, which is a feature: it makes "every unit has a
+`foot.l` and it touches the ground" enforceable across the set. Scope by
+splitting into more than one set file rather than by weakening the check.
+
+Note that a model's own `height` scalar is the fraction of its declared
+height the geometry spans — the same number `fill()` reports at set level —
+so `every: assert height > 0.9` is the per-model form of the fill check.
+
+### `silhouette` — can you tell two units apart?
+
+```
+assert silhouette(guardian, stalker) > 0.25
+assert silhouette(guardian, stalker, side) > 0.25
+```
+
+`silhouette(a, b [, view])` returns **1 − IoU** of the two models' outlines:
+0 is the same shape, larger is easier to distinguish. Each model is projected
+orthographically (so viewing distance cannot skew it), scaled so its height is
+1, and stood on a common ground line. Absolute size is deliberately removed —
+`height()` already checks that — but **aspect ratio is kept**, because a tall
+narrow unit and a squat wide one are exactly the pair you want to read apart.
+Views are `front`, `threequarter` (the default), `side`, `back`.
+
+This is the check no single model can make about itself: two units can each
+be perfectly good and still be indistinguishable at fifty metres. Measured
+across real models:
+
+| pair | threequarter | side |
+|---|---|---|
+| a model against itself | 0.000 | 0.000 |
+| a reskin (legs 12% wider) | 0.084 | 0.104 |
+| a bulked variant (wider body and stance) | 0.609 | 0.535 |
+| a different creature entirely | 0.644 | 0.860 |
+
+**`> 0.25` is the useful threshold**: reskins land near 0.1, genuine variants
+above 0.35, so the boundary sits in a wide empty gap rather than being tuned.
 
 ## Zones — environments from landforms and rules
 

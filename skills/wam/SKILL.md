@@ -160,10 +160,18 @@ know the right bound, print the value every compile and watch it while you
 tune. Convert it to an `assert` once you know what "right" is.
 
 When a model joins a set that already exists, add it to the `.wamset` file
-and assert its scale against the others (`python3 -m wam.modelset x.wamset`).
-Sizes there are **meters**, not the height-fractions used inside a model, and
-`fill()` catches a model that does not span the height it declares — which
-silently corrupts every ratio computed against it.
+and assert it against the others (`python3 -m wam.modelset x.wamset`):
+
+- `checks` compares models — sizes there are **meters**, not the
+  height-fractions used inside a model. `fill()` catches a model that does
+  not span the height it declares, which silently corrupts every ratio
+  computed against it.
+- `every` runs ordinary model-level checks inside *each* member, so shared
+  conventions (`ground == 0`, a poly budget, `noclip`) live in one file
+  instead of the top of every model.
+- `silhouette(a, b)` is the one check no model can make about itself: two
+  units can each be good and still be indistinguishable at distance. Assert
+  `> 0.25` — reskins measure ~0.1, genuinely different creatures ~0.4+.
 
 Read the `checks` section of SPEC.md for the full vocabulary — roughly forty
 functions across position, direction, extent, mass, clearance, symmetry, rig

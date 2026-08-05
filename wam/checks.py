@@ -887,16 +887,25 @@ def _eval_node(node, scalars, funcs):
     raise CheckError("unsupported expression")
 
 
+def namespace(model, bones, mesh, V):
+    """(env, scalars, funcs, noclip) for one compiled model.
+
+    Exposed so a `.wamset` `every` block can run ordinary model-level checks
+    inside each member's own namespace, rather than re-implementing one.
+    """
+    env = Env(model, bones, mesh, V)
+    funcs = build_functions(env)
+    scalars = build_scalars(env, funcs)
+    return env, scalars, funcs, (lambda spec: run_noclip(env, spec, funcs))
+
+
 def evaluate(model, bones, mesh, V):
     """Run a model's `checks` section. Returns (failures, measurements)."""
     checks = getattr(model, "checks", ())
     if not checks:
         return [], []
-    env = Env(model, bones, mesh, V)
-    funcs = build_functions(env)
-    scalars = build_scalars(env, funcs)
-    return run_checks(checks, scalars, funcs,
-                      noclip=lambda spec: run_noclip(env, spec, funcs))
+    _, scalars, funcs, noclip = namespace(model, bones, mesh, V)
+    return run_checks(checks, scalars, funcs, noclip=noclip)
 
 
 def run_checks(checks, scalars, funcs, noclip=None):
