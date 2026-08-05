@@ -63,6 +63,8 @@ class Model:
         self.name = "model"
         self.height = 2.0
         self.style = "chunky"
+        self.girth = 1.0           # multiplies every cross-section
+        self.reach = 1.0           # multiplies every length along a path
         self.palette = {}          # name -> (r,g,b) floats 0..1
         self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
@@ -294,6 +296,11 @@ def parse(text, path=None):
         if section == "model":
             if kw == "height":
                 model.height = _num(tokens[1], line_no, line)
+            elif kw in ("girth", "reach"):
+                v = _num(tokens[1], line_no, line)
+                if v <= 0:
+                    raise WamError("%s must be above zero" % kw, line_no, line)
+                setattr(model, kw, v)
             elif kw == "style":
                 model.style = tokens[1]
             else:
@@ -583,6 +590,47 @@ def parse(text, path=None):
             model.checks.append(
                 parse_check(kw, line, tokens, line_no))
 
+    return apply_proportions(model)
+
+
+def apply_proportions(model):
+    """Apply `girth` / `reach` to the authored numbers, before anything solves.
+
+    Rescaling a model proportionally otherwise means editing every
+    size-bearing token in the file — two hundred of them in a real character
+    — which is exactly the mechanical edit that goes wrong silently. These
+    scale the authored values instead, so the change is one number you can
+    tune against a check.
+
+    They are applied to the source numbers rather than to world space on
+    purpose: a non-uniform scale of the finished mesh would shear limbs as
+    they rotate, so an arm stretched along y would grow *thicker* rather than
+    longer once it raised to horizontal. Scaling what the author wrote has no
+    such artifact — the solver simply runs on different numbers.
+    """
+    g, r = model.girth, model.reach
+    if g == 1.0 and r == 1.0:
+        return model
+
+    def mul(d, keys, f):
+        for k in keys:
+            if k in d and d[k] is not None:
+                d[k] = d[k] * f
+
+    for b in model.bones:
+        mul(b, ("len",), r)
+        if b.get("root_pos") is not None:
+            # the skeleton grows about the ground, not about the root, so a
+            # taller figure does not simply sink through the floor
+            b["root_pos"] = tuple(v * r for v in b["root_pos"])
+    for p in model.parts:
+        mul(p, ("len",), r)
+        mul(p, ("size", "w", "d", "h", "thickness"), g)
+        for ring in p.get("rings", ()):
+            mul(ring, ("w", "d", "wtop", "wbot", "dtop", "dbot"), g)
+        for seg in p.get("segs", ()):
+            mul(seg, ("len",), r)
+            mul(seg, ("r",), g)
     return model
 
 

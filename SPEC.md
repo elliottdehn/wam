@@ -58,6 +58,50 @@ model tauren
   style chunky        # chunky=8-sided lofts, smooth=12, fine=16
 ```
 
+### `girth` and `reach` — proportional rescaling
+
+Absolute size is one number: `height` is the only value in meters, so
+changing it rescales the whole model and leaves every internal proportion —
+and therefore every one of the model's own checks — untouched. Changing shape
+is the hard case, because "make it chunkier" otherwise means editing every
+size-bearing token in the file: 211 of them in a real character. Two knobs
+do it instead:
+
+```
+model brute
+  height 2.4
+  girth 1.25        # every cross-section: ring w/d, seg r, attach extents
+  reach 1.12        # every length along a path: bone len, seg len, free-ray len
+```
+
+On a real model, `girth 1.25` takes it from 2.10 m wide to 2.25 and from 0.98
+deep to 1.14 while the height barely moves; `reach 1.12` takes it from 2.17 m
+tall to 2.42 and leaves the depth alone. Width over height — the number that
+says "heavy" or "lean" — goes 0.967 → 1.007 under girth and 0.967 → 0.912
+under reach.
+
+Both scale the **authored numbers**, before the skeleton solves, rather than
+the finished mesh. That is the whole reason they are safe: a non-uniform
+scale applied to geometry shears limbs as they rotate, so an arm stretched
+along y would grow *thicker* instead of longer once it raised to horizontal.
+Scaling what the author wrote has no such artifact — the solver simply runs
+on different numbers, and the model animates exactly as if you had typed them.
+
+`reach` scales the root's position too, so the skeleton grows about the
+ground rather than sinking through it; expect ground contact to drift a
+centimetre or two and the ground lint to tell you exactly how much.
+
+Because they are one number, they are tunable against a check. Sweeping
+`girth` against a `.wamset` assertion that the guardian must read broader
+than it is tall:
+
+| girth | width/height | result |
+|---|---|---|
+| 1.00 | 0.967 | fail |
+| 1.10 | 0.983 | fail |
+| 1.20 | 0.999 | fail |
+| **1.25** | **1.007** | **pass** |
+
 ## `palette`
 
 Named flat colors. Any material without a `textures` entry renders as a

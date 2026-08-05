@@ -193,6 +193,14 @@ at=(x,y,z)` (or `tail=`) nails a bone's world position down so lengthening
 an ancestor doesn't drag everything mounted downstream — never hand-solve a
 compensating root offset.
 
+**Rescaling** — never hand-edit sizes across a file. Absolute size is the
+`height` directive alone (one number; internal proportions and the model's
+own checks are unaffected). Shape is `girth` (all cross-sections) and `reach`
+(all lengths along a path) in the `model` section — one number each, tunable
+against a check, and applied to the authored numbers so animation is
+unaffected. Editing the ~200 size tokens by hand is how a rescale goes
+silently wrong.
+
 **Parts** — five generators, all closed and skinned automatically:
 - `loft` — cross-section rings along a bone chain (`bones=a..b`) or a free
   ray (`bone=x at=0.5 dir=fwd len=0.1`). Rings: `ring 0.55 w=0.36 d=0.31
