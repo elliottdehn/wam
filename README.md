@@ -4,14 +4,27 @@ A text language + compiler for **LLM-authored low-poly characters**: mesh,
 skeleton, and animations from ~150 lines of readable source, compiled to
 glTF 2.0 with software-rendered turntables for visual iteration.
 
+## Try it
+
+Paste this into your favorite LLM:
+
+```
+Clone https://github.com/elliottdehn/wam and make me [what you want to model] that I can see
+```
+
+It will read the spec, author the model, compile it, look at the renders it
+produced, and iterate until the thing holds together — then hand you a glTF
+and a turntable sheet. "that I can see" is the part that matters: it puts the
+model in the loop of looking at its own output.
+
 The founding rule: the author only makes **discrete, named, relative,
 symmetric** decisions — bone angles as words+degrees, body masses as
 cross-section rings, membranes as fans of ribs, symmetry via `mirror`
 blocks, props in local-frame `group`s. The compiler generates every vertex,
 skin weight, normal, and winding, and a semantic linter rejects the classes
 of silent geometry bugs that renders hide (folds, wrong-bone bindings,
-floating feet, inside-out faces, parts buried inside other parts) — plus whatever
-proportions you write down yourself in a `checks` section.
+floating feet, inside-out faces, parts buried inside other parts) — plus
+whatever proportions you write down yourself in a `checks` section.
 
 Models aren't limited to characters: `scripts/compose_town.py` composes a set
 of prop models into a single scene with a packed mega-atlas, and `wam.zone`
