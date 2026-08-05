@@ -103,3 +103,7 @@ compile, and visually iterate using the bundled toolchain.
 - `viewer/` — template for a self-contained WebGL viewer page
   (`wam/viewer_export.py` produces the data blob to inject).
 - `skills/wam/` — the Claude Code skill.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
