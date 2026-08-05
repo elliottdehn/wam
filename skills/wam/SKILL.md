@@ -43,7 +43,8 @@ To compile a model that lives in another project:
 4. **View the rendered sheet PNG** (front / three-quarter / side / back).
 5. Audit all four views before claiming success: does every attachment
    visibly touch its base? Is every prop oriented right? Does anything float,
-   fold, or read as the wrong object? Are proportions sane?
+   fold, or read as the wrong object? Are proportions sane? If there is a
+   reference image, audit it in crops — see *Working from a reference image*.
 6. Fix by editing angles and ratios, never by adding coordinate math.
 
 Render animation strips (`--anim NAME --frames 6`) for every gait and action
@@ -51,6 +52,52 @@ you author — animation bugs (reversed gaits, non-moving cloth) are invisible
 in static views. Strips honour `--views`; if a pose reads from only one
 angle (a shield facing outward, a blade's edge), pass `--anim-views` for it
 rather than squinting at a three-quarter view.
+
+## Working from a reference image
+
+If the user supplied a reference, **never judge the model by laying the whole
+reference next to the whole render sheet.** At that scale you are comparing
+silhouettes and nothing else: a head 20% too large, a pauldron sitting an
+inch low, a muzzle with the wrong taper, and horns curving the wrong way all
+survive a whole-image comparison intact. Every one of them is obvious in a
+crop. Comparing whole-to-whole is how a model gets declared finished while
+being wrong in six places.
+
+Work regions, at matched scale:
+
+```bash
+# 1. see what the reference actually contains, region by region
+python3 scripts/crop.py ref.jpg --grid 3x3 -o out/refcrops
+
+# 2. put one region from each image side by side, each aimed separately
+python3 scripts/crop.py ref.jpg out/mymodel_sheet.png \
+    --box 0.30,0.00,0.70,0.35 --box2 0.05,0.02,0.20,0.30 -o out/cmp_head.png
+```
+
+(From another project, call it as `"$CLAUDE_PLUGIN_ROOT/scripts/crop.py"`.)
+Boxes are normalized `x0,y0,x1,y1` in 0..1, so they do not depend on either
+image's pixel size. `--box2` aims the render separately — you will always
+need it, because the reference is framed differently from a four-view sheet.
+Read the written file; both crops arrive at the same height in one image.
+
+1. **Match the view before comparing anything.** Find which of
+   front/threequarter/side/back is closest to the reference's camera and
+   compare against that panel. Re-render with `--views threequarter` alone if
+   it helps. Comparing a 3/4 reference to a front render produces confident,
+   completely wrong conclusions about width and depth.
+2. **Then walk the regions** — head and face, shoulder/neck junction, hands
+   and what they hold, hips and belt line, feet and ground contact, and every
+   signature detail the reference is recognizable by (a horn curve, a
+   pauldron spike, a tabard shape). One `cmp_*.png` per region.
+3. **Say what differs in words before editing** — "the muzzle is half the
+   reference's length and sits too high" — then make the one edit that
+   addresses it. Vague dissatisfaction produces flailing.
+4. **Turn every finding into a `check`.** A crop tells you the head is too
+   big *today*; `assert height / height(skull) in 6..7` keeps it right after
+   the next twenty edits. This is the whole point — see below.
+
+Crops are also the only way to judge texture work: atlas ops (`noise`,
+`streaks`, `planks`) are invisible at sheet scale and obvious at 3x.
 
 ## Write checks constantly
 

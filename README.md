@@ -84,6 +84,9 @@ compile, and visually iterate using the bundled toolchain.
 - `wam/checks.py` — the `checks` section: proportion, clearance, clipping,
   rig-quality and animation assertions re-run on every compile.
 - `SPEC.md` — the language specification.
+- `scripts/crop.py` — cuts matching regions out of a reference image and a
+  render and pairs them at the same scale, for comparisons that are not just
+  silhouette-deep.
 - `viewer/` — template for a self-contained WebGL viewer page
   (`wam/viewer_export.py` produces the data blob to inject).
 - `skills/wam/` — the Claude Code skill.

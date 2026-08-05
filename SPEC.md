@@ -722,6 +722,8 @@ has to be tuned against itself to reach zero warnings.
 - `wam/zone.py` — the zone compiler (see **Zones**)
 - `scripts/compose_town.py` — composes a set of prop models into one scene
   (renders + merged viewer JSON with a packed mega-atlas)
+- `scripts/crop.py` — region crops of a reference image and a render, paired
+  at matched scale (`--grid` to survey, `--box`/`--box2` to compare)
 - `viewer/template.html` — standalone WebGL viewer (open directly, drop any
   `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
   preloaded
