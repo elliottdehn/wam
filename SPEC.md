@@ -484,6 +484,8 @@ Clearance and symmetry
 |---|---|
 | `gap(a, b)` | closest approach between two parts |
 | `gap(a, b, anim)` | ...at its worst over an animation |
+| `clip(a, b)` | how deeply two parts pass *through* each other, 0 if they do not |
+| `clip(a, b, anim)` | ...at its worst over an animation |
 | `asymmetry(p)` | worst distance from a part to its own mirror image across X=0 |
 
 Rig quality
@@ -520,8 +522,50 @@ points for `gap` and `asymmetry`, making both slightly pessimistic rather
 than slow.
 
 `gap` is a proximity measure, not a penetration depth: parts that touch and
-parts that interpenetrate both read 0. Use it for things that must stay
-*apart*.
+parts that interpenetrate both read 0 — and on a low-poly mesh it often reads
+a comfortable *positive* distance while two surfaces cross, because the
+nearest vertices are nowhere near the crossing. Use `gap` for things that must
+stay apart and `clip` for things that must not intersect.
+
+`clip` works from surface crossings, not volume containment, so it stays
+meaningful for open parts — a `cap none` kilt and a thickness-free `web` have
+no inside for a containment test to ask about, and cloth is where clipping
+matters most. Depth is perpendicular to the pierced surface; where the two
+directions disagree (a long edge crossing a small surface runs far past it
+without the parts overlapping deeply) the shallower reading wins.
+
+### `noclip` — sweep for intersections
+
+`clip` measures one pair. `noclip` asserts over many at once:
+
+```
+checks
+  noclip                            # every pair the language does not mandate
+  noclip cape                       # this part against everything else
+  noclip cape strict                # ...and stop forgiving shared joints
+  noclip sword vs thigh.r,cape      # exactly these pairs, nothing forgiven
+  noclip in=walk                    # test the animation, not the rest pose
+  noclip in=* depth=0.01 except=hand.r+sword
+```
+
+Almost every part in a model overlaps another **on purpose**, so a sweep is
+only usable if it knows what to forgive. Two tiers:
+
+- *Always* forgiven: `on=` pairs (sinking a part into a surface is what `on=`
+  means), parts in one `group`, the two halves of a mirrored part, and a
+  `web` against the tubes wrapping its own rib bones.
+- Forgiven unless `strict`: parts on bones that **share a joint** — a thigh
+  starting inside the hip mass, a neck inside the chest, digits off one
+  wrist, a leg and a tail off one pelvis.
+
+That second tier also covers a leg inside a kilt, which is a bug. Cloth and
+props hang across joints they are not part of, so give them their own line:
+`noclip kilt strict` or, best, name the pair — `noclip kilt vs leg.l,leg.r`.
+**An explicitly named pair forgives nothing**, which makes it the form to
+reach for when you know what must not intersect.
+
+`depth=` sets the tolerance (default 0.005 of model height); `in=<anim>` or
+`in=*` tests posed frames as well as rest; `except=a+b,c+d` drops pairs.
 
 Failures are reported as lint warnings naming the measured value and the
 expectation; passing checks print as info so the numbers stay visible while

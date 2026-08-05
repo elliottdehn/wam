@@ -504,6 +504,47 @@ def parse(text, path=None):
                                    line_no, line)
                 model.checks.append(dict(kind="measure", label=label,
                                          expr=expr, line_no=line_no))
+            elif kw == "noclip":
+                # noclip [<parts> [vs <parts>]] [in=<anim|*>] [depth=<d>]
+                #        [except=<a>+<b>,...]
+                words, kv = [], {}
+                for t in tokens[1:]:
+                    if "=" in t and not t.startswith("("):
+                        k, v = t.split("=", 1)
+                        kv[k] = v
+                    else:
+                        words.append(t)
+
+                def _csv(items):
+                    out = []
+                    for it in items:
+                        out.extend(x for x in it.split(",") if x)
+                    return out
+
+                strict = "strict" in words
+                words = [w for w in words if w != "strict"]
+                if "vs" in words:
+                    i = words.index("vs")
+                    subject, against = _csv(words[:i]), _csv(words[i + 1:])
+                    if not subject or not against:
+                        raise WamError("noclip <parts> vs <parts>", line_no, line)
+                else:
+                    subject, against = _csv(words) or None, None
+                exempt = []
+                for pair in _csv([kv["except"]] if "except" in kv else []):
+                    halves = pair.split("+")
+                    if len(halves) != 2:
+                        raise WamError("noclip except= takes pairs joined by "
+                                       "'+', like except=hand.r+sword",
+                                       line_no, line)
+                    exempt.append(frozenset(halves))
+                model.checks.append(dict(
+                    kind="noclip", subject=subject, against=against,
+                    strict=strict,
+                    anim=kv.get("in"),
+                    depth=_num(kv["depth"], line_no, line) if "depth" in kv
+                    else 0.005,
+                    exempt=exempt, line_no=line_no))
             elif kw == "assert":
                 # Both sides are full expressions: a bound is as often another
                 # measurement ("the skull ends ahead of the ribcage") as it is

@@ -16,6 +16,7 @@ import numpy as np
 # language run to a few hundred vertices, so this is rarely reached, and a
 # proximity check that is a hair pessimistic beats one nobody runs.
 _SAMPLE_CAP = 600
+_CLIP_SAMPLES = 60      # clip tests are O(points x triangles), twice
 _ANIM_FRAMES = 12
 
 
@@ -61,6 +62,112 @@ def _min_pair_distance(A, B):
     return best
 
 
+def points_inside(points, A, B, C):
+    """Which points lie inside the closed surface of triangles ABC.
+
+    Ray parity along +X: an odd number of crossings means inside.
+    """
+    n = len(points)
+    if not n or not len(A):
+        return np.zeros(n, dtype=bool)
+    e1, e2 = B - A, C - A
+    d = np.array([1.0, 0.0, 0.0])
+    h = np.cross(d, e2)
+    det = np.einsum("ij,ij->i", e1, h)
+    live = np.abs(det) > 1e-12
+    if not live.any():
+        return np.zeros(n, dtype=bool)
+    e1, e2, A2, h = e1[live], e2[live], A[live], h[live]
+    inv = 1.0 / det[live]
+    out = np.zeros(n, dtype=bool)
+    for pi, p in enumerate(points):
+        s = p - A2
+        u = inv * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = inv * q[:, 0]                       # d · q with d = +X
+        t = inv * np.einsum("ij,ij->i", e2, q)
+        hit = (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
+        out[pi] = bool(int(hit.sum()) % 2)
+    return out
+
+
+def _crossing_depth(P0, P1, A, B, C, chunk=64):
+    """How far segments P0→P1 poke through the surface of triangles ABC.
+
+    Depth is perpendicular to the pierced triangle — how far the buried edge
+    endpoint sits behind that surface — so it measures penetration rather
+    than the length of whatever edge happened to cross. Working from surface
+    crossings rather than volume containment keeps this meaningful for *open*
+    parts: a `cap none` kilt or a thickness-free `web` has no inside for a
+    containment test to ask about, and cloth is exactly where clipping
+    matters most.
+    """
+    if not len(P0) or not len(A):
+        return 0.0
+    e1, e2 = B - A, C - A
+    nrm = np.cross(e1, e2)
+    plane_d = np.einsum("tj,tj->t", A, nrm)
+    best = 0.0
+    for i in range(0, len(P0), chunk):
+        p0, p1 = P0[i:i + chunk], P1[i:i + chunk]
+        d = p1 - p0
+        h = np.cross(d[:, None, :], e2[None, :, :])
+        det = np.einsum("mtj,tj->mt", h, e1)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        s = p0[:, None, :] - A[None, :, :]
+        u = inv * np.einsum("mtj,mtj->mt", s, h)
+        q = np.cross(s, e1[None, :, :])
+        v = inv * np.einsum("mj,mtj->mt", d, q)
+        t = inv * np.einsum("tj,mtj->mt", e2, q)
+        hit = (ok & (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1)
+               & (t > 1e-9) & (t < 1 - 1e-9))
+        if not hit.any():
+            continue
+        # Signed height of each endpoint over each pierced triangle's plane.
+        # Faces are wound outward, so the endpoint with negative height is
+        # the buried one and its depth is how far it sits behind the surface.
+        nlen = np.sqrt(np.einsum("tj,tj->t", nrm, nrm))
+        nlen = np.where(nlen < 1e-18, 1.0, nlen)
+        h0 = (np.einsum("mj,tj->mt", p0, nrm) - plane_d[None, :]) / nlen
+        h1 = (np.einsum("mj,tj->mt", p1, nrm) - plane_d[None, :]) / nlen
+        depth = np.maximum(-np.minimum(h0, h1), 0.0)
+        best = max(best, float(depth[hit].max()))
+    return best
+
+
+def _dist_to_surface(p, A, B, C):
+    """Distance from p to the nearest point on a triangle soup."""
+    ab, ac, ap = B - A, C - A, p - A
+    n = np.cross(ab, ac)
+    nn = np.einsum("ij,ij->i", n, n)
+    nn = np.where(nn < 1e-18, 1.0, nn)
+    # barycentric coordinates of the projection onto each triangle's plane
+    d = np.einsum("ij,ij->i", n, ap) / nn
+    proj = ap - n * d[:, None]
+    d00 = np.einsum("ij,ij->i", ab, ab)
+    d01 = np.einsum("ij,ij->i", ab, ac)
+    d11 = np.einsum("ij,ij->i", ac, ac)
+    d20 = np.einsum("ij,ij->i", proj, ab)
+    d21 = np.einsum("ij,ij->i", proj, ac)
+    den = d00 * d11 - d01 * d01
+    den = np.where(np.abs(den) < 1e-18, 1.0, den)
+    v = (d11 * d20 - d01 * d21) / den
+    w = (d00 * d21 - d01 * d20) / den
+    inside = (v >= 0) & (w >= 0) & (v + w <= 1)
+    face = np.abs(d) * np.sqrt(nn)
+
+    def seg(P0, P1):
+        e = P1 - P0
+        ee = np.einsum("ij,ij->i", e, e)
+        ee = np.where(ee < 1e-18, 1.0, ee)
+        t = np.clip(np.einsum("ij,ij->i", p - P0, e) / ee, 0.0, 1.0)
+        return np.linalg.norm(p - (P0 + e * t[:, None]), axis=1)
+
+    edge = np.minimum(np.minimum(seg(A, B), seg(B, C)), seg(C, A))
+    return float(np.where(inside, face, edge).min())
+
+
 class Env:
     """Everything a check expression can name, bound to one compiled model."""
 
@@ -72,6 +179,7 @@ class Env:
         self.T = mesh.arrays()[1]
         self.ranges = mesh.part_ranges
         self._posed = {}
+        self._edges = {}
 
     # ---- resolution -----------------------------------------------------
 
@@ -102,6 +210,10 @@ class Env:
     def part_verts(self, ref):
         v0, v1 = self.part_range(ref)
         return self.V[v0:v1]
+
+    def part_verts_in(self, ref, V=None):
+        v0, v1 = self.part_range(ref)
+        return (self.V if V is None else V)[v0:v1]
 
     def point(self, ref):
         name = _name_of(ref)
@@ -140,6 +252,34 @@ class Env:
             return self.T
         sel = (self.T[:, 0] >= v0) & (self.T[:, 0] < v1)
         return self.T[sel]
+
+    def tri_verts(self, ref, V=None):
+        """(A, B, C) corner arrays for a part's triangles, in some pose."""
+        V = self.V if V is None else V
+        t = self.part_tris(ref)
+        return V[t[:, 0]], V[t[:, 1]], V[t[:, 2]]
+
+    def part_edges(self, ref, V=None):
+        """(P0, P1) endpoint arrays for a part's unique triangle edges."""
+        key = _name_of(ref)
+        if key not in self._edges:
+            t = self.part_tris(ref)
+            if not len(t):
+                self._edges[key] = np.zeros((0, 2), dtype=int)
+            else:
+                e = np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+                self._edges[key] = np.unique(np.sort(e, axis=1), axis=0)
+        e = self._edges[key]
+        Vs = self.V if V is None else V
+        return Vs[e[:, 0]], Vs[e[:, 1]]
+
+    def part_bones(self, ref):
+        """Bone names a part is meaningfully skinned to."""
+        v0, v1 = self.part_range(ref)
+        names = set()
+        for i in range(v0, v1):
+            names.update(n for n, w in self.mesh.skin[i] if w > 0.05)
+        return names
 
     # ---- animation ------------------------------------------------------
 
@@ -244,6 +384,37 @@ def build_functions(env):
         b0, b1 = env.part_range(b)
         frames, _ = env.posed(anim)
         return min(_min_pair_distance(f[a0:a1], f[b0:b1]) for f in frames)
+
+    def clip_between(a, b, V=None):
+        """Deepest interpenetration of two parts in one pose."""
+        av, bv = env.part_verts_in(a, V), env.part_verts_in(b, V)
+        # cheap reject: separated bounding boxes cannot interpenetrate
+        if (np.any(av.max(axis=0) < bv.min(axis=0)) or
+                np.any(bv.max(axis=0) < av.min(axis=0))):
+            return 0.0
+        ae0, ae1 = env.part_edges(a, V)
+        be0, be1 = env.part_edges(b, V)
+        # Each side reports how far it is buried behind the other's surface,
+        # and the shallower reading wins: a long edge crossing a small
+        # surface runs far past it without the two parts overlapping deeply,
+        # so the larger number describes the edge, not the intersection.
+        return min(_crossing_depth(ae0, ae1, *env.tri_verts(b, V)),
+                   _crossing_depth(be0, be1, *env.tri_verts(a, V)))
+
+    def clip(a, b, anim=None):
+        """How deeply two parts pass through each other.
+
+        `gap()` reads 0 for both touching and interpenetrating, so it cannot
+        tell a snug fit from a leg through a kilt — and on a low-poly mesh it
+        often reads a comfortable *positive* distance while the two surfaces
+        cross, because the nearest vertices are nowhere near the crossing.
+        This measures the other side of contact, and is 0 unless the surfaces
+        genuinely pass through each other.
+        """
+        if anim is None:
+            return clip_between(a, b)
+        frames, _ = env.posed(anim)
+        return max(clip_between(a, b, f) for f in frames)
 
     def asymmetry(ref=None):
         """Worst distance from a part to its own mirror image across X=0.
@@ -383,6 +554,7 @@ def build_functions(env):
         "verts": vert_count,
         # clearance and symmetry
         "gap": gap,
+        "clip": clip,
         "asymmetry": asymmetry,
         # rig
         "influences": influences,
@@ -414,6 +586,153 @@ class _Lazy:
         if self._value is None:
             self._value = self.fn()
         return self._value
+
+
+def _hard_pairs(env):
+    """Pairs whose overlap the language itself asks for.
+
+    `on=` is *defined* as sinking a part into the surface it sits on, a group
+    prop is one rigid assembly, and the two halves of a mirrored part meet at
+    the midline. Flagging these would make the check unusable, and no
+    author-visible edit could ever satisfy it.
+    """
+    allowed = set()
+    names = list(env.ranges)
+    # the two halves of one mirrored part meet at the midline
+    for n in names:
+        if n.endswith(".l") and n[:-2] + ".r" in env.ranges:
+            allowed.add(frozenset((n, n[:-2] + ".r")))
+    # on= is *defined* as sinking a part into the surface it sits on
+    for part in env.model.parts:
+        base = part.get("on")
+        if not base:
+            continue
+        for sa in ("", ".l", ".r"):
+            for sb in ("", ".l", ".r"):
+                allowed.add(frozenset((part["name"] + sa, base + sb)))
+    # a web is stretched over its ribs, so it passes through the tubes that
+    # wrap those same bones by construction
+    for part in env.model.parts:
+        if part.get("kind") != "web":
+            continue
+        for sa in ("", ".l", ".r"):
+            key = part["name"] + sa
+            if key not in env.ranges:
+                continue
+            web_bones = env.part_bones(key)
+            for other in env.ranges:
+                if other != key and env.part_bones(other) <= web_bones:
+                    allowed.add(frozenset((key, other)))
+    # everything authored inside one group is a single rigid assembly
+    groups = {}
+    for part in env.model.parts:
+        g = part.get("group")
+        if g is not None:
+            groups.setdefault(id(g), []).append(part["name"])
+    for members in groups.values():
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                allowed.add(frozenset((a, b)))
+    return allowed
+
+
+def _soft_pairs(env):
+    """Pairs that share or neighbour a bone.
+
+    Consecutive body segments have to interpenetrate: a thigh starts inside
+    the hip mass, a neck inside the chest. But so does a leg inside a kilt,
+    and that one is a bug — so this exemption applies only to the blanket
+    `noclip` sweep. Name a subject and it stops applying, which is what makes
+    `noclip kilt` the useful form for cloth and props.
+    """
+    allowed = set()
+    names = list(env.ranges)
+    bones_of = {n: env.part_bones(n) for n in names}
+    parent_of = {n: (b.parent.name if b.parent else None)
+                 for n, b in env.bones.items()}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            ba, bb = bones_of[a], bones_of[b]
+            shared_joint = (
+                bool(ba & bb)
+                or any(parent_of.get(x) in bb for x in ba)
+                or any(parent_of.get(y) in ba for y in bb)
+                # siblings: digits off one wrist, a leg and a tail off one
+                # pelvis — they all emerge from the same point and overlap
+                or bool({parent_of.get(x) for x in ba} &
+                        {parent_of.get(y) for y in bb} - {None}))
+            if shared_joint:
+                allowed.add(frozenset((a, b)))
+    return allowed
+
+
+def run_noclip(env, spec, funcs):
+    """Evaluate one `noclip` statement. Returns (failures, measurements)."""
+    clip = funcs["clip"]
+    names = [n for n, (v0, v1) in env.ranges.items() if v1 - v0 >= 4]
+    known = set(names)
+
+    def resolve(listed):
+        out = []
+        for want in listed:
+            hits = [n for n in names if n == want or n == want + ".l"
+                    or n == want + ".r"]
+            if not hits:
+                raise CheckError("no part named %r" % want)
+            out.extend(hits)
+        return out
+
+    subject = resolve(spec["subject"]) if spec["subject"] else names
+    against = resolve(spec["against"]) if spec["against"] else names
+    explicit = bool(spec["against"])
+
+    pairs = set()
+    for a in subject:
+        for b in against:
+            if a != b:
+                pairs.add(frozenset((a, b)))
+    if not explicit:
+        # a named pair overrides everything; a named subject still skips the
+        # overlaps the language mandates; the blanket sweep also forgives
+        # parts that merely share a joint
+        pairs -= _hard_pairs(env)
+        if not spec.get("strict"):
+            pairs -= _soft_pairs(env)
+    for ex in spec["exempt"]:
+        pairs -= {frozenset(resolve(list(ex)))} if len(ex) == 2 else set()
+        pairs = {p for p in pairs
+                 if not (len(p) == 2 and {x.rsplit(".", 1)[0] for x in p} == set(ex))}
+
+    anims = []
+    if spec["anim"] == "*":
+        anims = [a["name"] for a in env.model.anims]
+    elif spec["anim"]:
+        anims = [spec["anim"]]
+
+    tol = spec["depth"]
+    hits = []
+    for pair in sorted(pairs, key=lambda p: sorted(p)):
+        a, b = sorted(pair)
+        worst, where = clip(_Ref(a), _Ref(b)), "at rest"
+        for an in anims:
+            d = clip(_Ref(a), _Ref(b), _Ref(an))
+            if d > worst:
+                worst, where = d, "during %s" % an
+        if worst > tol:
+            hits.append((worst, a, b, where))
+    hits.sort(reverse=True)
+
+    failures = ["%r passes %.3f into %r %s (limit %.3f)"
+                % (a, d, b, where, tol) for d, a, b, where in hits[:8]]
+    if len(hits) > 8:
+        failures.append("...and %d more clipping pairs" % (len(hits) - 8))
+    scope = "all" if not spec["subject"] else ",".join(spec["subject"])
+    measurements = []
+    if not hits:
+        measurements.append("noclip %s: %d pair(s) clear%s"
+                            % (scope, len(pairs),
+                               "" if not anims else " across " + ", ".join(anims)))
+    return failures, measurements
 
 
 def build_scalars(env, funcs):
@@ -512,6 +831,15 @@ def evaluate(model, bones, mesh, V):
         return "%.4g" % value
 
     for c in checks:
+        if c["kind"] == "noclip":
+            try:
+                fails, notes = run_noclip(env, c, funcs)
+            except CheckError as e:
+                failures.append("line %d: noclip — %s" % (c["line_no"], e))
+                continue
+            failures.extend("line %d: %s" % (c["line_no"], f) for f in fails)
+            measurements.extend(notes)
+            continue
         try:
             value = value_of(c["expr"])
             if c["kind"] == "assert":

@@ -81,10 +81,12 @@ checks
   # mass balance
   assert volume(head) < volume(torso) / 3
   assert volume(arm.l) == volume(leg.l) / 2 +- 0.01
-  # clearance, at rest and in motion
+  # clearance and clipping, at rest and in motion
   assert gap(sword, thigh.r) > 0.015
-  assert gap(sword, thigh.r, walk) > 0.01
-  assert gap(cape, arm.l, walk) > 0.005
+  noclip in=*                                    # nothing intersects anything
+  noclip kilt vs thigh.l,thigh.r in=walk         # cloth: name the pair
+  noclip cape strict in=*
+  assert clip(sword, shield) == 0
   # rigging — catches the bugs renders cannot show
   assert influences(cape) >= 2                   # not welded to one bone
   assert influences(wing.l) >= 2
@@ -185,6 +187,9 @@ actions like a double-arm smash).
    do not use `on=` to place a big plate on a thin shaft (ambiguous snap) —
    use a `group` local position instead.
 4. **Cloth**: any skirt-like part needs `follow=` rings or legs clip through.
+   Prove it with `noclip kilt vs thigh.l,thigh.r in=walk` — `gap()` will not
+   catch this, and on a low-poly mesh it often reports a healthy positive
+   distance while the leg is straight through the cloth.
 5. **Caps**: never leave `cap none` unless the end is provably buried inside
    other geometry from every angle. A part buried *entirely* inside another
    is now a lint warning — it renders nothing and costs triangles; use `on=`
