@@ -396,7 +396,8 @@ def parse(text, path=None):
                     raise WamError("seg outside a sweep", line_no, line)
                 _, kv, flags = _split_kv(tokens[1:], line_no, line)
                 s = {}
-                for k in ("len", "r", "up", "fwd", "curl", "roll"):
+                for k in ("len", "r", "up", "down", "fwd", "back",
+                          "curl", "roll"):
                     if k in kv:
                         s[k] = _num(kv[k], line_no, line)
                 if "material" in kv:

@@ -139,6 +139,10 @@ loft torso bones=pelvis..neck material=fur
   `roll=`, so they mean what the rolled section looks like; `up=` is always
   world +Y.
 - Skinning: each ring binds to the chain bone under it, blending near joints.
+  Blending only happens *at* a joint, so the compiler inserts a ring at every
+  joint the author left bare — otherwise a ring spanning two bones welds to
+  one of them and the tube creases instead of bending. The inserted section is
+  interpolated from its neighbours, so the silhouette is unchanged.
 - **Cloth**: `follow=<bone>:<frac>` on a ring makes its vertices partially
   follow a mirrored bone pair, split left/right per vertex — the kilt idiom:
   `ring 1.00 w=0.41 follow=thigh:0.85` makes the hem swing with the legs
@@ -210,10 +214,46 @@ computes the blend for you.
 
 ### `sweep` — a curved tube from a point (horns, tusks)
 
-Segments accumulate bends: `up=+deg` bends the tip toward world +Y,
-`fwd=+deg` toward world +Z, and `curl=+deg` rotates about the sweep's own
-(transported) side axis. Use `curl` for rings and tight spirals — the
-world-referenced bends degenerate when the tangent aligns with their axis.
+Segments accumulate bends. **Prefer the world-referenced, intention-named
+ones**: `up=` / `down=` tip the tangent toward +Y / −Y, `fwd=` / `back=`
+toward +Z / −Z. Each pair is the other's negation, so a bend never has to be
+written as a negative number whose sign you guessed.
+
+`curl=+deg` rotates about the sweep's own *transported* side axis. It is the
+only bend whose axis is not visible in the source, so reach for it only when
+you need a ring or a tight spiral, where the world-referenced bends degenerate
+as the tangent swings onto their axis. Two things to know about it: the sign
+is stable (`curl` and `up` bend opposite ways for a forward-pointing sweep),
+but **bends accumulate**, so four segments of `curl=45` is a half turn that
+carries the tip back over its own root whichever sign you used.
+
+Either way you get told what happened. Every sweep that bends more than 15°
+reports its realized path:
+
+```
+info: sweep 'tentacle.l' leaves down-fwd and ends up pointing up-fwd
+      (96° of bend, tip +0.212 in y)
+```
+
+so a tentacle meant to droop that arcs over the skull is a line of lint, not
+something to find in a render.
+
+A sweep is **rigid by default** — every ring binds to the one bone it is
+mounted on. Give it `bones=a..b` and its rings bind along that chain by arc
+length instead, so the curve you tuned deforms with the skeleton:
+
+```
+sweep tentacle bones=tc1..tc3 material=hide      # origin and aim from the chain
+  seg len=0.09 r=0.045 down=12
+  seg len=0.09 r=0.035 down=18
+  seg len=0.08 r=0.020 down=22 tip
+```
+
+`bone=`/`at=`/`dir=` still work alongside `bones=` when the mount point and
+the skinning chain differ; with `bones=` alone the sweep starts at the chain's
+head and aims along its first bone. Decide this **before** tuning the shape —
+converting a rigid sweep into a bone chain afterwards means re-deriving every
+segment length as a ring fraction by hand.
 
 ```
 sweep horn bone=head at=0.50 offset=(0.085,0.035,0) dir=side yaw=12 material=horn
@@ -503,7 +543,8 @@ Animation
 | `moves(p, anim)` | furthest any vertex travels from rest |
 | `travel(bone, anim)` | furthest a bone's tail travels from rest |
 | `swing(bone, anim)` | widest angular travel of a bone's direction |
-| `slide(p, anim)` | horizontal drift while planted — **the moonwalk detector** |
+| `slide(p, anim)` | forward travel while planted — **the moonwalk detector**, 0 for a correct gait |
+| `drift(p, anim)` | total horizontal travel while planted (≈ stride length in place) |
 | `lowest(anim)` `highest(anim)` | extreme y reached at any moment |
 
 Globals (bare words, no parentheses): `height`, `width`, `depth`, `ground`,
@@ -526,6 +567,14 @@ parts that interpenetrate both read 0 — and on a low-poly mesh it often reads
 a comfortable *positive* distance while two surfaces cross, because the
 nearest vertices are nowhere near the crossing. Use `gap` for things that must
 stay apart and `clip` for things that must not intersect.
+
+`slide` measures *direction*, not distance. There is no root translation
+channel, so a looping gait is authored in place and its planted foot travels a
+full stride backwards through stance — correctly. What separates a good gait
+from a moonwalk is a foot moving *forward* while it is on the ground, which is
+what `slide` sums, over the longest unbroken contact run. A correct gait reads
+0 and `assert slide(foot.l, walk) < 0.02` is satisfiable; use `drift` if you
+ever drive the root with `shift=` pose keys.
 
 `clip` works from surface crossings, not volume containment, so it stays
 meaningful for open parts — a `cap none` kilt and a thickness-free `web` have
@@ -556,7 +605,11 @@ only usable if it knows what to forgive. Two tiers:
   `web` against the tubes wrapping its own rib bones.
 - Forgiven unless `strict`: parts on bones that **share a joint** — a thigh
   starting inside the hip mass, a neck inside the chest, digits off one
-  wrist, a leg and a tail off one pelvis.
+  wrist, a leg and a tail off one pelvis — and any overlap confined to the
+  first third of a part, which is a limb rooted in the mass it grows out of.
+  A part crossing another *mid-span* is reported however shallow it is,
+  which is the distinction that matters: a plume rooted 0.026 deep in a torso
+  is structural, a spar 0.018 through the middle of one is a bug.
 
 That second tier also covers a leg inside a kilt, which is a bug. Cloth and
 props hang across joints they are not part of, so give them their own line:

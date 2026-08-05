@@ -91,7 +91,7 @@ def points_inside(points, A, B, C):
     return out
 
 
-def _crossing_depth(P0, P1, A, B, C, chunk=64):
+def _crossing_depth(P0, P1, A, B, C, chunk=64, collect=False):
     """How far segments P0→P1 poke through the surface of triangles ABC.
 
     Depth is perpendicular to the pierced triangle — how far the buried edge
@@ -108,6 +108,7 @@ def _crossing_depth(P0, P1, A, B, C, chunk=64):
     nrm = np.cross(e1, e2)
     plane_d = np.einsum("tj,tj->t", A, nrm)
     best = 0.0
+    points = []
     for i in range(0, len(P0), chunk):
         p0, p1 = P0[i:i + chunk], P1[i:i + chunk]
         d = p1 - p0
@@ -124,6 +125,9 @@ def _crossing_depth(P0, P1, A, B, C, chunk=64):
                & (t > 1e-9) & (t < 1 - 1e-9))
         if not hit.any():
             continue
+        if collect:
+            mi, ti = np.nonzero(hit)
+            points.append(p0[mi] + d[mi] * t[hit][:, None])
         # Signed height of each endpoint over each pierced triangle's plane.
         # Faces are wound outward, so the endpoint with negative height is
         # the buried one and its depth is how far it sits behind the surface.
@@ -133,6 +137,8 @@ def _crossing_depth(P0, P1, A, B, C, chunk=64):
         h1 = (np.einsum("mj,tj->mt", p1, nrm) - plane_d[None, :]) / nlen
         depth = np.maximum(-np.minimum(h0, h1), 0.0)
         best = max(best, float(depth[hit].max()))
+    if collect:
+        return best, (np.concatenate(points) if points else np.zeros((0, 3)))
     return best
 
 
@@ -498,24 +504,67 @@ def build_functions(env):
                 worst = max(worst, between(u, v))
         return worst
 
-    def slide(part, anim):
-        """Horizontal drift of a part while it is planted on the ground.
+    def _planted(part, anim):
+        """Centroids over one stance: the longest unbroken run of contact.
 
-        This is the moonwalk bug made measurable: a contact foot must hold
-        still in world space through stance, and a gait that flexes the knee
-        during stance drags it instead. Frames are counted as planted when
-        the part is within a hair of its own lowest point over the cycle.
+        Every low frame is not a stance frame — a foot descending at the end
+        of swing is near the ground and still travelling forward, which is
+        correct footfall, not sliding. Taking the longest contiguous run
+        (wrapping, since a cycle loops) isolates the interval the foot is
+        actually planted.
         """
         v0, v1 = env.part_range(part)
         frames, _ = env.posed(anim)
         lows = [float(f[v0:v1, 1].min()) for f in frames]
         floor = min(lows)
         tol = max(0.02, (max(lows) - floor) * 0.15)
-        planted = [f[v0:v1] for f, lo in zip(frames, lows) if lo <= floor + tol]
+        n = len(frames)
+        down = [lo <= floor + tol for lo in lows]
+        if all(down):
+            run = list(range(n))
+        else:
+            best, cur = [], []
+            for k in range(2 * n):
+                i = k % n
+                if down[i] and (len(cur) < n):
+                    cur.append(i)
+                    if len(cur) > len(best):
+                        best = list(cur)
+                else:
+                    cur = []
+            run = best
+        return [(i, frames[i][v0:v1].mean(axis=0)) for i in run]
+
+    def slide(part, anim):
+        """How far a planted part travels *forward* — the moonwalk measure.
+
+        There is no root translation channel, so a looping gait is authored
+        in place: the planted foot has to travel a full stride backwards
+        through stance, and that is correct, not a bug. Total travel is
+        therefore unbounded below by anything an author can fix — what
+        distinguishes a good gait from a moonwalk is *direction*. This sums
+        the forward (+Z) steps a part makes while it is on the ground, so a
+        correctly timed gait reads 0 and a leg driven backwards through its
+        own stance reads the distance it dragged.
+        """
+        planted = _planted(part, anim)
+        total = 0.0
+        for (_, ca), (_, cb) in zip(planted, planted[1:]):
+            total += max(0.0, float(cb[2] - ca[2]))
+        return total
+
+    def drift(part, anim):
+        """Total horizontal travel of a part while planted, unsigned.
+
+        For an in-place cycle this is roughly the stride length and is
+        supposed to be large; it is worth checking only once a model drives
+        its root with `shift=` pose keys.
+        """
+        planted = _planted(part, anim)
         if len(planted) < 2:
             return 0.0
-        centers = np.array([[p[:, 0].mean(), p[:, 2].mean()] for p in planted])
-        return float(np.linalg.norm(centers.max(axis=0) - centers.min(axis=0)))
+        c = np.array([[p[0], p[2]] for _, p in planted])
+        return float(np.linalg.norm(c.max(axis=0) - c.min(axis=0)))
 
     def lowest(anim):
         """Lowest point reached at any moment of an anim (feet through floor)."""
@@ -565,6 +614,7 @@ def build_functions(env):
         "travel": travel,
         "swing": swing,
         "slide": slide,
+        "drift": drift,
         "lowest": lowest,
         "highest": highest,
         # arithmetic helpers
@@ -718,6 +768,10 @@ def run_noclip(env, spec, funcs):
             d = clip(_Ref(a), _Ref(b), _Ref(an))
             if d > worst:
                 worst, where = d, "during %s" % an
+        if worst > tol and not spec.get("strict") and not explicit:
+            if (_rooted_overlap(env, _Ref(a), _Ref(b))
+                    or _rooted_overlap(env, _Ref(b), _Ref(a))):
+                continue
         if worst > tol:
             hits.append((worst, a, b, where))
     hits.sort(reverse=True)
@@ -733,6 +787,30 @@ def run_noclip(env, spec, funcs):
                             % (scope, len(pairs),
                                "" if not anims else " across " + ", ".join(anims)))
     return failures, measurements
+
+
+def _rooted_overlap(env, a, b, V=None, span=0.35):
+    """Is a's intersection with b confined to where a begins?
+
+    A limb rooted in the body mass it grows out of overlaps only near its
+    start; a spar passing through a torso crosses it mid-span. That is the
+    same "the construct means this" logic already applied to `on=`, and it
+    is what separates most structural overlap from a real defect.
+    """
+    pts = env.part_verts_in(a, V)
+    if len(pts) < 2:
+        return False
+    axis = pts[-1] - pts[0]
+    length = float(np.linalg.norm(axis))
+    if length < 1e-9:
+        return False
+    axis = axis / length
+    ae0, ae1 = env.part_edges(a, V)
+    _, hits = _crossing_depth(ae0, ae1, *env.tri_verts(b, V), collect=True)
+    if not len(hits):
+        return False
+    along = (hits - pts[0]) @ axis / length
+    return bool(along.max() < span)
 
 
 def build_scalars(env, funcs):

@@ -144,10 +144,43 @@ def lint(model, bones, mesh):
         t = float(np.clip(np.dot(p - a0, d), 0, max(L, 1e-9)))
         return float(np.linalg.norm(p - (a0 + d * t)))
 
+    def part_bone_set(part_key):
+        """Every bone a part is skinned to, over either mirrored half."""
+        names = set()
+        for key in (part_key, part_key + ".l", part_key + ".r"):
+            if key not in mesh.part_ranges:
+                continue
+            v0, v1 = mesh.part_ranges[key]
+            for i in range(v0, v1):
+                names.update(bn for bn, w in mesh.skin[i] if w > 0.05)
+        return names
+
     for part in model.parts:
         if "bone" not in part:
             continue
         host_ref = part["bone"]
+        if part.get("on"):
+            # `on=` snaps the origin onto another part's surface, so its raw
+            # distance to any bone says nothing — a tentacle passing nearby
+            # would "win" an eye socket. The question worth asking is whether
+            # the attachment rides a bone its base is actually built on. A
+            # base spanning a chain has many, and a spike near its far end
+            # rightly hosts on the last of them.
+            base_bones = part_bone_set(part["on"])
+            hb = bones.get(host_ref) or bones.get(host_ref + ".l")
+            if base_bones and hb is not None:
+                # Membership, not proximity: the host has to be one of the
+                # bones that actually drives the surface. A neighbouring bone
+                # is not good enough — that is precisely the attachment that
+                # slides off when the two bones diverge.
+                ok = any(bones.get(bn) is hb for bn in base_bones)
+                if not ok:
+                    warnings.append(
+                        "part %r sits on %r but is hosted on %r, which does "
+                        "not drive any of %r — the attachment will slide off "
+                        "its base as soon as either moves"
+                        % (part["name"], part["on"], host_ref, part["on"]))
+            continue
         hb = bones.get(host_ref) or bones.get(host_ref + ".l")
         if hb is None:
             continue
@@ -202,6 +235,60 @@ def lint(model, bones, mesh):
         if nonmanifold:
             warnings.append("%d non-manifold edges are used by more than two triangles"
                             % nonmanifold)
+
+    # 5b. sweeps: say which way the bend actually went
+    def _dir_words(v):
+        v = np.asarray(v, dtype=float)
+        n = np.linalg.norm(v)
+        if n < 1e-9:
+            return "nowhere"
+        v = v / n
+        names = []
+        for comp, (pos, neg) in zip(v, (("left", "right"), ("up", "down"),
+                                        ("fwd", "back"))):
+            if abs(comp) > 0.35:
+                names.append(pos if comp > 0 else neg)
+        return "-".join(names) or "fwd"
+
+    # Grouped: a model with twenty claws should not spend twenty lines
+    # saying the same thing about all of them.
+    groups = {}
+    for key, (d0, d1, p0, p1) in sorted(getattr(mesh, "sweep_paths", {}).items()):
+        turn = np.degrees(np.arccos(float(np.clip(np.dot(
+            d0 / np.linalg.norm(d0), d1 / np.linalg.norm(d1)), -1, 1))))
+        if turn < 15:
+            continue
+        sig = (_dir_words(d0), _dir_words(d1), round(turn / 10.0),
+               round(float(p1[1] - p0[1]), 2))
+        groups.setdefault(sig, []).append(key)
+    for (a, b, turn10, rise), keys in sorted(groups.items(),
+                                             key=lambda kv: -len(kv[1])):
+        shown = ", ".join(keys[:3]) + (", ..." if len(keys) > 3 else "")
+        count = "" if len(keys) == 1 else " (%d sweeps)" % len(keys)
+        infos.append("sweep %s%s leaves %s and ends up pointing %s (~%d° of "
+                     "bend, tip %+.2f in y)"
+                     % (shown, count, a, b, turn10 * 10, rise))
+
+    # 5c. a multi-bone loft that never blends binds rigidly per segment
+    for part in model.parts:
+        if part.get("kind") != "loft" or "chain" not in part:
+            continue
+        for suffix in ("", ".l"):
+            key = part["name"] + suffix
+            if key not in mesh.part_ranges:
+                continue
+            v0, v1 = mesh.part_ranges[key]
+            names = set()
+            for i in range(v0, v1):
+                names.update(n for n, w in mesh.skin[i] if w > 0.01)
+            most = max((len(mesh.skin[i]) for i in range(v0, v1)), default=0)
+            if len(names) > 1 and most < 2:
+                warnings.append(
+                    "loft %r spans %d bones but no vertex blends between them "
+                    "— it will crease rigidly at each joint; remove the "
+                    "`skin=` overrides that pin its rings"
+                    % (key, len(names)))
+            break
 
     # 6b. parts swallowed whole by another part
     for a, b in _buried_parts(V, T, mesh.part_ranges):

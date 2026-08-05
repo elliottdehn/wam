@@ -147,8 +147,15 @@ compensating root offset.
     it always reads as a disconnected slab with a hard seam.
   - `skin=boneA:0.6,boneB:0.4` overrides the computed binding for a ring.
 - `sweep` — curved tube from a point: segments with `len r` and bends.
-  Use `curl=` (about the transported side axis) for horns/rings/spirals;
-  `up=`/`fwd=` world bends degenerate when the tangent aligns with the axis.
+  **Bend with `up=/down=/fwd=/back=`** — world-referenced and intention-named,
+  so no sign is ever guessed. `curl=` bends about the sweep's own transported
+  side axis, which is invisible in the source and accumulates (4×`curl=45` is
+  a half turn back over the root); keep it for rings and tight spirals, where
+  world bends degenerate. Every bent sweep prints its realized path
+  (`leaves down-fwd and ends up pointing up-fwd, tip +0.212 in y`) — read it.
+  A sweep is **rigid** unless given `bones=a..b`, which binds its rings along
+  that chain by arc length. Decide that before tuning the shape: converting
+  afterwards means re-deriving every segment length as a ring fraction.
 - `web` — **a membrane across a fan of bones**: wings, frills, fins, webbed
   feet, capes, sails. `web wing anchor=wrist material=membrane
   trailing=scallop` plus one `rib bones=a..b` line per spar (`inset=` stops
@@ -178,7 +185,10 @@ actions like a double-arm smash).
 
 1. **Gaits**: knees/hocks flex during the *swing* (upper leg moving forward)
    and stay extended through stance — flexing during stance reads as walking
-   backward (the moonwalk bug).
+   backward (the moonwalk bug). `slide()` measures the *forward* travel of a
+   planted foot, so a correct in-place cycle reads 0 even though the foot
+   covers a full stride backwards through stance — that part is not a bug and
+   there is no root translation channel to remove it.
 2. **Weapons and props**: always a `group` with `dir=` aiming. Never
    hand-derive world rotations across a multi-part prop.
 3. **Attachments**: host every part on the bone it *visually* attaches to —

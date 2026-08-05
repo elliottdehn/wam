@@ -32,6 +32,9 @@ class MeshOut:
         # into double-sided rendering with the `double_sided` flag, intended
         # only for genuinely thin/open surfaces.
         self.double_sided_materials = set()
+        # realized (start dir, tip dir, start point, tip point) per sweep, so
+        # the lint can say which way a bend actually went
+        self.sweep_paths = {}
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -270,6 +273,30 @@ def _lerp_rings(rings, t):
                 out[k] = va * (1 - f) + vb * f
             return out
     return dict(rings[-1])
+
+
+def _rings_at_joints(rings, sampler):
+    """Add a ring wherever the chain bends, if the author left one out.
+
+    Skin weights blend only near a joint, so a ring straddling two bones with
+    nothing at the joint between them binds rigidly to one of them: the tube
+    creases at the bend and the second bone moves nothing. Placing a ring at
+    each joint is a continuous decision about vertices, which is the
+    compiler's job — the interpolated section is exactly what the surface
+    passed through anyway, so the silhouette does not change.
+    """
+    if len(sampler.seg_lens) < 2:
+        return rings
+    out = list(rings)
+    for cut in np.cumsum(sampler.seg_lens[:-1]) / sampler.total:
+        cut = float(cut)
+        if any(abs(r["t"] - cut) < 0.04 for r in out):
+            continue
+        r = _lerp_rings(sorted(out, key=lambda x: x["t"]), cut)
+        r["t"] = cut
+        r.pop("tip", None)
+        out.append(r)
+    return sorted(out, key=lambda r: r["t"])
 
 
 class PathSampler:
@@ -595,6 +622,7 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         pts = [chain[0].head] + [b.tail for b in chain]
         sampler = PathSampler(pts)
         skin_for = lambda t: _chain_skin(sampler, chain, t)
+        rings = _rings_at_joints(rings, sampler)
     elif "bone" in part:
         host = resolve_bone_ref(bones, part["bone"], suffix)
         at = part.get("at", 1.0)
@@ -733,13 +761,29 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         out.double_sided_materials.add(base_mat)
     if not part["segs"]:
         raise WamError("sweep %r has no segs" % part["name"])
-    host = resolve_bone_ref(bones, part.get("bone"), suffix)
-    origin = host.point_at(part.get("at", 1.0))
+    # A sweep may ride a bone chain: the swept curve is still authored with
+    # segments, but its rings bind along the chain by arc length, so the
+    # shape you tuned animates instead of being welded to one bone.
+    chain = chain_sampler = None
+    if "chain" in part:
+        chain = chain_bones(bones, part["chain"][0], part["chain"][1], suffix)
+        chain_sampler = PathSampler([chain[0].head] + [b.tail for b in chain])
+    if part.get("bone") is not None:
+        host = resolve_bone_ref(bones, part["bone"], suffix)
+        origin = host.point_at(part.get("at", 1.0))
+    elif chain is not None:
+        host = chain[0]
+        origin = host.point_at(part.get("at", 0.0))
+    else:
+        raise WamError("sweep %r needs bone= or bones=a..b" % part["name"])
     origin = origin + np.array(part.get("offset", (0, 0, 0)), dtype=float)
     origin = snap_on(out, part, origin, suffix,
                      default_inset=max(0.012, part["segs"][0]["r"] * 0.8))
-    d = resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
-                    part.get("yaw", 0.0), part.get("tilt", 0.0))
+    if "dir" in part or chain is None:
+        d = resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
+                        part.get("yaw", 0.0), part.get("tilt", 0.0))
+    else:
+        d = chain[0].dir / np.linalg.norm(chain[0].dir)
 
     # local frame transported along the sweep
     ref = _frame_ref(part)
@@ -767,8 +811,13 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
                                      mat_rgb(model, seg["material"])))
         else:
             mats.append(mat)
-        skins.append(_explicit_skin(bones, seg["skin"], suffix, part["name"])
-                     if "skin" in seg else skin)
+        if "skin" in seg:
+            skins.append(_explicit_skin(bones, seg["skin"], suffix, part["name"]))
+        elif chain is not None:
+            skins.append(_chain_skin(chain_sampler, chain,
+                                     acc_len[0] / total_len))
+        else:
+            skins.append(skin)
         arcs.append(part_arcs)
 
     Y = np.array([0.0, 1.0, 0.0])
@@ -780,12 +829,16 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         # bends are world-referenced: up=+deg tips the tangent toward +Y,
         # fwd=+deg toward +Z (negative values bend the other way)
         R = np.eye(3)
-        if seg.get("up"):
+        # `down=`/`back=` are the negations of `up=`/`fwd=`, so a bend never
+        # has to be expressed as a negative number whose sign you guessed
+        rise = seg.get("up", 0.0) - seg.get("down", 0.0)
+        ahead = seg.get("fwd", 0.0) - seg.get("back", 0.0)
+        if rise:
             axis = np.cross(tang, Y)
-            R = rot_axis(axis, seg["up"]) @ R
-        if seg.get("fwd"):
+            R = rot_axis(axis, rise) @ R
+        if ahead:
             axis = np.cross(tang, Z)
-            R = rot_axis(axis, seg["fwd"]) @ R
+            R = rot_axis(axis, ahead) @ R
         if seg.get("curl"):
             # planar bend about the transported side axis: stable for rings
             # and spirals where up/fwd axes would degenerate
@@ -819,7 +872,16 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
     _orient_tube_components(out, t0, len(out.tris), roles,
                             orient_centers, orient_axes,
                             part["name"] + (".r" if reflect else suffix))
-    out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))
+    key = part["name"] + (".r" if reflect else suffix)
+    out.part_ranges[key] = (v0, len(out.verts))
+    # record where the bend actually took the tip, so the lint can report it:
+    # a sweep's bend axis is not visible in the source, and until now the
+    # render was the only way to find out which way it went
+    refl = np.array([-1.0, 1.0, 1.0]) if reflect else np.array([1.0, 1.0, 1.0])
+    out.sweep_paths[key] = (np.asarray(axes[0][2]) * refl,
+                            np.asarray(axes[-1][2]) * refl,
+                            np.asarray(centers[0]) * refl,
+                            np.asarray(centers[-1]) * refl)
 
 
 def _blend_skin(a, b, f, limit=4):

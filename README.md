@@ -4,42 +4,30 @@ A text language + compiler for **LLM-authored low-poly characters**: mesh,
 skeleton, and animations from ~150 lines of readable source, compiled to
 glTF 2.0 with software-rendered turntables for visual iteration.
 
-![Duel](assets/duel.png)
-
 The founding rule: the author only makes **discrete, named, relative,
 symmetric** decisions — bone angles as words+degrees, body masses as
 cross-section rings, membranes as fans of ribs, symmetry via `mirror`
 blocks, props in local-frame `group`s. The compiler generates every vertex,
 skin weight, normal, and winding, and a semantic linter rejects the classes
-of silent geometry bugs we hit while building the reference models (folds,
-wrong-bone bindings, floating feet, inside-out faces) — plus whatever
+of silent geometry bugs that renders hide (folds, wrong-bone bindings,
+floating feet, inside-out faces, parts buried inside other parts) — plus whatever
 proportions you write down yourself in a `checks` section.
 
-| | | |
-|---|---|---|
-| ![Tauren](assets/tauren_sheet.png) | ![Human](assets/human_sheet.png) | |
-| ![Orc](assets/orc_sheet.png) | ![Wolf](assets/wolf_sheet.png) | |
-
-![Walk cycle](assets/tauren_anim_walk.png)
-
-Models aren't limited to characters — `models/town/` holds twelve buildings
-and props composed into a scene by `scripts/compose_town.py`:
-
-![Town](assets/town.png)
+Models aren't limited to characters: `scripts/compose_town.py` composes a set
+of prop models into a single scene with a packed mega-atlas, and `wam.zone`
+compiles whole environments from landforms and placement rules.
 
 A `textures` section gives materials a hand-painted look from named
 procedural operators (gradients, noise, grain, bricks, planks, AO...),
-baked into an auto-unwrapped texel atlas that ships inside the glTF:
-
-![Tauren atlas](assets/tauren_atlas.png)
+baked into an auto-unwrapped texel atlas that ships inside the glTF.
 
 ## Quick start
 
 ```bash
-python3 -m wam.cli models/tauren.wam            # compile + render 4-view sheet
-python3 -m wam.cli models/tauren.wam --anim walk --frames 6
-python3 -m wam.cli models/tauren.wam --bones    # skeleton overlay
-python3 -m wam.cli models/dragon.wam --width 760 --height 560   # landscape panels
+python3 -m wam.cli mymodel.wam                  # compile + render 4-view sheet
+python3 -m wam.cli mymodel.wam --anim walk --frames 6
+python3 -m wam.cli mymodel.wam --bones          # skeleton overlay
+python3 -m wam.cli mymodel.wam --width 760 --height 560   # landscape panels
 ```
 
 Outputs land in `out/`: a skinned, animated `.gltf` (drops into
@@ -47,8 +35,8 @@ Blender/three.js/engines), PNG render sheets, the texture atlas, and a
 `*_viewer.json` — open `viewer/template.html` in a browser and drop the
 JSON onto it for an interactive orbit/animation view. Requires Python 3 + numpy.
 
-A tiny sample of the language (see [SPEC.md](SPEC.md) for the full grammar
-and `models/` for four complete reference models):
+The repository ships no example models — [SPEC.md](SPEC.md) is the reference,
+and every construct in it has a worked snippet. A taste of the language:
 
 ```
 skeleton
@@ -91,9 +79,10 @@ compile, and visually iterate using the bundled toolchain.
 
 ## Layout
 
-- `wam/` — compiler: parser → skeleton solver → mesh generation → lint →
-  glTF export, plus a dependency-free software rasterizer for the PNGs.
-- `models/` — reference models: tauren, human footman, wolf, orc grunt.
+- `wam/` — compiler: parser → skeleton solver → mesh generation → texture
+  baker → lint → glTF export, plus a dependency-free software rasterizer.
+- `wam/checks.py` — the `checks` section: proportion, clearance, clipping,
+  rig-quality and animation assertions re-run on every compile.
 - `SPEC.md` — the language specification.
 - `viewer/` — template for a self-contained WebGL viewer page
   (`wam/viewer_export.py` produces the data blob to inject).
