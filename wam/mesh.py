@@ -8,7 +8,7 @@ import math
 import numpy as np
 
 from .parser import WamError
-from .skeleton import (resolve_dir, rot_axis, chain_bones,
+from .skeleton import (BASE_DIRS, resolve_dir, rot_axis, chain_bones,
                        resolve_bone_ref, rot_x, rot_y, rot_z, Bone)
 
 STYLE_SIDES = {"chunky": 8, "smooth": 12, "fine": 16}
@@ -35,6 +35,8 @@ class MeshOut:
         # realized (start dir, tip dir, start point, tip point) per sweep, so
         # the lint can say which way a bend actually went
         self.sweep_paths = {}
+        # part key -> degrees the `on=` press turned it off its authored aim
+        self.pressed = {}
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -86,12 +88,70 @@ def _closest_point_tri(p, a, b, c):
     return a + ab * (vb * denom) + ac * (vc * denom)
 
 
-def snap_on(out, part, origin, suffix, default_inset=0.012):
-    """If the part declares on=<part>, snap origin onto that part's surface
-    and sink it inward by inset, so attachments are flush by construction."""
+def _record_press(out, part, suffix, reflect, before, after):
+    """Note how far the press turned a part off its authored aim."""
+    a = np.asarray(before, dtype=float)
+    b = np.asarray(after, dtype=float)
+    cos = float(np.clip((a @ b) / max(np.linalg.norm(a) * np.linalg.norm(b), 1e-12),
+                        -1.0, 1.0))
+    key = part["name"] + (".r" if reflect else suffix)
+    out.pressed[key] = math.degrees(math.acos(cos))
+    return b
+
+
+def _pressed_dir(part, normal):
+    """The authored aim, carried into a frame where `dir` is the normal.
+
+    With no pitch/yaw/tilt this is exactly the surface normal; the authored
+    angles then read as deviations from it, the same way aiming a `group`
+    works. That keeps `dir=up pitch=15` meaning "15 degrees off square"
+    instead of 15 degrees off the world axis it was never about.
+    """
+    name = part.get("dir", "up")
+    base = np.array(BASE_DIRS[name], dtype=float) if name in BASE_DIRS \
+        else np.array([0.0, 1.0, 0.0])
+    aim = resolve_dir(name, part.get("pitch", 0.0), part.get("yaw", 0.0),
+                      part.get("tilt", 0.0))
+    return _align_rotation(base, normal) @ aim
+
+
+def _align_rotation(src, dst):
+    """Rotation taking unit vector `src` onto unit vector `dst`."""
+    src = np.asarray(src, dtype=float)
+    dst = np.asarray(dst, dtype=float)
+    src = src / max(np.linalg.norm(src), 1e-12)
+    dst = dst / max(np.linalg.norm(dst), 1e-12)
+    axis = np.cross(src, dst)
+    c = float(np.clip(src @ dst, -1.0, 1.0))
+    if np.linalg.norm(axis) < 1e-9:
+        if c > 0:
+            return np.eye(3)
+        # antiparallel: any perpendicular axis will do
+        perp = np.array([1.0, 0.0, 0.0])
+        if abs(src[0]) > 0.9:
+            perp = np.array([0.0, 1.0, 0.0])
+        axis = np.cross(src, perp)
+    return rot_axis(axis, math.degrees(math.acos(c)))
+
+
+def snap_on(out, part, origin, suffix, default_inset=0.012, footprint=0.0):
+    """Place a part against the surface named by `on=`.
+
+    Returns (origin, normal). The origin is snapped to the closest point on
+    that surface and sunk in by `inset`; the normal is the outward direction
+    of the surface there, which the caller uses to *press* the part flat
+    against it — a vertical horn on a sloped shoulder tilts to stand square
+    on the slope rather than cutting into it on one side and floating on the
+    other. `press=off` on the part keeps the authored world direction.
+
+    The normal is averaged over the triangles the part's base actually
+    covers, weighted by proximity, so a base spanning several facets of a
+    low-poly surface stands on their average rather than snapping to
+    whichever one it happened to land on.
+    """
     ref = part.get("on")
     if not ref:
-        return origin
+        return origin, None
     key = None
     for cand in (ref + suffix, ref):
         if cand in out.part_ranges:
@@ -101,23 +161,35 @@ def snap_on(out, part, origin, suffix, default_inset=0.012):
         raise WamError("part %r: on=%r not found (the base part must be "
                        "defined earlier in the file)" % (part["name"], ref))
     v0, v1 = out.part_ranges[key]
-    best, best_d = None, 1e18
-    for ti, (i, j, k) in enumerate(out.tris):
+    origin = np.asarray(origin, dtype=float)
+    best, best_d, hits = None, 1e18, []
+    for (i, j, k) in out.tris:
         if not (v0 <= i < v1):
             continue
-        p = _closest_point_tri(np.asarray(origin, dtype=float),
-                               out.verts[i], out.verts[j], out.verts[k])
+        a, b, c = out.verts[i], out.verts[j], out.verts[k]
+        p = _closest_point_tri(origin, a, b, c)
         d = float(np.dot(p - origin, p - origin))
+        fn = np.cross(b - a, c - a)          # faces are wound outward already
+        hits.append((d, p, fn))
         if d < best_d:
             best, best_d = p, d
     if best is None:
-        return origin
+        return origin, None
+
+    radius = max(footprint, 1e-6)
+    nrm = np.zeros(3)
+    for d, p, fn in hits:
+        if float(np.dot(p - best, p - best)) <= radius * radius:
+            nrm = nrm + fn                   # area-weighted by construction
+    if np.linalg.norm(nrm) < 1e-12:          # footprint smaller than a facet
+        nrm = min(hits, key=lambda h: h[0])[2]
+    n = float(np.linalg.norm(nrm))
+    normal = nrm / n if n > 1e-12 else None
+
     inset = part.get("inset", default_inset)
-    u = best - origin
-    n = np.linalg.norm(u)
-    if n < inset * 0.5:      # already touching/inside: leave it
-        return origin
-    return best + u / n * inset
+    if normal is None:
+        return best, None
+    return best - normal * inset, normal
 
 
 def mat_rgb(model, name):
@@ -629,10 +701,14 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         origin = host.point_at(at)
         origin = origin + np.array(part.get("offset", (0, 0, 0)), dtype=float)
         first_w = part["rings"][0].get("w", 0.05) if part["rings"] else 0.05
-        origin = snap_on(out, part, origin, suffix,
-                         default_inset=max(0.012, first_w * 0.25))
+        origin, normal = snap_on(out, part, origin, suffix,
+                                 default_inset=max(0.012, first_w * 0.25),
+                                 footprint=first_w * 0.6)
         d = resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
                         part.get("yaw", 0.0), part.get("tilt", 0.0))
+        if normal is not None and part.get("press", True):
+            d = _record_press(out, part, suffix, reflect, d,
+                              _pressed_dir(part, normal))
         length = part.get("len")
         if length is None:
             raise WamError("loft %r on a bone needs len=" % part["name"])
@@ -777,13 +853,17 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
     else:
         raise WamError("sweep %r needs bone= or bones=a..b" % part["name"])
     origin = origin + np.array(part.get("offset", (0, 0, 0)), dtype=float)
-    origin = snap_on(out, part, origin, suffix,
-                     default_inset=max(0.012, part["segs"][0]["r"] * 0.8))
+    origin, normal = snap_on(out, part, origin, suffix,
+                             default_inset=max(0.012, part["segs"][0]["r"] * 0.8),
+                             footprint=part["segs"][0]["r"] * 1.2)
     if "dir" in part or chain is None:
         d = resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
                         part.get("yaw", 0.0), part.get("tilt", 0.0))
     else:
         d = chain[0].dir / np.linalg.norm(chain[0].dir)
+    if normal is not None and part.get("press", True):
+        d = _record_press(out, part, suffix, reflect, d,
+                          _pressed_dir(part, normal))
 
     # local frame transported along the sweep
     ref = _frame_ref(part)
@@ -1120,8 +1200,10 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
     at = part.get("at", 0.0)
     origin = host.point_at(at) + np.array(part.get("offset", (0, 0, 0)), dtype=float)
-    origin = snap_on(out, part, origin, suffix)
     size = part.get("size", 0.05)
+    origin, normal = snap_on(
+        out, part, origin, suffix,
+        footprint=max(part.get("w", size), part.get("d", size)) * 0.6)
     skin = [(host.name, 1.0)]
     v0 = len(out.verts)
 
@@ -1182,6 +1264,16 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
     else:
         raise WamError("unknown attach kind %r" % prim)
 
+    # Press the prim flat against the surface it was placed on. A prim's mass
+    # hangs *below* its origin (the box's top face is the origin, so a hoof
+    # sits under a leg), so it is -Y that has to follow the outward normal —
+    # aligning +Y would bury the whole block in the surface instead.
+    if normal is not None and part.get("press", True):
+        _record_press(out, part, suffix, reflect,
+                      np.array([0.0, -1.0, 0.0]), normal)
+        R = _align_rotation(np.array([0.0, -1.0, 0.0]), normal)
+        for i in range(v0, len(out.verts)):
+            out.verts[i] = R @ (out.verts[i] - origin) + origin
     if reflect:
         _reflect_range(out, v0, suffix)
     out.part_ranges[part["name"] + (".r" if reflect else suffix)] = (v0, len(out.verts))

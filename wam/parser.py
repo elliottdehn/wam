@@ -327,6 +327,13 @@ def parse(text, path=None):
                     p["prim"] = kv["kind"]
                 if "on" in kv:
                     p["on"] = kv["on"]
+                if "press" in kv:
+                    if kv["press"] not in ("on", "off"):
+                        raise WamError("press= must be on|off", line_no, line)
+                    p["press"] = kv["press"] == "on"
+                for f in flags:
+                    if f == "nopress":
+                        p["press"] = False
                 if "frame" in kv:
                     if kv["frame"] not in FRAME_WORDS:
                         raise WamError("frame= must be one of %s"

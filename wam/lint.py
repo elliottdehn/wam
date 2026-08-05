@@ -269,6 +269,19 @@ def lint(model, bones, mesh):
                      "bend, tip %+.2f in y)"
                      % (shown, count, a, b, turn10 * 10, rise))
 
+    # 5b2. `on=` pressing silently re-aims a part onto the surface normal.
+    # A small turn is the point of the feature; a large one means the authored
+    # `dir=` was overridden wholesale, which the author should know about.
+    turned = sorted(((deg, key) for key, deg in getattr(mesh, "pressed", {}).items()
+                     if deg > 20.0), reverse=True)
+    if turned:
+        shown = ", ".join("%s %.0f\u00b0" % (k, d) for d, k in turned[:4])
+        infos.append("on= pressed %d part(s) more than 20\u00b0 off their "
+                     "authored dir (%s%s) — that is the surface deciding the "
+                     "angle; add press=off to keep the authored aim"
+                     % (len(turned), shown,
+                        ", ..." if len(turned) > 4 else ""))
+
     # 5c. a multi-bone loft that never blends binds rigidly per segment
     for part in model.parts:
         if part.get("kind") != "loft" or "chain" not in part:

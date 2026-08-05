@@ -150,8 +150,8 @@ checks
   assert influences(torso) <= 4
 ```
 
-Turn every rule below into a check where you can. Rules 1, 4, and 7 in
-particular now have exact detectors — `slide()`, `moves()`/`weight()`, and
+Turn every rule below into a check where you can. The gait, cloth and
+ground rules in particular now have exact detectors — `slide()`, `moves()`/`weight()`, and
 `bottom()`/`lowest()` — so a violation should reach you as a failed check,
 not as something you notice in a render (or don't).
 
@@ -238,30 +238,36 @@ actions like a double-arm smash).
    there is no root translation channel to remove it.
 2. **Weapons and props**: always a `group` with `dir=` aiming. Never
    hand-derive world rotations across a multi-part prop.
-3. **Attachments**: host every part on the bone it *visually* attaches to —
+3. **`on=` presses**: a part placed with `on=` is aimed along the surface
+   normal where it lands, so identical `dir=up` spikes each stand square on a
+   curved surface. `dir=` therefore selects which axis meets the normal and
+   `pitch/yaw/tilt` are deviations from square. If the authored direction was
+   the point (a rib wrapping sideways, a swept-back horn), use `press=off` —
+   the lint reports every part turned more than 20°, so check that line.
+4. **Attachments**: host every part on the bone it *visually* attaches to —
    a tabard on the chest hosted on the pelvis will not move when the chest
    does (lint catches this). Use `on=` for small-onto-big surface contact;
    do not use `on=` to place a big plate on a thin shaft (ambiguous snap) —
    use a `group` local position instead.
-4. **Cloth**: any skirt-like part needs `follow=` rings or legs clip through.
+5. **Cloth**: any skirt-like part needs `follow=` rings or legs clip through.
    Prove it with `noclip kilt vs thigh.l,thigh.r in=walk` — `gap()` will not
    catch this, and on a low-poly mesh it often reports a healthy positive
    distance while the leg is straight through the cloth.
-5. **Caps**: never leave `cap none` unless the end is provably buried inside
+6. **Caps**: never leave `cap none` unless the end is provably buried inside
    other geometry from every angle. A part buried *entirely* inside another
    is now a lint warning — it renders nothing and costs triangles; use `on=`
    to sit it on the surface instead.
-6. **Folds**: if lint says a loft folds at a bend, split the loft at that
+7. **Folds**: if lint says a loft folds at a bend, split the loft at that
    joint (end the torso at the shoulders; give the neck its own loft) —
    folded surfaces read as invisible/missing faces.
-7. **Ground**: lint reports floating or sunken feet with the distance;
+8. **Ground**: lint reports floating or sunken feet with the distance;
    adjust the root height or limb lengths, then re-check.
-8. **Nothing verified by eye stays verified by eye** — see *Write checks
+9. **Nothing verified by eye stays verified by eye** — see *Write checks
    constantly*. Every rule on this list has a detector; use it.
-9. **Membranes**: a surface between bones is a `web`, never a flattened tube.
-10. **Framing**: if a model is longer than it is tall, render it landscape
+10. **Membranes**: a surface between bones is a `web`, never a flattened tube.
+11. **Framing**: if a model is longer than it is tall, render it landscape
    (`--width 760 --height 560`) — the default panel is portrait.
-11. **Work from SPEC.md, not from memory** — there are no example models to
+12. **Work from SPEC.md, not from memory** — there are no example models to
    crib from, and half the constructs (`web`, `frame=`, `material_arc=`,
    `pin`, `checks`) have no analogue in other 3D formats. Build in passes:
    skeleton first, then block out the masses with a few rings per part,

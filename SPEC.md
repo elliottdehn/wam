@@ -327,6 +327,42 @@ loft  ear    bone=head at=0.38 offset=(0.056,0,0) dir=side len=0.014 on=skull in
 The `offset=` becomes a rough aim rather than a precise landing spot. The
 base part must appear earlier in the file.
 
+**Pressing.** `on=` also *presses* the part flat against the surface: the
+compiler takes the outward normal where the part landed and aims the part
+along it, so a spike on a sloped shoulder stands square on the slope instead
+of cutting into it on one side and floating off it on the other. Four spikes
+written identically as `dir=up` on a cone each come out perpendicular to the
+cone at their own height.
+
+The normal is averaged over the triangles the part's base actually covers, so
+a base spanning several facets of a low-poly surface stands on their average
+rather than snapping to whichever facet it happened to land on. `attach`
+prims press too — their mass hangs below their origin, so it is that axis
+which follows the normal and a `box` boss stands proud of the surface.
+
+Under pressing `dir=` selects the axis that gets aimed at the normal, and
+`pitch`/`yaw`/`tilt` become deviations **from** it, exactly like aiming a
+`group`: `dir=up pitch=30` is thirty degrees off square, not thirty degrees
+off vertical. With no angles you get the normal itself, which means `dir=up`
+and `dir=side` produce the same result — the surface is deciding.
+
+That last point is the catch, and it is why the compiler reports it:
+
+```
+info: on= pressed 12 part(s) more than 20° off their authored dir
+      (rib_mid.r 90°, rib_mid.l 90°, ...) — that is the surface deciding the
+      angle; add press=off to keep the authored aim
+```
+
+A part placed with a large `offset=` can land on a face pointing somewhere
+quite different from the direction you aimed it, and pressing will honour the
+face. When the authored direction was the point — ribs meant to wrap
+sideways, a horn deliberately swept back — turn it off:
+
+```
+sweep rib bone=spine at=0.6 offset=(0.03,0,0.15) dir=side on=thorax press=off
+```
+
 ### `group` — rigid props in their own frame
 
 Compound props (weapons, lanterns, banners) are authored **once in a clean
