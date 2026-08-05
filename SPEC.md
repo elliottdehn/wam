@@ -627,6 +627,9 @@ Animation
 | `drift(p, anim)` | total horizontal travel while planted (≈ stride length in place) |
 | `lowest(anim)` `highest(anim)` | extreme y reached at any moment |
 
+Set files add `dist(a, b)`, `x/y/z(point)` and `covers(outer, inner)` over
+model members, all in meters, where a point is `model.part` or `model.bone`.
+
 Globals (bare words, no parentheses): `height`, `width`, `depth`, `ground`,
 `top`, `tris`, `verts`, `materials`, `bonecount`, `parts` (mirrored halves
 count separately), `anims`, `asymmetry`, `pi`. Helpers: `abs`, `min`, `max`.
@@ -831,12 +834,69 @@ animation intact and driving them — measured on a real pair, the cape swings
 
 | | |
 |---|---|
+| `align=<anchor>` | **solve** the placement from a declared anchor frame |
 | `to=<bone>[:t]` | where a joining root lands; omit for armour that only fuses |
 | `to=(x,y,z)` | place in the base's space with no host bone (scene assembly) |
 | `dir= pitch= yaw= tilt= spin= offset=` | aim it, exactly like a `group` |
 | `scale=` | override the automatic declared-height ratio |
 | `fuse=name\|none` | `none` forces everything to join, even where names match |
 | `prefix=` | namespace the joined bones (defaults to the alias) |
+
+#### `anchor` / `align=` — solve the placement, do not guess it
+
+A prop placed with `to=hand.r dir=up pitch=35 offset=(0,0,0.02)` is a
+hand-derived transform, which is the one thing the language forbids
+everywhere else — and it fails the same way, with the weapon floating beside
+the fist that should hold it. Declare instead where the model *meets*
+something:
+
+```
+model warhammer
+  height 2.10
+  anchor grip at=(0,0.06,0) dir=up      # the point and axis that meets a hand
+```
+
+```
+compose knight
+  base body
+  graft hammer to=hand.r:0.6 align=grip pitch=-155
+```
+
+`align=` maps the anchor's frame onto the host bone's frame, so the grip
+lands in the hand by construction. Position stops being a guess entirely, and
+`pitch`/`yaw`/`spin` become deviations from a correct default — the carry
+angle above is one intelligible number relative to the hand, not four
+interacting ones relative to the world.
+
+Because the compiler now knows where the grip is, it checks: grafting a model
+that declares an anchor *without* using it reports where the anchor actually
+landed.
+
+```
+WARN: graft 'hammer' was aimed by hand, but that model declares an anchor
+      'grip' which landed 0.073 from hand.r — use align=grip to have the
+      placement solved instead of guessed
+```
+
+That is the warning worth having, because no proximity check finds this bug:
+a hammer floating beside the arm and a hammer held in the hand measured 0.026
+and 0.023 apart respectively. Only the anchor knows which one is *held*.
+
+#### `noclip` at set level
+
+`every: noclip` already sweeps every member, compositions included. In the
+`checks` block a sweep must name whose space to search, since the set itself
+has none:
+
+```
+checks
+  noclip knight                 # every unrelated pair inside the composition
+  noclip knight hammer.shaft    # just this part against the rest
+```
+
+Expect a composed character to report worn gear overlapping the body — that
+is what armour does. `covers` is the check for fit; `noclip` is for the things
+that should never touch.
 
 `fuse=none` is not an escape hatch, it is the rider case. A rider shares
 `spine`, `head` and `hand.l` with its mount, so the default would weld the two

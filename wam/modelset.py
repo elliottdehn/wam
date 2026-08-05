@@ -181,7 +181,8 @@ def parse(text, path=None):
                 cur["base"] = tokens[1]
             elif kw == "graft":
                 g = dict(alias=tokens[1], line_no=line_no, dir=kv.get("dir"),
-                         fuse=kv.get("fuse", "name"), prefix=kv.get("prefix"))
+                         fuse=kv.get("fuse", "name"), prefix=kv.get("prefix"),
+                         align=kv.get("align"))
                 if g["fuse"] not in ("name", "none"):
                     raise wparser.WamError("fuse= must be name|none",
                                            line_no, line)
@@ -283,8 +284,41 @@ def _affine_fuse(worn, host):
 
 
 def _join_frame(g, base, c):
-    """Affine placing a grafted model's own space into the base's."""
+    """Affine placing a grafted model's own space into the base's.
+
+    With `align=<anchor>` the placement is *solved*: the model's named anchor
+    frame is mapped onto the host bone's frame, so a grip meets a fist by
+    construction. Without one, the caller is back to aiming by hand, which is
+    where props end up floating beside the hand that should hold them.
+    """
     scale = g.get("scale", c.scale / base.scale)
+    if g.get("align"):
+        name = g["align"]
+        anchor = c.model.anchors.get(name)
+        if anchor is None:
+            raise wchecks.CheckError(
+                "graft %r: no anchor %r in that model (it has: %s)"
+                % (g["alias"], name,
+                   ", ".join(sorted(c.model.anchors)) or "none"))
+        host = base.bones.get(g.get("bone"))
+        if host is None:
+            raise wchecks.CheckError("graft %r: align= needs to=<bone>"
+                                     % g["alias"])
+        src = wskel.resolve_dir(anchor["dir"], anchor.get("pitch", 0.0),
+                                anchor.get("yaw", 0.0), anchor.get("tilt", 0.0))
+        dst = np.asarray(host.dir, dtype=float)
+        dst = dst / max(np.linalg.norm(dst), 1e-12)
+        R = wmesh._align_rotation(src, dst)
+        if g.get("spin"):
+            R = wskel.rot_axis(dst, g["spin"]) @ R
+        for k, fn in (("pitch", wskel.rot_x), ("yaw", wskel.rot_y),
+                      ("tilt", wskel.rot_z)):
+            if g.get(k):
+                R = fn(g[k]) @ R
+        A = scale * R
+        T = host.point_at(g.get("at", 1.0)) + np.asarray(
+            g.get("offset", (0.0, 0.0, 0.0)), dtype=float)
+        return A, T - A @ np.asarray(anchor["pos"], dtype=float), host
     if g.get("dir"):
         v = wskel.resolve_dir(g["dir"], g.get("pitch", 0.0), g.get("yaw", 0.0),
                               g.get("tilt", 0.0))
@@ -366,6 +400,22 @@ def build_composition(spec, models, warn):
                                      % (spec["name"], alias))
         A0, t0, host = _join_frame(g, base, c)
         fuse = g.get("fuse", "name") == "name"
+
+        # A model that declares an anchor is telling you where it meets
+        # something. Placing it by hand anyway is how a weapon ends up
+        # floating beside the fist that should hold it — so say where the
+        # anchor actually landed relative to the joint it was aimed at.
+        if host is not None and c.model.anchors and not g.get("align"):
+            target = host.point_at(g.get("at", 1.0))
+            landed = min(
+                (float(np.linalg.norm(A0 @ np.asarray(a["pos"], dtype=float)
+                                      + t0 - target)), nm)
+                for nm, a in c.model.anchors.items())
+            if landed[0] > 0.03:
+                warn("graft %r was aimed by hand, but that model declares an "
+                     "anchor %r which landed %.3f from %s — use align=%s to "
+                     "have the placement solved instead of guessed"
+                     % (alias, landed[1], landed[0], g.get("bone"), landed[1]))
 
         # decide, per bone, whether it fuses with the host or joins as new
         namemap, xform, fused = {}, {}, []
@@ -484,6 +534,25 @@ def build_functions(models):
         c, _ = resolve(ref)
         return float(c.V[:, 1].max() - min(c.V[:, 1].min(), 0.0))
 
+    def point(ref):
+        """A point on a model, in meters: a part's center or a bone's head."""
+        c, sub = resolve(ref)
+        if sub is None:
+            raise wchecks.CheckError(
+                "%r is a whole model — name a part or bone inside it, like "
+                "knight.hammer.shaft or knight.hand.r" % wchecks._name_of(ref))
+        return c, c.env.point(wchecks._Ref(sub)) * c.scale
+
+    def dist(a, b):
+        ca, pa = point(a)
+        cb, pb = point(b)
+        if ca is not cb:
+            raise wchecks.CheckError(
+                "dist() compares points in one model — %r and %r are in "
+                "different models, which share no space; compose them first"
+                % (wchecks._name_of(a), wchecks._name_of(b)))
+        return float(np.linalg.norm(pa - pb))
+
     def within(fname, a, b, extra=None):
         """Delegate a part-vs-part query to the model that owns both parts."""
         ca, pa = resolve(a)
@@ -529,6 +598,10 @@ def build_functions(models):
         "clip": lambda a, b, anim=None: within("clip", a, b, anim),
         "gap": lambda a, b, anim=None: within("gap", a, b, anim),
         "covers": lambda a, b: within("covers", a, b),
+        "dist": dist,
+        "x": lambda r: float(point(r)[1][0]),
+        "y": lambda r: float(point(r)[1][1]),
+        "z": lambda r: float(point(r)[1][2]),
         "height": lambda r: axis(r, 1),
         "width": lambda r: axis(r, 0),
         "depth": lambda r: axis(r, 2),
@@ -592,7 +665,23 @@ def compile_set(path, quiet=False, out_dir=None):
 
     funcs = build_functions(models)
     scalars = {"pi": float(np.pi), "models": float(len(models))}
-    failures, measurements = wchecks.run_checks(ms.checks, scalars, funcs)
+
+    def set_noclip(spec):
+        """`noclip <member> [parts...]` — a sweep inside one model or
+        composition. Set level has no shared space of its own, so the search
+        has to name whose space to search."""
+        subj = spec.get("subject") or []
+        if not subj or subj[0] not in models:
+            raise wchecks.CheckError(
+                "at set level noclip names the model to search first, like "
+                "`noclip knight` or `noclip knight sword` (have: %s)"
+                % ", ".join(sorted(models)))
+        c = models[subj[0]]
+        return wchecks.run_noclip(c.env, dict(spec, subject=(subj[1:] or None)),
+                                  c.funcs)
+
+    failures, measurements = wchecks.run_checks(ms.checks, scalars, funcs,
+                                                noclip=set_noclip)
 
     # `every` runs ordinary model-level checks inside each member's own
     # namespace, so shared conventions live in one file instead of being

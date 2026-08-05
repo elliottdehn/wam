@@ -69,6 +69,7 @@ class Model:
         self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
         self.pins = []             # list of dicts: bone -> absolute head/tail
+        self.anchors = {}          # name -> dict(pos, dir, pitch, yaw, tilt)
         self.parts = []            # list of dicts
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
         self.anims = []            # list of dicts
@@ -301,6 +302,26 @@ def parse(text, path=None):
                 if v <= 0:
                     raise WamError("%s must be above zero" % kw, line_no, line)
                 setattr(model, kw, v)
+            elif kw == "anchor":
+                # A named frame on the model — the point and axis by which it
+                # meets something else. `graft ... align=<name>` maps it onto
+                # a host bone, so a grip lands in a fist by construction
+                # instead of by a hand-guessed rotation and offset.
+                if len(tokens) < 2:
+                    raise WamError("anchor needs a name", line_no, line)
+                _, kv, flags = _split_kv(tokens[2:], line_no, line)
+                a = dict(pos=(0.0, 0.0, 0.0), dir="up")
+                if "at" in kv:
+                    a["pos"] = _vec(kv["at"], line_no, line)
+                if "dir" in kv:
+                    a["dir"] = kv["dir"]
+                for f in flags:
+                    if f in DIR_WORDS:
+                        a["dir"] = f
+                for k in ("pitch", "yaw", "tilt"):
+                    if k in kv:
+                        a[k] = _num(kv[k], line_no, line)
+                model.anchors[tokens[1]] = a
             elif kw == "style":
                 model.style = tokens[1]
             else:

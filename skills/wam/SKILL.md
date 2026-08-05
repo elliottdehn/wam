@@ -141,6 +141,21 @@ Two rules that make it work:
    itself — give it a skeleton matching the intended wearer, and iterate on it
    without recompiling the character.
 
+**Never aim a held prop by hand.** Give the prop an `anchor` — the point and
+axis by which it meets something — and graft with `align=`:
+
+```
+anchor grip at=(0,0.06,0) dir=up               # in the weapon
+graft hammer to=hand.r:0.6 align=grip pitch=-155   # in the set
+```
+
+The grip lands in the hand by construction, and the carry angle is one number
+relative to the hand instead of four relative to the world. A weapon floating
+beside the fist is the single most common composition bug, and no proximity
+check catches it — a held hammer and a floating one measure the same distance
+from the arm. The compiler warns if you graft a model that declares an anchor
+without using it.
+
 Then check the fit in the set file: `covers(knight.plate.cuirass,
 knight.body.torso) > 0.45` proves the armour actually contains the body, which
 `gap` and `clip` cannot tell you (both read 0 when one part swallows another).
