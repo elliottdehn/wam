@@ -99,6 +99,52 @@ Read the written file; both crops arrive at the same height in one image.
 Crops are also the only way to judge texture work: atlas ops (`noise`,
 `streaks`, `planks`) are invisible at sheet scale and obvious at 3x.
 
+## Split the character into models
+
+**Anything worn or carried belongs in its own `.wam` file** — armour, helmet,
+cloak, weapon, shield, backpack, saddle. Welding them into the body file is
+the most common way a character goes wrong: the gear cannot be reused on
+another body, cannot be swapped for a variant, cannot be inspected or checked
+on its own, and every "same orc with a different axe" duplicates the entire
+orc. A real model measured 35% equipment-layer parts fused into the body.
+
+```
+compose knight
+  base body
+  graft plate                                   # names match -> fuses to the body's bones
+  graft hammer to=hand.r:0.5 dir=up pitch=35    # no match -> joins as new bones
+  graft cape  to=spine                          # a mixture: spine fuses, sway bones join
+```
+
+There is one operation. Bones that **match by name fuse** (the geometry
+re-solves onto the host's bone and adapts to its length); bones with **no
+match join** the skeleton as new children, keeping their own children and
+their own animations. Armour is all-fuse, a weapon is all-join, a cape is
+both. Use `fuse=none` when the grafted model is a whole creature that happens
+to share bone names — a rider would otherwise weld itself into its mount.
+
+Do split: plate sets, helmets, pauldrons, cloaks, weapons, shields, quivers,
+mounts and their saddles — anything a *different* character could plausibly
+wear, or that this character could plausibly take off.
+
+Do **not** split integral anatomy: a golem's plating, a beetle's carapace, a
+dragon's scales. If it cannot come off, it is the body.
+
+Two rules that make it work:
+
+1. **Use conventional bone names** — `pelvis spine neck head`, `shoulder
+   upperarm forearm hand`, `thigh shin foot`. `wear` binds by name, so
+   equipment written against those names fits every body that uses them, and
+   stretches to a longer limb instead of sliding off it. Inventing names locks
+   the gear to one character forever.
+2. **Author the worn model alone first.** It compiles, renders and checks by
+   itself — give it a skeleton matching the intended wearer, and iterate on it
+   without recompiling the character.
+
+Then check the fit in the set file: `covers(knight.plate.cuirass,
+knight.body.torso) > 0.45` proves the armour actually contains the body, which
+`gap` and `clip` cannot tell you (both read 0 when one part swallows another).
+
 ## Write checks constantly
 
 Reading a render tells you the model is wrong *now*. A check tells you the

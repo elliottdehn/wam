@@ -88,12 +88,56 @@ def silhouette_mask(V, T, yaw_deg, res_h=SIL_H, res_w=SIL_W):
     return mask
 
 
+def _bone_frame(b):
+    """(origin, orthonormal basis, length) for one bone."""
+    d = np.asarray(b.dir, dtype=float)
+    d = d / max(np.linalg.norm(d), 1e-12)
+    side, other = wmesh._frame(d)
+    return np.asarray(b.head, dtype=float), np.stack([side, other, d], axis=1), \
+        max(float(b.len), 1e-9)
+
+
+def retarget(V, skin, worn_bones, host_bones, part_name):
+    """Rebind geometry authored against one skeleton onto another.
+
+    A worn model declares its own skeleton only so it can be authored and
+    inspected on its own. What makes it *equipment* is that composition
+    throws that skeleton away and re-solves the geometry against the wearer's
+    — by bone name, with each bone's own rotation, position and length ratio.
+    One plate set therefore fits every body that uses the same bone names,
+    and stretches to a longer forearm or a broader shoulder instead of
+    floating off it.
+    """
+    missing = sorted({n for sk in skin for n, _ in sk} - set(host_bones))
+    if missing:
+        raise wchecks.CheckError(
+            "%s is skinned to bone(s) the wearer does not have: %s — worn "
+            "models bind by bone name, so both skeletons must agree on them"
+            % (part_name, ", ".join(missing)))
+    frames = {}
+    for name in {n for sk in skin for n, _ in sk}:
+        wh, wr, wl = _bone_frame(worn_bones[name])
+        hh, hr, hl = _bone_frame(host_bones[name])
+        frames[name] = (wh, wr, wl, hh, hr, hl)
+    out = np.zeros_like(V)
+    for i, sk in enumerate(skin):
+        total = sum(w for _, w in sk) or 1.0
+        p = np.zeros(3)
+        for name, w in sk:
+            wh, wr, wl, hh, hr, hl = frames[name]
+            local = (wr.T @ (V[i] - wh)) * (hl / wl)
+            p += (w / total) * (hh + hr @ local)
+        out[i] = p
+    return out
+
+
 class ModelSet:
     def __init__(self):
         self.name = "set"
         self.entries = []          # (alias, path)
         self.checks = []
         self.every = []            # checks run inside each member's namespace
+        self.compositions = []     # dicts: name, base, grafts[]
         self.source_path = None
 
 
@@ -102,6 +146,7 @@ def parse(text, path=None):
     ms.source_path = path
     base = os.path.dirname(path or ".")
     section = None
+    cur = None
     for line_no, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].rstrip()
         if not line.strip():
@@ -114,14 +159,51 @@ def parse(text, path=None):
             ms.name = tokens[1]
             section = "set"
             continue
+        if kw == "compose":
+            if len(tokens) < 2:
+                raise wparser.WamError("compose needs a name", line_no, line)
+            cur = dict(name=tokens[1], base=None, grafts=[], line_no=line_no)
+            ms.compositions.append(cur)
+            section = "compose"
+            continue
         if kw in ("models", "checks", "every"):
             section = kw
+            cur = None
             continue
         if section == "models":
             if len(tokens) != 2:
                 raise wparser.WamError("models entry: <alias> <path.wam>",
                                        line_no, line)
             ms.entries.append((tokens[0], os.path.join(base, tokens[1])))
+        elif section == "compose":
+            _, kv, flags = wparser._split_kv(tokens[1:], line_no, line)
+            if kw == "base":
+                cur["base"] = tokens[1]
+            elif kw == "graft":
+                g = dict(alias=tokens[1], line_no=line_no, dir=kv.get("dir"),
+                         fuse=kv.get("fuse", "name"), prefix=kv.get("prefix"))
+                if g["fuse"] not in ("name", "none"):
+                    raise wparser.WamError("fuse= must be name|none",
+                                           line_no, line)
+                for f in flags:
+                    if f in wparser.DIR_WORDS:
+                        g["dir"] = f
+                for k in ("at", "pitch", "yaw", "tilt", "spin", "scale"):
+                    if k in kv:
+                        g[k] = wparser._num(kv[k], line_no, line)
+                if "offset" in kv:
+                    g["offset"] = wparser._vec(kv["offset"], line_no, line)
+                if "to" in kv:
+                    if kv["to"].startswith("("):
+                        g["world"] = wparser._vec(kv["to"], line_no, line)
+                    else:
+                        g["bone"], _, t = kv["to"].partition(":")
+                        if t:
+                            g["at"] = wparser._num(t, line_no, line)
+                cur["grafts"].append(g)
+            else:
+                raise wparser.WamError("compose takes base/graft, got %r"
+                                       % kw, line_no, line)
         elif section in ("checks", "every"):
             target = ms.checks if section == "checks" else ms.every
             target.append(wparser.parse_check(kw, line, tokens, line_no))
@@ -147,6 +229,14 @@ class Compiled:
         self.scale = float(model.height)       # declared meters per unit
         self.env = wchecks.Env(model, bones, mesh, self.V)
         self._masks = {}
+        self._funcs = None
+
+    @property
+    def funcs(self):
+        """This model's own check vocabulary, for delegated part queries."""
+        if self._funcs is None:
+            self._funcs = wchecks.build_functions(self.env)
+        return self._funcs
 
     def mask(self, yaw):
         if yaw not in self._masks:
@@ -156,6 +246,183 @@ class Compiled:
     def extent(self, axis, verts=None):
         v = self.V if verts is None else verts
         return float(v[:, axis].max() - v[:, axis].min()) * self.scale
+
+
+class _Composite:
+    """A stand-in model object for a composition: the base's rig, merged parts."""
+
+    def __init__(self, base_model, parts):
+        self.name = base_model.name
+        self.height = base_model.height
+        self.style = base_model.style
+        self.palette = dict(base_model.palette)
+        self.textures = dict(getattr(base_model, "textures", {}))
+        self.anims = base_model.anims          # the wearer drives the motion
+        self.poses = base_model.poses
+        self.parts = parts
+        self.checks = []
+
+
+def _prefixed_parts(alias, model):
+    out = []
+    for p in model.parts:
+        q = dict(p)
+        q["name"] = "%s.%s" % (alias, p["name"])
+        if q.get("on"):
+            q["on"] = "%s.%s" % (alias, p["on"])
+        out.append(q)
+    return out
+
+
+def _affine_fuse(worn, host):
+    """Affine taking geometry bound to `worn` onto the same-named `host`."""
+    wh, wr, wl = _bone_frame(worn)
+    hh, hr, hl = _bone_frame(host)
+    A = (hl / wl) * (hr @ wr.T)
+    return A, hh - A @ wh
+
+
+def _join_frame(g, base, c):
+    """Affine placing a grafted model's own space into the base's."""
+    scale = g.get("scale", c.scale / base.scale)
+    if g.get("dir"):
+        v = wskel.resolve_dir(g["dir"], g.get("pitch", 0.0), g.get("yaw", 0.0),
+                              g.get("tilt", 0.0))
+        R = wmesh._align_rotation(np.array([0.0, 1.0, 0.0]), v)
+        R = wskel.rot_axis(v, g.get("spin", 0.0)) @ R
+    else:
+        R = (wskel.rot_y(g.get("yaw", 0.0)) @ wskel.rot_x(g.get("pitch", 0.0))
+             @ wskel.rot_z(g.get("tilt", 0.0)))
+    if g.get("world") is not None:
+        T = np.asarray(g["world"], dtype=float)
+        host = None
+    else:
+        name = g.get("bone")
+        host = base.bones.get(name) if name else None
+        if name and host is None:
+            raise wchecks.CheckError("graft %r: the base has no bone %r"
+                                     % (g["alias"], name))
+        T = (host.point_at(g.get("at", 1.0)) if host is not None
+             else np.zeros(3))
+    T = T + np.asarray(g.get("offset", (0.0, 0.0, 0.0)), dtype=float)
+    A = scale * R
+    root = np.zeros(3)
+    for b in c.bones.values():
+        if b.parent is None:
+            root = np.asarray(b.head, dtype=float)
+            break
+    return A, T - A @ root, host
+
+
+def build_composition(spec, models, warn):
+    """Merge a base model with everything grafted into it.
+
+    Wearing and holding are not primitives, they are outcomes. The one
+    operation is grafting a skeleton into another: bones that match by name
+    **fuse**, and their geometry is re-solved onto the host's version of that
+    bone; bones with no match **join** the hierarchy as new children at the
+    declared point. Armour is the all-fused case, a weapon the all-joined
+    case, and everything interesting is a mixture — a cape whose spine bones
+    fuse while its own sway bones come along, a rider that keeps its entire
+    rig and animations while its root rides a saddle.
+    """
+    base = models.get(spec["base"])
+    if base is None:
+        raise wchecks.CheckError("compose %r: no base model %r"
+                                 % (spec["name"], spec["base"]))
+    out = wmesh.MeshOut()
+    parts, seen_colors = [], {}
+    bones = dict(base.bones)
+    anims = [dict(a) for a in base.model.anims]
+    poses = dict(base.model.poses)
+
+    def merge(alias, c, verts, skins):
+        remap = {}
+        for mi, (mname, rgb) in enumerate(c.mesh.materials):
+            prev = seen_colors.get(mname)
+            if prev is not None and prev != tuple(rgb):
+                warn("material %r means %s in one model and %s in another — "
+                     "composed models share materials by name, so one of them "
+                     "will silently repaint the other" % (mname, prev, tuple(rgb)))
+            seen_colors.setdefault(mname, tuple(rgb))
+            remap[mi] = out.material(mname, rgb)
+        v0 = len(out.verts)
+        for i, pt in enumerate(verts):
+            out.add_vert(pt, skins[i], uv=c.mesh.uvs[i])
+        for ti, (a, b, cc) in enumerate(c.mesh.tris):
+            out.add_tri(a + v0, b + v0, cc + v0, remap[c.mesh.tri_mat[ti]])
+        for name, (r0, r1) in c.mesh.part_ranges.items():
+            out.part_ranges["%s.%s" % (alias, name)] = (r0 + v0, r1 + v0)
+        out.double_sided_materials |= c.mesh.double_sided_materials
+        parts.extend(_prefixed_parts(alias, c.model))
+
+    merge(spec["base"], base, base.V, base.mesh.skin)
+
+    for g in spec["grafts"]:
+        alias = g["alias"]
+        c = models.get(alias)
+        if c is None:
+            raise wchecks.CheckError("compose %r: no model %r to graft"
+                                     % (spec["name"], alias))
+        A0, t0, host = _join_frame(g, base, c)
+        fuse = g.get("fuse", "name") == "name"
+
+        # decide, per bone, whether it fuses with the host or joins as new
+        namemap, xform, fused = {}, {}, []
+        for name, b in c.bones.items():
+            if fuse and name in base.bones:
+                namemap[name] = name
+                xform[name] = _affine_fuse(b, base.bones[name])
+                fused.append(name)
+            else:
+                new = "%s.%s" % (g.get("prefix") or alias, name) \
+                    if name in bones else name
+                namemap[name] = new
+                xform[name] = (A0, t0)
+        for name, b in c.bones.items():
+            if namemap[name] in bones:
+                continue
+            A, t = xform[name]
+            parent = (bones.get(namemap[b.parent.name]) if b.parent is not None
+                      else host)
+            d = A @ np.asarray(b.dir, dtype=float)
+            n = float(np.linalg.norm(d))
+            nb = wskel.Bone(namemap[name], parent, A @ np.asarray(b.head) + t,
+                            d / n if n > 1e-12 else b.dir,
+                            float(b.len) * float(np.linalg.norm(A[:, 2])))
+            if parent is not None:
+                parent.children.append(nb)
+            bones[namemap[name]] = nb
+
+        V = np.zeros_like(c.V)
+        for i, sk in enumerate(c.mesh.skin):
+            total = sum(w for _, w in sk) or 1.0
+            acc = np.zeros(3)
+            for name, w in sk:
+                A, t = xform[name]
+                acc += (w / total) * (A @ c.V[i] + t)
+            V[i] = acc
+        skins = [[(namemap[n], w) for n, w in sk] for sk in c.mesh.skin]
+        merge(alias, c, V, skins)
+
+        # the grafted model's own motion comes with it, remapped onto the
+        # names its bones ended up with
+        taken = {a["name"] for a in anims}
+        for a in c.model.anims:
+            a2 = dict(a)
+            a2["name"] = a["name"] if a["name"] not in taken \
+                else "%s.%s" % (alias, a["name"])
+            a2["channels"] = [dict(ch, bone=namemap.get(ch["bone"], ch["bone"]))
+                              for ch in a["channels"]]
+            anims.append(a2)
+        for pname, pose in c.model.poses.items():
+            key = pname if pname not in poses else "%s.%s" % (alias, pname)
+            poses[key] = dict(pose, bones={namemap.get(b, b): r
+                                           for b, r in pose["bones"].items()})
+    model = _Composite(base.model, parts)
+    model.anims = anims
+    model.poses = poses
+    return Compiled(spec["name"], model, bones, out)
 
 
 def build_functions(models):
@@ -217,6 +484,25 @@ def build_functions(models):
         c, _ = resolve(ref)
         return float(c.V[:, 1].max() - min(c.V[:, 1].min(), 0.0))
 
+    def within(fname, a, b, extra=None):
+        """Delegate a part-vs-part query to the model that owns both parts."""
+        ca, pa = resolve(a)
+        cb, pb = resolve(b)
+        if pa is None or pb is None:
+            raise wchecks.CheckError(
+                "%s() compares two parts, like %s(knight.plate.cuirass, "
+                "knight.body.torso)" % (fname, fname))
+        if ca is not cb:
+            raise wchecks.CheckError(
+                "%s() compares parts of one model — %r and %r live in "
+                "different models, so they share no space; put them in a "
+                "`compose` block first" % (fname, wchecks._name_of(a),
+                                           wchecks._name_of(b)))
+        args = [wchecks._Ref(pa), wchecks._Ref(pb)]
+        if extra is not None:
+            args.append(extra)
+        return ca.funcs[fname](*args)
+
     def silhouette(a, b, view=None):
         """How distinguishable two models are by outline alone, 0..1.
 
@@ -240,6 +526,9 @@ def build_functions(models):
 
     return {
         "silhouette": silhouette,
+        "clip": lambda a, b, anim=None: within("clip", a, b, anim),
+        "gap": lambda a, b, anim=None: within("gap", a, b, anim),
+        "covers": lambda a, b: within("covers", a, b),
         "height": lambda r: axis(r, 1),
         "width": lambda r: axis(r, 0),
         "depth": lambda r: axis(r, 2),
@@ -260,7 +549,30 @@ def build_functions(models):
     }
 
 
-def compile_set(path, quiet=False):
+def render_composition(c, out_prefix, views=("front", "threequarter", "side"),
+                       width=420, height=560):
+    """Sheet + glTF for a composition, exactly as for a single model."""
+    from . import render as wrender
+    from . import gltf as wgltf
+    from . import animation as wanim
+    from . import cli as wcli
+    V, T, M = c.mesh.arrays()
+    colors = [rgb for _, rgb in c.mesh.materials]
+    yaws = [wcli.VIEW_ANGLES.get(v, 0) for v in views]
+    center, dist = wcli.shared_framing(V, yaws, width, height)
+    imgs = [wrender.render_view(V, T, M, colors, yaw_deg=y, width=width,
+                                height=height, center=center, dist=dist)
+            for y in yaws]
+    os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
+    wrender.write_png(out_prefix + "_sheet.png", wrender.hstack_views(imgs))
+    order = list(c.bones.values())
+    tracks = wanim.gltf_tracks(c.model, c.bones, order)
+    wgltf.export(out_prefix + ".gltf", c.model, c.bones, order, c.mesh,
+                 tracks, scale=c.model.height)
+    return out_prefix + "_sheet.png"
+
+
+def compile_set(path, quiet=False, out_dir=None):
     ms = parse_file(path)
     models = {}
     for alias, mpath in ms.entries:
@@ -270,6 +582,13 @@ def compile_set(path, quiet=False):
         bones, _ = wskel.solve(model)
         mesh = wmesh.build(model, bones)
         models[alias] = Compiled(alias, model, bones, mesh)
+
+    notes = []
+    for spec in ms.compositions:
+        if spec["name"] in models:
+            raise wparser.WamError("compose %r collides with a model alias"
+                                   % spec["name"])
+        models[spec["name"]] = build_composition(spec, models, notes.append)
 
     funcs = build_functions(models)
     scalars = {"pi": float(np.pi), "models": float(len(models))}
@@ -287,6 +606,8 @@ def compile_set(path, quiet=False):
         measurements.extend("[%s] %s" % (alias, x) for x in m)
 
     if not quiet:
+        for n in notes:
+            print("WARN: %s" % n)
         for alias in sorted(models):
             c = models[alias]
             print("info: %-16s %5.2f m tall, %5.2f wide, %5.2f long "
@@ -297,15 +618,23 @@ def compile_set(path, quiet=False):
             print("WARN: check failed — %s" % f)
         for m in measurements:
             print("info: check: %s" % m)
+    if out_dir:
+        for spec in ms.compositions:
+            p = render_composition(models[spec["name"]],
+                                   os.path.join(out_dir, spec["name"]))
+            if not quiet:
+                print("info: wrote %s" % p)
     return ms, models, failures
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="wam.modelset")
     ap.add_argument("input", help="a .wamset file")
+    ap.add_argument("-o", "--out", default=None,
+                    help="directory to render/export compositions into")
     args = ap.parse_args(argv)
     try:
-        _, _, failures = compile_set(args.input)
+        _, _, failures = compile_set(args.input, out_dir=args.out)
     except wparser.WamError as e:
         print("ERROR: %s" % e, file=sys.stderr)
         return 1

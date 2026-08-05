@@ -787,6 +787,97 @@ Note that a model's own `height` scalar is the fraction of its declared
 height the geometry spans — the same number `fill()` reports at set level —
 so `every: assert height > 0.9` is the per-model form of the fill check.
 
+### `compose` — graft one model into another
+
+Anything worn or carried should be **its own model**, and a set file
+assembles them. That is the same argument as `group`, one level up: `group`
+exists because hand-deriving world rotations across a multi-part prop always
+failed, and welding armour into a body file fails the same way — it cannot be
+reused, swapped, or checked on its own, and every variant duplicates the
+whole character.
+
+There is one operation, `graft`, and wearing and holding are outcomes of it
+rather than separate primitives:
+
+```
+set knight_kit
+
+models
+  body    bodies/human_m.wam
+  plate   armor/plate_set.wam
+  hammer  weapons/warhammer.wam
+  cape    armor/cape.wam
+
+compose knight
+  base body
+  graft plate                                   # every bone name matches: fuses
+  graft hammer to=hand.r:0.5 dir=up pitch=35    # no names match: joins as new
+  graft cape  to=spine                          # a mixture, which is the point
+```
+
+**Bones that match by name fuse**: the grafted geometry is re-solved onto the
+host's version of that bone, carrying its rotation, position and length ratio.
+So one plate set fits every body using the same bone names, and *adapts* — a
+longer forearm stretches the vambrace instead of letting it slide off.
+
+**Bones with no match join** the hierarchy as new children at the declared
+point, keeping their own names, their own children, and their own motion.
+
+Armour is the all-fused case and a weapon the all-joined case, but the
+interesting models are mixtures. A cape whose `spine` fuses to the body while
+its `cape1..cape3` sway bones join as new ones arrives with its sway
+animation intact and driving them — measured on a real pair, the cape swings
+0.095 while the torso it hangs from moves 0.000.
+
+| | |
+|---|---|
+| `to=<bone>[:t]` | where a joining root lands; omit for armour that only fuses |
+| `to=(x,y,z)` | place in the base's space with no host bone (scene assembly) |
+| `dir= pitch= yaw= tilt= spin= offset=` | aim it, exactly like a `group` |
+| `scale=` | override the automatic declared-height ratio |
+| `fuse=name\|none` | `none` forces everything to join, even where names match |
+| `prefix=` | namespace the joined bones (defaults to the alias) |
+
+`fuse=none` is not an escape hatch, it is the rider case. A rider shares
+`spine`, `head` and `hand.l` with its mount, so the default would weld the two
+skeletons into one creature; `fuse=none` keeps the rider whole — grafting a
+body onto a body gives 16 host bones plus 16 namespaced rider bones, a
+complete second rig riding the first, animations and all.
+
+Grafted animations and poses come across with their channels remapped to the
+names their bones ended up with, namespaced on collision. Part names are
+prefixed by the source alias (`knight.plate.cuirass`), and materials merge by
+name — two models defining `steel` differently is a warning, since one would
+silently repaint the other.
+
+A composition is a **first-class member of the set**: `height(knight)`,
+`silhouette(knight, body)`, `tris(knight)` and `every` all address it, and it
+renders and exports with `-o`:
+
+```
+python3 -m wam.modelset knight.wamset -o out/
+```
+
+**Bone naming is the contract.** Grafting only pays off if bodies agree on
+their skeletons, so use conventional names — `pelvis spine neck head`,
+`shoulder upperarm forearm hand`, `thigh shin foot` — and equipment written
+for one humanoid fits them all.
+
+#### `covers` — does the armour fit?
+
+```
+assert covers(knight.plate.cuirass, knight.body.torso) > 0.45
+```
+
+`covers(outer, inner)` is the fraction of `inner`'s surface that lies inside
+`outer`. Fit needs its own measure because `clip` reads 0 *both* when two
+parts are cleanly apart and when one has swallowed the other whole — a cuirass
+that fits and a cuirass buried inside a fattened torso both measure zero.
+`covers` separates them. On a real pair: a body that fits its plate reads
+**0.63** (the rest of the torso emerges at the neck and waist openings), and
+the same plate over a `girth 1.35` body reads **0.00** — the armour no longer
+contains it anywhere.
+
 ### `silhouette` — can you tell two units apart?
 
 ```

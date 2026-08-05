@@ -422,6 +422,23 @@ def build_functions(env):
         frames, _ = env.posed(anim)
         return max(clip_between(a, b, f) for f in frames)
 
+    def covers(outer, inner):
+        """Fraction of `inner`'s surface that lies inside `outer`.
+
+        `clip` reads 0 both when two parts are cleanly apart and when one has
+        swallowed the other whole, which is exactly ambiguous for armour: a
+        cuirass that fits and a cuirass buried inside a fattened torso both
+        measure 0. This asks the question fit actually poses — how much of
+        the body is *contained* — and separates the two.
+        """
+        pts = env.part_verts_in(inner)
+        if len(pts) > _CLIP_SAMPLES:
+            pts = pts[:: (len(pts) + _CLIP_SAMPLES - 1) // _CLIP_SAMPLES]
+        A, B, C = env.tri_verts(outer)
+        if not len(A) or not len(pts):
+            return 0.0
+        return float(points_inside(pts, A, B, C).mean())
+
     def asymmetry(ref=None):
         """Worst distance from a part to its own mirror image across X=0.
 
@@ -605,6 +622,7 @@ def build_functions(env):
         # clearance and symmetry
         "gap": gap,
         "clip": clip,
+        "covers": covers,
         "asymmetry": asymmetry,
         # rig
         "influences": influences,
