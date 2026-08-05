@@ -660,6 +660,56 @@ Failures are reported as lint warnings naming the measured value and the
 expectation; passing checks print as info so the numbers stay visible while
 you iterate.
 
+## `.wamset` — checks *between* models
+
+A model's `checks` section can only see itself, so the properties that exist
+only between models have nowhere to live: that an ogre is half again a human,
+that every unit in a set shares a poly budget, that a mount is longer than it
+is tall. Those surface when the models finally stand in one scene, which is
+too late to be cheap. A set file asserts over a whole cast:
+
+```
+set bestiary
+
+models
+  human   models/human.wam
+  ogre    models/ogre.wam
+  kodo    models/kodo.wam
+
+checks
+  assert height(ogre) / height(human) in 1.4..1.8
+  assert length(kodo) > height(kodo)          # a mount is longer than tall
+  assert fill(human) > 0.95
+  assert tris(kodo) < 8000
+  measure tallest max(height(ogre), height(kodo))
+  measure headroom height(ogre.helmet)        # reach into a model for a part
+```
+
+```
+python3 -m wam.modelset bestiary.wamset      # exits nonzero if a check fails
+```
+
+**Lengths here are meters, not the height-fractions used inside a model** —
+that distinction is the entire point of the file. A model declares a `height`
+in meters and writes every length as a fraction of it, but the geometry need
+not fill that unit. Of two real models, one declaring 2.35 m spans only 0.92
+of a unit and so really stands 2.17 m, while the other fills 0.99 of its
+2.75. Compare declared heights and their ratio is 1.17; compare what they
+actually measure and it is 1.26. That 8% is invisible from inside either
+model and obvious the moment they share a scene.
+
+`fill(m)` is the check for exactly that: the fraction of its declared height
+a model's geometry actually spans. Assert it near 1.0 on every model in a
+set, or every ratio computed against it inherits the error.
+
+The vocabulary is `height` `width` `depth`/`length` `span` `ground` `top`
+(meters), `declared` and `fill`, and the counts `tris` `verts` `materials`
+`bonecount` `parts`, plus `abs`/`min`/`max` and the same arithmetic and
+`assert`/`measure` forms as a model's own checks — the two levels share one
+parser and one evaluator, so an assertion means the same thing in both. A
+bare name is a whole model; a dotted one (`ogre.helmet`) is a part inside it.
+`noclip` is model-local and is rejected here.
+
 ## Zones — environments from landforms and rules
 
 Beyond single models, `wam.zone` compiles a `.zone` file — terrain,
@@ -756,6 +806,7 @@ has to be tuned against itself to reach zero warnings.
 - `wam/` — compiler: parser, skeleton solver, mesh gen, texture baker, lint,
   glTF export, software renderer, viewer-JSON export
 - `wam/zone.py` — the zone compiler (see **Zones**)
+- `wam/modelset.py` — the `.wamset` compiler (see **`.wamset`**)
 - `scripts/compose_town.py` — composes a set of prop models into one scene
   (renders + merged viewer JSON with a packed mega-atlas)
 - `scripts/crop.py` — region crops of a reference image and a render, paired

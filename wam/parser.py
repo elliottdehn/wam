@@ -148,6 +148,85 @@ def _chain_ref(kv, line_no, line):
     return None
 
 
+def parse_check(kw, line, tokens, line_no):
+    """Parse one `checks` line into a check dict.
+
+    Shared by models and by cross-model set files, so the two levels can
+    never drift into different assertion grammars.
+    """
+    rest = line.strip()[len(kw):].strip()
+
+    def csv(items):
+        out = []
+        for it in items:
+            out.extend(x for x in it.split(",") if x)
+        return out
+
+    if kw == "measure":
+        if not tokens[1:]:
+            raise WamError("measure <label> <expr>", line_no, line)
+        label = tokens[1]
+        expr = rest[len(label):].strip()
+        if not expr:
+            raise WamError("measure %r needs an expression" % label,
+                           line_no, line)
+        return dict(kind="measure", label=label, expr=expr, line_no=line_no)
+
+    if kw == "noclip":
+        # noclip [<parts> [vs <parts>]] [strict] [in=<anim|*>] [depth=<d>]
+        #        [except=<a>+<b>,...]
+        words, kv = [], {}
+        for t in tokens[1:]:
+            if "=" in t and not t.startswith("("):
+                k, v = t.split("=", 1)
+                kv[k] = v
+            else:
+                words.append(t)
+        strict = "strict" in words
+        words = [w for w in words if w != "strict"]
+        if "vs" in words:
+            i = words.index("vs")
+            subject, against = csv(words[:i]), csv(words[i + 1:])
+            if not subject or not against:
+                raise WamError("noclip <parts> vs <parts>", line_no, line)
+        else:
+            subject, against = csv(words) or None, None
+        exempt = []
+        for pair in csv([kv["except"]] if "except" in kv else []):
+            halves = pair.split("+")
+            if len(halves) != 2:
+                raise WamError("noclip except= takes pairs joined by '+', "
+                               "like except=hand.r+sword", line_no, line)
+            exempt.append(frozenset(halves))
+        return dict(kind="noclip", subject=subject, against=against,
+                    strict=strict, anim=kv.get("in"),
+                    depth=_num(kv["depth"], line_no, line) if "depth" in kv
+                    else 0.005,
+                    exempt=exempt, line_no=line_no)
+
+    if kw == "assert":
+        # Both sides are full expressions: a bound is as often another
+        # measurement ("the skull ends ahead of the ribcage") as it is a
+        # number. The tolerance form needs spaces around `+-`, or it would
+        # be indistinguishable from `a + (-b)`.
+        m = re.match(r"^(?P<expr>.+?)\s+in\s+(?P<lo>.+?)\.\.(?P<hi>.+)$", rest)
+        if m:
+            return dict(kind="assert", expr=m.group("expr").strip(), op="in",
+                        lo=m.group("lo").strip(), hi=m.group("hi").strip(),
+                        line_no=line_no)
+        m = re.match(r"^(?P<expr>.+?)\s*(?P<op><=|>=|==|<|>)\s*"
+                     r"(?P<val>.+?)(?:\s+\+-\s+(?P<tol>.+))?$", rest)
+        if not m:
+            raise WamError("assert <expr> in <lo>..<hi> | "
+                           "assert <expr> <op> <expr> [+- <tol>]",
+                           line_no, line)
+        return dict(kind="assert", expr=m.group("expr").strip(),
+                    op=m.group("op"), val=m.group("val").strip(),
+                    tol=(m.group("tol") or "0").strip(), line_no=line_no)
+
+    raise WamError("unknown checks directive %r" % kw, line_no, line)
+
+
 def parse(text, path=None):
     model = Model()
     model.source_path = path
@@ -501,84 +580,8 @@ def parse(text, path=None):
                 raise WamError("unknown animations directive %r" % kw, line_no, line)
 
         elif section == "checks":
-            rest = line.strip()[len(kw):].strip()
-            if kw == "measure":
-                if not tokens[1:]:
-                    raise WamError("measure <label> <expr>", line_no, line)
-                label = tokens[1]
-                expr = rest[len(label):].strip()
-                if not expr:
-                    raise WamError("measure %r needs an expression" % label,
-                                   line_no, line)
-                model.checks.append(dict(kind="measure", label=label,
-                                         expr=expr, line_no=line_no))
-            elif kw == "noclip":
-                # noclip [<parts> [vs <parts>]] [in=<anim|*>] [depth=<d>]
-                #        [except=<a>+<b>,...]
-                words, kv = [], {}
-                for t in tokens[1:]:
-                    if "=" in t and not t.startswith("("):
-                        k, v = t.split("=", 1)
-                        kv[k] = v
-                    else:
-                        words.append(t)
-
-                def _csv(items):
-                    out = []
-                    for it in items:
-                        out.extend(x for x in it.split(",") if x)
-                    return out
-
-                strict = "strict" in words
-                words = [w for w in words if w != "strict"]
-                if "vs" in words:
-                    i = words.index("vs")
-                    subject, against = _csv(words[:i]), _csv(words[i + 1:])
-                    if not subject or not against:
-                        raise WamError("noclip <parts> vs <parts>", line_no, line)
-                else:
-                    subject, against = _csv(words) or None, None
-                exempt = []
-                for pair in _csv([kv["except"]] if "except" in kv else []):
-                    halves = pair.split("+")
-                    if len(halves) != 2:
-                        raise WamError("noclip except= takes pairs joined by "
-                                       "'+', like except=hand.r+sword",
-                                       line_no, line)
-                    exempt.append(frozenset(halves))
-                model.checks.append(dict(
-                    kind="noclip", subject=subject, against=against,
-                    strict=strict,
-                    anim=kv.get("in"),
-                    depth=_num(kv["depth"], line_no, line) if "depth" in kv
-                    else 0.005,
-                    exempt=exempt, line_no=line_no))
-            elif kw == "assert":
-                # Both sides are full expressions: a bound is as often another
-                # measurement ("the skull ends ahead of the ribcage") as it is
-                # a number. The tolerance form needs spaces around `+-`, or it
-                # would be indistinguishable from `a + (-b)`.
-                m = re.match(r"^(?P<expr>.+?)\s+in\s+(?P<lo>.+?)\.\.(?P<hi>.+)$",
-                             rest)
-                if m:
-                    model.checks.append(dict(
-                        kind="assert", expr=m.group("expr").strip(), op="in",
-                        lo=m.group("lo").strip(), hi=m.group("hi").strip(),
-                        line_no=line_no))
-                    continue
-                m = re.match(r"^(?P<expr>.+?)\s*(?P<op><=|>=|==|<|>)\s*"
-                             r"(?P<val>.+?)"
-                             r"(?:\s+\+-\s+(?P<tol>.+))?$", rest)
-                if not m:
-                    raise WamError("assert <expr> in <lo>..<hi> | "
-                                   "assert <expr> <op> <expr> [+- <tol>]",
-                                   line_no, line)
-                model.checks.append(dict(
-                    kind="assert", expr=m.group("expr").strip(),
-                    op=m.group("op"), val=m.group("val").strip(),
-                    tol=(m.group("tol") or "0").strip(), line_no=line_no))
-            else:
-                raise WamError("unknown checks directive %r" % kw, line_no, line)
+            model.checks.append(
+                parse_check(kw, line, tokens, line_no))
 
     return model
 

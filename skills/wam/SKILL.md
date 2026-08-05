@@ -159,6 +159,12 @@ not as something you notice in a render (or don't).
 know the right bound, print the value every compile and watch it while you
 tune. Convert it to an `assert` once you know what "right" is.
 
+When a model joins a set that already exists, add it to the `.wamset` file
+and assert its scale against the others (`python3 -m wam.modelset x.wamset`).
+Sizes there are **meters**, not the height-fractions used inside a model, and
+`fill()` catches a model that does not span the height it declares — which
+silently corrupts every ratio computed against it.
+
 Read the `checks` section of SPEC.md for the full vocabulary — roughly forty
 functions across position, direction, extent, mass, clearance, symmetry, rig
 quality, and animation.

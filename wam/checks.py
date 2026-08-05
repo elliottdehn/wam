@@ -591,6 +591,7 @@ def build_functions(env):
         "height": lambda r: axis_size(r, 1),
         "depth": lambda r: axis_size(r, 2),
         "span": lambda r: max(axis_size(r, i) for i in range(3)),
+        "length": lambda r: axis_size(r, 2),
         "xmin": lambda r: extreme(r, 0, False), "xmax": lambda r: extreme(r, 0, True),
         "ymin": lambda r: extreme(r, 1, False), "ymax": lambda r: extreme(r, 1, True),
         "zmin": lambda r: extreme(r, 2, False), "zmax": lambda r: extreme(r, 2, True),
@@ -887,14 +888,24 @@ def _eval_node(node, scalars, funcs):
 
 
 def evaluate(model, bones, mesh, V):
-    """Run the `checks` section. Returns (failures, measurements)."""
-    failures, measurements = [], []
+    """Run a model's `checks` section. Returns (failures, measurements)."""
     checks = getattr(model, "checks", ())
     if not checks:
-        return failures, measurements
+        return [], []
     env = Env(model, bones, mesh, V)
     funcs = build_functions(env)
     scalars = build_scalars(env, funcs)
+    return run_checks(checks, scalars, funcs,
+                      noclip=lambda spec: run_noclip(env, spec, funcs))
+
+
+def run_checks(checks, scalars, funcs, noclip=None):
+    """Evaluate parsed checks against a namespace. (failures, measurements).
+
+    The same loop serves a single model and a cross-model set file, so an
+    assertion means exactly the same thing at both levels.
+    """
+    failures, measurements = [], []
 
     def value_of(expr):
         tree = ast.parse(expr, mode="eval")
@@ -910,8 +921,12 @@ def evaluate(model, bones, mesh, V):
 
     for c in checks:
         if c["kind"] == "noclip":
+            if noclip is None:
+                failures.append("line %d: noclip only applies within a model"
+                                % c["line_no"])
+                continue
             try:
-                fails, notes = run_noclip(env, c, funcs)
+                fails, notes = noclip(c)
             except CheckError as e:
                 failures.append("line %d: noclip — %s" % (c["line_no"], e))
                 continue

@@ -96,6 +96,8 @@ compile, and visually iterate using the bundled toolchain.
   baker → lint → glTF export, plus a dependency-free software rasterizer.
 - `wam/checks.py` — the `checks` section: proportion, clearance, clipping,
   rig-quality and animation assertions re-run on every compile.
+- `wam/modelset.py` — `.wamset` files: cross-model checks in meters, so a
+  whole cast stays to one scale.
 - `SPEC.md` — the language specification.
 - `scripts/crop.py` — cuts matching regions out of a reference image and a
   render and pairs them at the same scale, for comparisons that are not just
