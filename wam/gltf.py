@@ -77,6 +77,7 @@ class BufferBuilder:
 
 def _vertex_normals(vertices, triangles):
     """Area-weighted vertex normals from the final, corrected triangle order."""
+    from .render import weld_groups
     N = np.zeros_like(vertices, dtype=np.float64)
     if len(triangles):
         a = vertices[triangles[:, 0]]
@@ -86,8 +87,13 @@ def _vertex_normals(vertices, triangles):
         good = np.linalg.norm(fn, axis=1) > 1e-14
         fn = fn[good]
         good_tris = triangles[good]
+        # accumulate across texture/material seams, which duplicate vertices
+        # at identical positions (see render.weld_groups)
+        inv = weld_groups(vertices)
+        acc = np.zeros((int(inv.max()) + 1, 3)) if len(inv) else np.zeros((0, 3))
         for i in range(3):
-            np.add.at(N, good_tris[:, i], fn)
+            np.add.at(acc, inv[good_tris[:, i]], fn)
+        N = acc[inv]
     ln = np.linalg.norm(N, axis=1, keepdims=True)
     orphan = ln[:, 0] < 1e-12
     ln[orphan] = 1.0

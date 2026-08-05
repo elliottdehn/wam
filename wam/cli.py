@@ -2,8 +2,8 @@
 
 Usage:
   python3 -m wam.cli model.wam -o out/name [--views front,threequarter,side,back]
-                     [--anim walk --frames 6] [--bones] [--no-gltf]
-                     [--width 480 --height 600]
+                     [--anim walk --frames 6] [--anim-views side,front]
+                     [--bones] [--no-gltf] [--width 480 --height 600]
 """
 import argparse
 import os
@@ -57,7 +57,8 @@ def shared_framing(V, yaws, width, height, fov=28.0, pitch=10.0, margin=1.12):
 
 def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                   bones_overlay=False, do_gltf=True, quiet=False,
-                  width=480, height=600):
+                  width=480, height=600, anim_views=None):
+    anim_views = anim_views or views
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
     mesh = wmesh.build(model, bones)
@@ -110,21 +111,28 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
         else:
             posed = []
             for i in range(frames):
-                ph = i / frames
+                # A loop's phase 1.0 is its phase 0, so sampling must stop
+                # short of it; a one-shot has to reach 1.0 or its final pose —
+                # the whole point of the animation — is never rendered.
+                ph = i / frames if anim["loop"] else i / max(frames - 1, 1)
                 rots = wanim.anim_rotations_at(model, bones, anim, ph)
                 posed.append(wanim.skin_verts(mesh, bones, bone_order, rots))
             # frame the whole strip against every pose at once, so the model
             # does not appear to scale as the animation moves it
             allpose = np.concatenate(posed) if posed else V
-            acenter, adist = shared_framing(allpose, [55], width, height)
-            aimgs = [wrender.render_view(Vp, T, M, mat_colors, yaw_deg=55,
+            anim_yaws = [VIEW_ANGLES.get(v, 0) for v in anim_views]
+            acenter, adist = shared_framing(allpose, anim_yaws, width, height)
+            rows = []
+            for yaw in anim_yaws:
+                rows.append(wrender.hstack_views(
+                    [wrender.render_view(Vp, T, M, mat_colors, yaw_deg=yaw,
                                          width=width, height=height,
                                          center=acenter, dist=adist,
                                          vert_colors=vcols, uv=atlas_uv,
                                          tex=atlas)
-                     for Vp in posed]
-            wrender.write_png(out_prefix + "_anim_%s.png" % anim_name,
-                              wrender.hstack_views(aimgs))
+                     for Vp in posed]))
+            strip = rows[0] if len(rows) == 1 else wrender.vstack_views(rows)
+            wrender.write_png(out_prefix + "_anim_%s.png" % anim_name, strip)
 
     if do_gltf:
         tracks = wanim.gltf_tracks(model, bones, bone_order)
@@ -149,6 +157,9 @@ def main(argv=None):
     ap.add_argument("-o", "--out", default=None)
     ap.add_argument("--views", default="front,threequarter,side,back")
     ap.add_argument("--anim", default=None)
+    ap.add_argument("--anim-views", default=None,
+                    help="views for the animation strip (default: --views); "
+                         "one row of frames per view")
     ap.add_argument("--frames", type=int, default=6)
     ap.add_argument("--bones", action="store_true")
     ap.add_argument("--no-gltf", action="store_true")
@@ -167,7 +178,9 @@ def main(argv=None):
         compile_model(args.input, out, args.views.split(","),
                       anim_name=args.anim, frames=args.frames,
                       bones_overlay=args.bones, do_gltf=not args.no_gltf,
-                      width=args.width, height=args.height)
+                      width=args.width, height=args.height,
+                      anim_views=(args.anim_views.split(",")
+                                  if args.anim_views else None))
     except wparser.WamError as e:
         print("ERROR: %s" % e, file=sys.stderr)
         return 1

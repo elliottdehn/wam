@@ -13,8 +13,15 @@ plus turntable PNG renders for visual iteration.
 python3 -m wam.cli mymodel.wam            # sheet PNG + glTF + viewer JSON
 python3 -m wam.cli mymodel.wam --bones    # also render skeleton overlay
 python3 -m wam.cli mymodel.wam --anim walk --frames 6
+python3 -m wam.cli mymodel.wam --anim guard --anim-views side,front
 python3 -m wam.cli mymodel.wam --width 760 --height 560   # landscape panels
 ```
+
+Animation strips honour `--views` (one row of frames per view) unless
+`--anim-views` overrides them — a pose is often only legible from one angle,
+and a strip shot from a single hardcoded camera hides exactly the thing you
+are checking. A looping anim samples phases 0 … (n−1)/n, since phase 1 is
+phase 0 again; a one-shot samples 0 … 1 so its final pose is actually shown.
 
 Panels default to 480×600 portrait; pass `--width/--height` for anything
 longer than it is tall. The camera fits the model's **projected extents** in
@@ -379,49 +386,146 @@ animations
 - Anims export to glTF as sampled quaternion tracks; `--anim NAME` renders a
   preview strip via CPU skinning.
 
-## `checks` — proportions the compiler enforces
+## `checks` — the model's own regression suite
 
-Proportion is the thing hand-verification is worst at: "shoulder to hip
-should be two to two and a half head lengths" turns into arithmetic done once
-and never re-checked after the next edit. Write it down instead and let every
-compile re-run it:
+Proportion, clearance, rig quality, and animation coverage are exactly the
+properties that get verified once, by eye, and never re-verified after the
+next edit. "Shoulder to hip should be two to two and a half head lengths"
+becomes arithmetic done in someone's head and then quietly invalidated three
+edits later. Write the judgement down as a number and every compile re-runs
+it:
 
 ```
 checks
+  # proportion
   assert dist(shoulder.l, hip.l) / len(head) in 2.0..2.5
-  assert y(hoof.l.tail) < 0.02                    # feet on the ground
   assert width / height == 0.45 +- 0.05
+  # placement
+  assert bottom(hoof.l) < 0.01                    # feet on the ground
+  assert zmax(muzzle) > zmax(skull)               # snout clears the face
+  # shape
   assert angle(wingdigit1.l, wingdigit4.l) < 46   # keep the fan spannable
   assert angle(thigh.l, knee.l, ankle.l) in 150..178   # knee not hyperextended
-  assert elevation(tail) in -20..20
-  measure snout dist(skull, jaw.tail)             # just report it every compile
+  assert volume(head) < volume(torso) / 3
+  # clearance
+  assert gap(sword, thigh.r, walk) > 0.015        # the blade never grazes the leg
+  # rigging
+  assert influences(wing.l) >= 2                  # membrane is not welded to one bone
+  assert weight(kilt, thigh.l) > 0.3
+  # animation
+  assert slide(hoof.l, walk) < 0.02               # no moonwalking
+  assert swing(clavicle.l, walk) in 8..25
+  assert lowest(walk) > -0.02                     # nothing sinks through the floor
+  # budget
+  assert tris < 6000
+  measure snout dist(skull, jaw.tail)             # report it, don't police it
 ```
 
-- `assert <expr> in <lo>..<hi>`, or `<expr> <op> <value>` with
-  `< > <= >= ==`, optionally `== <value> +- <tol>`.
-- `measure <label> <expr>` prints the value as an info line.
-- **Points**: a bone name is its head; `bone.tail` and `bone.mid` are the
-  other two; a part name is its bounding-box center. Mirrored names resolve
-  to the `.l` side when unsuffixed.
-- **Functions**: `dist(a,b)`, `len(bone)`, `x/y/z(point)`,
-  `width/height/depth/span(part)`, `abs`, `min`, `max`.
-- **Angles**, all in degrees:
-  - `angle(boneA, boneB)` — unsigned angle between two bone directions
-    (0..180): limb splay, wing dihedral, how far a digit fan opens.
-  - `angle(a, b, c)` — unsigned angle at `b` in the corner `a-b-c`, over any
-    three points: joint flexion (`angle(thigh.l, knee.l, ankle.l)`), or the
-    relation between two parts via their bbox centers.
-  - `elevation(bone)` — degrees above the ground plane, +90 straight up.
-  - `heading(bone)` — degrees in the ground plane, 0 facing +Z, positive
-    turning toward +X (the character's left); undefined for a vertical bone.
+### Forms
 
-  Which side of something a part sits on needs no angle function — compare
-  coordinates directly (`assert z(muzzle) > z(eye.l)`).
-- **Globals**: `height`, `width`, `depth` (the whole model's bbox), `ground`
-  (lowest vertex), `top`, `pi`. Arithmetic is `+ - * / **` and parentheses.
+- `assert <expr> in <lo>..<hi>`
+- `assert <expr> <op> <expr>` with `< > <= >= ==`
+- `assert <expr> == <expr> +- <tol>` (spaces around `+-` are required, or it
+  reads as `a + (-b)`)
+- `measure <label> <expr>` — no assertion, just report the number every compile
+
+**Both sides are full expressions.** A bound is as often another measurement
+as it is a literal: `assert zmax(muzzle) > zmax(skull)`,
+`assert volume(head) < volume(torso) / 3`.
+
+### Names
+
+- **Points**: a bone name is its head; `bone.tail` and `bone.mid` are the
+  other two; a part name is its bounding-box center. An unsuffixed mirrored
+  name resolves to the `.l` side.
+- **Bones** are named for `len`, `angle`, `elevation`, `heading`, `travel`,
+  `swing`, `weight`.
+- **Parts** are named for everything about geometry and rigging.
+- **Animations** are named by the name on their `anim` line.
+
+### Vocabulary
+
+Position and distance
+
+| | |
+|---|---|
+| `dist(a, b)` | distance between two points |
+| `x(p)` `y(p)` `z(p)` | one coordinate of a point |
+| `len(bone)` | bone length |
+
+Direction, all in degrees
+
+| | |
+|---|---|
+| `angle(boneA, boneB)` | between two bone directions, 0..180 — limb splay, wing dihedral, how far a digit fan opens |
+| `angle(a, b, c)` | at `b` in the corner `a-b-c`, over any three points — joint flexion |
+| `elevation(bone)` | above the ground plane, +90 straight up |
+| `heading(bone)` | in the ground plane, 0 faces +Z, + turns toward +X; undefined for a vertical bone |
+
+Extent
+
+| | |
+|---|---|
+| `width(p)` `height(p)` `depth(p)` `span(p)` | bounding-box dimensions of a part |
+| `xmin/xmax/ymin/ymax/zmin/zmax(p)` | one face of its bounding box |
+| `bottom(p)` `top(p)` | aliases for `ymin` / `ymax` |
+
+Mass and budget
+
+| | |
+|---|---|
+| `volume(p)` | enclosed volume — a thickness-free `web` reads ~0 |
+| `area(p)` | surface area |
+| `tris(p)` `verts(p)` | poly budget, per part |
+
+Clearance and symmetry
+
+| | |
+|---|---|
+| `gap(a, b)` | closest approach between two parts |
+| `gap(a, b, anim)` | ...at its worst over an animation |
+| `asymmetry(p)` | worst distance from a part to its own mirror image across X=0 |
+
+Rig quality
+
+| | |
+|---|---|
+| `influences(p)` | most bones driving any one vertex — **1 means rigidly welded** |
+| `bonecount(p)` | distinct bones the part is skinned to |
+| `weight(p, bone)` | strongest influence that bone has anywhere in the part |
+
+Animation
+
+| | |
+|---|---|
+| `moves(p, anim)` | furthest any vertex travels from rest |
+| `travel(bone, anim)` | furthest a bone's tail travels from rest |
+| `swing(bone, anim)` | widest angular travel of a bone's direction |
+| `slide(p, anim)` | horizontal drift while planted — **the moonwalk detector** |
+| `lowest(anim)` `highest(anim)` | extreme y reached at any moment |
+
+Globals (bare words, no parentheses): `height`, `width`, `depth`, `ground`,
+`top`, `tris`, `verts`, `materials`, `bonecount`, `parts` (mirrored halves
+count separately), `anims`, `asymmetry`, `pi`. Helpers: `abs`, `min`, `max`.
+Arithmetic is `+ - * / **` and parentheses.
+
+Which side of something a part sits on needs no special function — compare
+coordinates: `assert z(muzzle) > z(eye.l)`.
+
+### Cost and caveats
+
+Animation checks pose the mesh at 12 phases, cached per animation, so a full
+battery costs a fraction of a second. Vertex sets are subsampled above 600
+points for `gap` and `asymmetry`, making both slightly pessimistic rather
+than slow.
+
+`gap` is a proximity measure, not a penetration depth: parts that touch and
+parts that interpenetrate both read 0. Use it for things that must stay
+*apart*.
 
 Failures are reported as lint warnings naming the measured value and the
-expectation; passing checks print as info so the numbers stay visible.
+expectation; passing checks print as info so the numbers stay visible while
+you iterate.
 
 ## Zones — environments from landforms and rules
 
@@ -496,8 +600,11 @@ The load-bearing rules, each learned the hard way:
 feet dipping below / floating above ground, asymmetry, degenerate triangles,
 **loft folds** (a ring wider than the bend it sits on doubles the surface
 back — the classic "invisible faces" bug; split the loft at the joint),
-parts hosted on the wrong bone, ring frames pinned along the path instead of
-across it, your own `checks`, plus a proportion report (head-heights, bbox).
+parts hosted on the wrong bone, **parts buried entirely inside another part**
+(invisible from every angle — the failure `on=` exists to prevent, and one
+nothing else can see), central parts that straddle the axis lopsidedly, ring
+frames pinned along the path instead of across it, your own `checks`, plus a
+proportion report (head-heights, bbox).
 Warnings name the fix — the intended workflow is *compile → read warnings →
 look at the render sheet → edit angles/ratios → repeat*.
 
@@ -505,6 +612,11 @@ Every generator now collapses cleanly (a `tip` ring emits triangles, not
 zero-area quad halves), so **any** degenerate triangle is a real defect and
 the lint reports it from the first one — the warning list is meant to be
 empty, not skimmed.
+
+Symmetry is checked per part, not per silhouette: a part that straddles the
+centerline is claiming to be symmetric, while a one-sided part or a rigid
+`group` prop is the author's business. A sword-and-shield loadout no longer
+has to be tuned against itself to reach zero warnings.
 
 ## Files
 

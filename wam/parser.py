@@ -505,26 +505,29 @@ def parse(text, path=None):
                 model.checks.append(dict(kind="measure", label=label,
                                          expr=expr, line_no=line_no))
             elif kw == "assert":
-                m = re.match(r"^(?P<expr>.+?)\s+in\s+"
-                             r"(?P<lo>-?[\d.]+)\.\.(?P<hi>-?[\d.]+)$", rest)
+                # Both sides are full expressions: a bound is as often another
+                # measurement ("the skull ends ahead of the ribcage") as it is
+                # a number. The tolerance form needs spaces around `+-`, or it
+                # would be indistinguishable from `a + (-b)`.
+                m = re.match(r"^(?P<expr>.+?)\s+in\s+(?P<lo>.+?)\.\.(?P<hi>.+)$",
+                             rest)
                 if m:
                     model.checks.append(dict(
                         kind="assert", expr=m.group("expr").strip(), op="in",
-                        lo=_num(m.group("lo"), line_no, line),
-                        hi=_num(m.group("hi"), line_no, line), line_no=line_no))
+                        lo=m.group("lo").strip(), hi=m.group("hi").strip(),
+                        line_no=line_no))
                     continue
                 m = re.match(r"^(?P<expr>.+?)\s*(?P<op><=|>=|==|<|>)\s*"
-                             r"(?P<val>-?[\d.]+%?)"
-                             r"(?:\s*\+-\s*(?P<tol>-?[\d.]+%?))?$", rest)
+                             r"(?P<val>.+?)"
+                             r"(?:\s+\+-\s+(?P<tol>.+))?$", rest)
                 if not m:
                     raise WamError("assert <expr> in <lo>..<hi> | "
-                                   "assert <expr> <op> <value> [+- <tol>]",
+                                   "assert <expr> <op> <expr> [+- <tol>]",
                                    line_no, line)
                 model.checks.append(dict(
                     kind="assert", expr=m.group("expr").strip(),
-                    op=m.group("op"), val=_num(m.group("val"), line_no, line),
-                    tol=_num(m.group("tol"), line_no, line) if m.group("tol")
-                    else 0.0, line_no=line_no))
+                    op=m.group("op"), val=m.group("val").strip(),
+                    tol=(m.group("tol") or "0").strip(), line_no=line_no))
             else:
                 raise WamError("unknown checks directive %r" % kw, line_no, line)
 

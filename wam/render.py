@@ -1,4 +1,5 @@
 """Tiny software rasterizer: perspective camera, Gouraud shading, PNG out."""
+import functools
 import math
 import struct
 import zlib
@@ -47,14 +48,55 @@ def write_png(path, img):
         f.write(png)
 
 
-def vertex_normals(V, T):
+def quiet_fp(fn):
+    """Silence numpy's floating-point warnings inside the rasterizer.
+
+    macOS Accelerate raises stale divide-by-zero / overflow / invalid flags on
+    ordinary matmuls — reproducible with `np.random.rand(2633, 3) @
+    np.random.rand(3, 3).T` and unrelated to any model data. Left alone it
+    emits a dozen lines per compile and buries the lint output, which is the
+    part anyone actually needs to read.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+@quiet_fp
+def weld_groups(V):
+    """Map each vertex to a representative index shared by coincident ones.
+
+    Texture charts and material bands both split vertices that sit at the
+    same point, which would otherwise shade as a hard crease: each copy sees
+    only the faces on its own side of the seam. Normals are accumulated over
+    the welded set so a seam changes the color of a surface, never its
+    shading.
+    """
+    if not len(V):
+        return np.zeros(0, dtype=np.int64)
+    _, inv = np.unique(np.round(np.asarray(V, dtype=float), 6) + 0.0,
+                       axis=0, return_inverse=True)
+    return inv.reshape(-1)
+
+
+@quiet_fp
+def vertex_normals(V, T, weld=True):
     N = np.zeros_like(V)
     if len(T) == 0:
         return N
     a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
     fn = np.cross(b - a, c - a)  # area-weighted
-    for i in range(3):
-        np.add.at(N, T[:, i], fn)
+    if weld:
+        inv = weld_groups(V)
+        acc = np.zeros((int(inv.max()) + 1, 3))
+        for i in range(3):
+            np.add.at(acc, inv[T[:, i]], fn)
+        N = acc[inv]
+    else:
+        for i in range(3):
+            np.add.at(N, T[:, i], fn)
     lens = np.linalg.norm(N, axis=1, keepdims=True)
     lens[lens < 1e-12] = 1.0
     return N / lens
@@ -73,6 +115,7 @@ def orbit_basis(yaw_deg=0.0, pitch_deg=10.0):
     return Rx @ Ry
 
 
+@quiet_fp
 def fit_distance(V, center, R, fov_deg=28.0, aspect=1.0, margin=1.12):
     """Camera distance that just contains the model in *this* view.
 
@@ -94,6 +137,7 @@ def fit_distance(V, center, R, fov_deg=28.0, aspect=1.0, margin=1.12):
     return float(max(need_x.max(), need_y.max(), 1e-6))
 
 
+@quiet_fp
 def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 width=480, height=600, fov_deg=28.0, bg=(0.92, 0.92, 0.94),
                 ground_y=None, margin=1.12, vert_colors=None,
@@ -251,6 +295,18 @@ def hstack_views(images, pad=6, bg=0.85):
     for im in images:
         sheet[pad:pad + im.shape[0], x:x + im.shape[1]] = im
         x += im.shape[1] + pad
+    return sheet
+
+
+def vstack_views(images, pad=6, bg=0.85):
+    """Stack rows (each already an hstacked strip) into one sheet."""
+    w = max(im.shape[1] for im in images)
+    total_h = sum(im.shape[0] for im in images) + pad * (len(images) - 1)
+    sheet = np.full((total_h, w, 3), bg)
+    y = 0
+    for im in images:
+        sheet[y:y + im.shape[0], 0:im.shape[1]] = im
+        y += im.shape[0] + pad
     return sheet
 
 

@@ -494,14 +494,23 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     cache = {}
 
     def vert(ri, k, mat):
+        """Vertex at ring `ri`, column `k` in 0..n_sides, for one material.
+
+        Column n_sides is column 0 again in space but u=1 in the chart. A
+        closed loop cannot be unwrapped without a seam: sharing that column
+        would make the wrap quad run backwards across the entire chart, and
+        in the atlas it smears its material over the whole cell — erasing
+        every band rasterized before it, or taking the cell if it is the
+        band.
+        """
         pts, collapsed, vcoord = geom[ri]
         key = (ri, -1 if collapsed else k, mat)
         if key in cache:
             return cache[key]
-        pt = pts[0] if collapsed else pts[k]
+        pt = pts[0] if collapsed else pts[k % n_sides]
         sk = skins[ri]
         sk = sk(pt) if callable(sk) else sk
-        uv = (0.5, vcoord) if collapsed else ((k + 0.5) / n_sides, vcoord)
+        uv = (0.5, vcoord) if collapsed else (k / n_sides, vcoord)
         cache[key] = out.add_vert(pt, sk, uv=uv)
         return cache[key]
 
@@ -521,7 +530,7 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         if lo_flat and hi_flat:
             continue
         for k in range(n_sides):
-            k2 = (k + 1) % n_sides
+            k2 = k + 1          # unwrapped: the last column is the seam copy
             mat = band_material(ri, k)
             a, b = vert(ri, k, mat), vert(ri, k2, mat)
             c, d = vert(ri + 1, k2, mat), vert(ri + 1, k, mat)
@@ -552,7 +561,7 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         sk = sk(apex) if callable(sk) else sk
         apex_ids = {}
         for k in range(n_sides):
-            k2 = (k + 1) % n_sides
+            k2 = k + 1
             mat = band_material(ri, k)
             if mat not in apex_ids:
                 apex_ids[mat] = out.add_vert(apex, sk, uv=(0.5, apex_v))
@@ -1065,21 +1074,24 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
         for li in range(1, lats):
             th = math.pi * li / lats
             row = []
-            for lo in range(lons):
-                ph = 2 * math.pi * lo / lons
+            # lons + 1 columns: the last repeats the first in space but
+            # carries u=1, so the wrap quad does not run backwards across
+            # the whole texture chart (see _emit_tube).
+            for lo in range(lons + 1):
+                ph = 2 * math.pi * (lo % lons) / lons
                 p = origin + np.array([math.sin(th) * math.cos(ph) * w / 2,
                                        math.cos(th) * h / 2,
                                        math.sin(th) * math.sin(ph) * d / 2])
                 row.append(out.add_vert(p, skin,
-                                        uv=((lo + 0.5) / lons, 1.0 - li / lats)))
+                                        uv=(lo / lons, 1.0 - li / lats)))
             ids.append(row)
         for lo in range(lons):
-            lo2 = (lo + 1) % lons
+            lo2 = lo + 1
             out.add_tri(top, ids[0][lo2], ids[0][lo], mat)
             out.add_tri(bot, ids[-1][lo], ids[-1][lo2], mat)
         for a, b in zip(ids, ids[1:]):
             for lo in range(lons):
-                lo2 = (lo + 1) % lons
+                lo2 = lo + 1
                 out.add_tri(a[lo], a[lo2], b[lo2], mat)
                 out.add_tri(a[lo], b[lo2], b[lo], mat)
 

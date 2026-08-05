@@ -1,236 +1,70 @@
 
 """Semantic lint: catches the mistakes that make models look broken."""
-import ast
-
 import numpy as np
 
-
-class _Ref:
-    """An unresolved name in a check expression (a bone or a part)."""
-
-    def __init__(self, name):
-        self.name = name
-
-    def __repr__(self):
-        return self.name
+from . import checks as wchecks
 
 
-class _CheckError(Exception):
-    pass
+def _crossings(points, A, B, C):
+    """How many of triangles ABC each point's +X ray crosses (Möller–Trumbore)."""
+    e1, e2 = B - A, C - A
+    d = np.array([1.0, 0.0, 0.0])
+    h = np.cross(d, e2)
+    det = np.einsum("ij,ij->i", e1, h)
+    live = np.abs(det) > 1e-12
+    if not live.any():
+        return np.zeros(len(points), dtype=int)
+    e1, e2, A2, h, det = e1[live], e2[live], A[live], h[live], det[live]
+    inv = 1.0 / det
+    out = np.zeros(len(points), dtype=int)
+    for pi, p in enumerate(points):
+        s = p - A2
+        u = inv * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = inv * q[:, 0]                          # d · q with d = +X
+        t = inv * np.einsum("ij,ij->i", e2, q)
+        hit = (u >= 0) & (u <= 1) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
+        out[pi] = int(hit.sum())
+    return out
 
 
-def _measure_env(model, bones, mesh, V):
-    """Names and functions available inside `checks` expressions."""
-    ranges = mesh.part_ranges
+def _buried_parts(V, T, ranges, samples=24):
+    """Parts whose geometry lies entirely inside another part.
 
-    def bone(ref, want="head"):
-        name = ref.name if isinstance(ref, _Ref) else str(ref)
-        for suffix in ("head", "tail", "mid"):
-            if name.endswith("." + suffix):
-                name, want = name[:-len(suffix) - 1], suffix
+    `on=` exists precisely so attachments sit on a surface, and an emblem or
+    a spike that sank inside its host compiles perfectly cleanly — nothing
+    else in the lint can see it. Containment is tested against one part at a
+    time, so something hidden by the *union* of several parts still slips
+    through.
+    """
+    found = []
+    if not len(T):
+        return found
+    boxes = {}
+    for name, (v0, v1) in ranges.items():
+        if v1 - v0 >= 4:
+            boxes[name] = (V[v0:v1].min(axis=0), V[v0:v1].max(axis=0))
+    tri_owner = {}
+    for name, (v0, v1) in ranges.items():
+        sel = (T[:, 0] >= v0) & (T[:, 0] < v1)
+        if sel.any():
+            tri_owner[name] = T[sel]
+    for a, (alo, ahi) in boxes.items():
+        for b, (blo, bhi) in boxes.items():
+            if a == b or b not in tri_owner:
+                continue
+            if not (np.all(alo >= blo - 1e-9) and np.all(ahi <= bhi + 1e-9)):
+                continue                      # bbox not contained: cheap out
+            v0, v1 = ranges[a]
+            pts = V[v0:v1]
+            if len(pts) > samples:
+                pts = pts[:: len(pts) // samples]
+            tb = tri_owner[b]
+            n = _crossings(pts, V[tb[:, 0]], V[tb[:, 1]], V[tb[:, 2]])
+            if (n % 2 == 1).mean() > 0.95:    # odd crossings = inside
+                found.append((a, b))
                 break
-        b = bones.get(name) or bones.get(name + ".l")
-        if b is None:
-            raise _CheckError("no bone named %r" % name)
-        return b, want
-
-    def point(ref):
-        name = ref.name if isinstance(ref, _Ref) else str(ref)
-        base = name.rsplit(".", 1)[0] if name.rsplit(".", 1)[-1] in (
-            "head", "tail", "mid") else name
-        if bones.get(base) or bones.get(base + ".l"):
-            b, want = bone(ref)
-            return {"head": b.head, "tail": b.tail,
-                    "mid": (b.head + b.tail) / 2.0}[want]
-        for key in (name, name + ".l"):
-            if key in ranges:
-                v0, v1 = ranges[key]
-                chunk = V[v0:v1]
-                return (chunk.min(axis=0) + chunk.max(axis=0)) / 2.0
-        raise _CheckError("%r is neither a bone nor a part" % name)
-
-    def part_bbox(ref):
-        name = ref.name if isinstance(ref, _Ref) else str(ref)
-        for key in (name, name + ".l"):
-            if key in ranges:
-                v0, v1 = ranges[key]
-                chunk = V[v0:v1]
-                return chunk.min(axis=0), chunk.max(axis=0)
-        raise _CheckError("no part named %r" % name)
-
-    def axis_size(ref, i):
-        lo, hi = part_bbox(ref)
-        return float(hi[i] - lo[i])
-
-    def bone_len(ref):
-        b, _ = bone(ref)
-        if b.len <= 0:
-            raise _CheckError("bone %r has zero length" % b.name)
-        return float(b.len)
-
-    def direction(ref):
-        """Unit vector a bone points along. Parts have no direction."""
-        name = ref.name if isinstance(ref, _Ref) else str(ref)
-        if not (bones.get(name) or bones.get(name + ".l")):
-            raise _CheckError("%r is not a bone, so it has no direction — use "
-                              "the three-point form angle(a,b,c) for parts"
-                              % name)
-        b, _ = bone(ref)
-        if b.len <= 0:
-            raise _CheckError("bone %r has zero length, so no direction" % b.name)
-        return b.dir / np.linalg.norm(b.dir)
-
-    def between(u, v):
-        c = float(np.clip(u @ v, -1.0, 1.0))
-        return float(np.degrees(np.arccos(c)))
-
-    def angle(*refs):
-        """angle(a,b): between two bone directions.
-        angle(a,b,c): at b, in the corner a-b-c. Both unsigned, 0..180."""
-        if len(refs) == 2:
-            return between(direction(refs[0]), direction(refs[1]))
-        if len(refs) == 3:
-            a, b, c = (point(r) for r in refs)
-            u, v = a - b, c - b
-            if np.linalg.norm(u) < 1e-9 or np.linalg.norm(v) < 1e-9:
-                raise _CheckError("angle() needs three distinct points")
-            return between(u / np.linalg.norm(u), v / np.linalg.norm(v))
-        raise _CheckError("angle() takes two bones or three points")
-
-    def elevation(ref):
-        """Degrees above the horizontal plane: +90 straight up, -90 down."""
-        d = direction(ref)
-        return float(np.degrees(np.arcsin(float(np.clip(d[1], -1.0, 1.0)))))
-
-    def heading(ref):
-        """Degrees in the ground plane: 0 faces +Z, + turns toward +X (left)."""
-        d = direction(ref)
-        if abs(d[0]) < 1e-9 and abs(d[2]) < 1e-9:
-            raise _CheckError("bone points straight up or down, so its "
-                              "heading is undefined")
-        return float(np.degrees(np.arctan2(d[0], d[2])))
-
-    ymin = float(V[:, 1].min())
-    scalars = {
-        "height": float(V[:, 1].max() - ymin),
-        "width": float(V[:, 0].max() - V[:, 0].min()),
-        "depth": float(V[:, 2].max() - V[:, 2].min()),
-        "ground": ymin,
-        "top": float(V[:, 1].max()),
-        "pi": np.pi,
-    }
-    funcs = {
-        "dist": lambda a, b: float(np.linalg.norm(point(a) - point(b))),
-        "len": bone_len,
-        "x": lambda r: float(point(r)[0]),
-        "y": lambda r: float(point(r)[1]),
-        "z": lambda r: float(point(r)[2]),
-        "width": lambda r: axis_size(r, 0),
-        "height": lambda r: axis_size(r, 1),
-        "depth": lambda r: axis_size(r, 2),
-        "span": lambda r: max(axis_size(r, i) for i in range(3)),
-        "angle": angle,
-        "elevation": elevation,
-        "heading": heading,
-        "abs": lambda v: abs(_number(v, "abs")),
-        "min": lambda *vs: min(_number(v, "min") for v in vs),
-        "max": lambda *vs: max(_number(v, "max") for v in vs),
-    }
-    return scalars, funcs
-
-
-def _number(v, where):
-    if isinstance(v, _Ref):
-        raise _CheckError("%r is a name, not a measurement — wrap it in a "
-                          "function like len() or y()" % v.name)
-    return float(v)
-
-
-_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
-           ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b,
-           ast.Pow: lambda a, b: a ** b}
-
-
-def _dotted(node):
-    """Flatten `thigh.l.tail` (parsed as nested attributes) into a string."""
-    parts = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if not isinstance(node, ast.Name):
-        raise _CheckError("unsupported name in expression")
-    parts.append(node.id)
-    return ".".join(reversed(parts))
-
-
-def _eval_node(node, scalars, funcs):
-    if isinstance(node, ast.Expression):
-        return _eval_node(node.body, scalars, funcs)
-    if isinstance(node, ast.Constant):
-        if not isinstance(node.value, (int, float)):
-            raise _CheckError("only numbers are allowed as literals")
-        return float(node.value)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-        v = _number(_eval_node(node.operand, scalars, funcs), "-")
-        return -v if isinstance(node.op, ast.USub) else v
-    if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
-        a = _number(_eval_node(node.left, scalars, funcs), "operator")
-        b = _number(_eval_node(node.right, scalars, funcs), "operator")
-        if isinstance(node.op, ast.Div) and abs(b) < 1e-12:
-            raise _CheckError("division by zero")
-        return _BINOPS[type(node.op)](a, b)
-    if isinstance(node, ast.Call):
-        if not isinstance(node.func, ast.Name) or node.func.id not in funcs:
-            raise _CheckError("unknown function in expression")
-        args = [_eval_node(a, scalars, funcs) for a in node.args]
-        return funcs[node.func.id](*args)
-    if isinstance(node, ast.Name):
-        if node.id in scalars:
-            return scalars[node.id]
-        return _Ref(node.id)
-    if isinstance(node, ast.Attribute):
-        return _Ref(_dotted(node))
-    raise _CheckError("unsupported expression")
-
-
-def eval_checks(model, bones, mesh, V):
-    """Run the `checks` section. Returns (failures, measurements)."""
-    failures, measurements = [], []
-    checks = getattr(model, "checks", ())
-    if not checks:
-        return failures, measurements
-    scalars, funcs = _measure_env(model, bones, mesh, V)
-    for c in checks:
-        try:
-            tree = ast.parse(c["expr"], mode="eval")
-            value = _number(_eval_node(tree, scalars, funcs), "assert")
-        except _CheckError as e:
-            failures.append("line %d: %s — %s" % (c["line_no"], c["expr"], e))
-            continue
-        except SyntaxError:
-            failures.append("line %d: %s — not a valid expression"
-                            % (c["line_no"], c["expr"]))
-            continue
-        if c["kind"] == "measure":
-            measurements.append("%s = %.4f  (%s)" % (c["label"], value, c["expr"]))
-            continue
-        if c["op"] == "in":
-            ok = c["lo"] <= value <= c["hi"]
-            want = "in %.4g..%.4g" % (c["lo"], c["hi"])
-        elif c["op"] == "==":
-            ok = abs(value - c["val"]) <= c["tol"]
-            want = ("== %.4g +- %.4g" % (c["val"], c["tol"]) if c["tol"]
-                    else "== %.4g" % c["val"])
-        else:
-            ok = {"<": value < c["val"], ">": value > c["val"],
-                  "<=": value <= c["val"], ">=": value >= c["val"]}[c["op"]]
-            want = "%s %.4g" % (c["op"], c["val"])
-        if not ok:
-            failures.append("line %d: %s = %.4f, expected %s"
-                            % (c["line_no"], c["expr"], value, want))
-        else:
-            measurements.append("%s = %.4f (%s, ok)" % (c["expr"], value, want))
-    return failures, measurements
+    return found
 
 
 def lint(model, bones, mesh):
@@ -265,14 +99,31 @@ def lint(model, bones, mesh):
         warnings.append("lowest geometry floats %.3f above ground (y=0) — "
                         "legs too short or root too high" % ymin)
 
-    # 3. symmetry check: mirrored bounding boxes should match
-    left = V[V[:, 0] > 0.01]
-    right = V[V[:, 0] < -0.01]
-    if len(left) and len(right):
-        dw = abs(left[:, 0].max() + right[:, 0].min())
-        if dw > 0.01:
-            warnings.append("asymmetric silhouette: left extent %.3f vs right %.3f"
-                            % (left[:, 0].max(), -right[:, 0].min()))
+    # 3. symmetry, per part rather than per silhouette.
+    #
+    # Comparing the whole model's left and right extents is unusable the
+    # moment a character carries a sword in one hand and a shield on the
+    # other: nothing but a bare figure can pass, and tuning a prop's spin
+    # against a crossguard's length to silence it is worse than the warning.
+    # Only a part that straddles the centerline is claiming to be symmetric —
+    # a one-sided part and a rigid `group` prop are the author's business.
+    in_group = {p["name"] for p in model.parts if p.get("group")}
+    for pname, (v0, v1) in mesh.part_ranges.items():
+        if v1 - v0 < 4 or pname.rsplit(".", 1)[0] in in_group:
+            continue
+        if pname.endswith((".l", ".r")):
+            continue                      # generated by reflection; exact
+        chunk = V[v0:v1]
+        xlo, xhi = chunk[:, 0].min(), chunk[:, 0].max()
+        if xlo > -0.01 or xhi < 0.01:
+            continue                      # sits to one side: intentional
+        off = abs(xhi + xlo)
+        if off > 0.02:
+            warnings.append(
+                "part %r straddles the centerline but is lopsided (extends "
+                "%.3f left, %.3f right) — a central part should be symmetric; "
+                "check its ring `side=` offsets, or move it fully to one side"
+                % (pname, xhi, -xlo))
 
     # 4. proportions report
     total_h = V[:, 1].max() - ymin
@@ -352,12 +203,20 @@ def lint(model, bones, mesh):
             warnings.append("%d non-manifold edges are used by more than two triangles"
                             % nonmanifold)
 
+    # 6b. parts swallowed whole by another part
+    for a, b in _buried_parts(V, T, mesh.part_ranges):
+        warnings.append(
+            "part %r is entirely inside %r — it is invisible from every "
+            "angle, so it costs triangles and shows nothing; move it out, "
+            "grow it past the surface, or place it with on=%s"
+            % (a, b, b.rsplit(".", 1)[0]))
+
     double_sided = sorted(getattr(mesh, "double_sided_materials", ()))
     if double_sided:
         infos.append("double-sided materials: %s" % ", ".join(double_sided))
 
     # 7. authored measurement checks
-    fails, measurements = eval_checks(model, bones, mesh, V)
+    fails, measurements = wchecks.evaluate(model, bones, mesh, V)
     warnings.extend("check failed — %s" % f for f in fails)
     infos.extend("check: %s" % m for m in measurements)
 

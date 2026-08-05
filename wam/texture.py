@@ -155,11 +155,23 @@ def apply_ops(tex, col, P, u, vy, vp, ao, seed):
 def _vertex_attrs(model, mesh, V, T, M):
     """Per-vertex material, part params, and AO for both bake paths."""
     n = len(V)
+    # A vertex takes the material most of its triangles use. Generators split
+    # vertices at material boundaries, so this is normally unanimous; taking
+    # whichever triangle merely happened to come first would silently mis-tint
+    # any vertex that is genuinely shared across a color edge.
     vmat = np.full(n, -1, dtype=int)
-    for (a, b, c), mi in zip(T, M):
-        for i in (a, b, c):
-            if vmat[i] < 0:
-                vmat[i] = mi
+    if len(T):
+        tally = {}
+        for (a, b, c), mi in zip(T, M):
+            for i in (a, b, c):
+                key = (int(i), int(mi))
+                tally[key] = tally.get(key, 0) + 1
+        best = {}
+        for (i, mi), count in tally.items():
+            if count > best.get(i, (0, 0))[0]:
+                best[i] = (count, mi)
+        for i, (_, mi) in best.items():
+            vmat[i] = mi
     Nrm = np.zeros_like(V)
     fn = np.cross(V[T[:, 1]] - V[T[:, 0]], V[T[:, 2]] - V[T[:, 0]])
     for i in range(3):
@@ -274,10 +286,9 @@ def bake_atlas(model, mesh, V, T, M, res=1024, pad=3):
         xx += x0
         wa, wb, wc = w0[mask], w1[mask], w2[mask]
         tP[yy, xx] = (wa[:, None] * V[a] + wb[:, None] * V[b] + wc[:, None] * V[c])
-        ua, ub, uc = U[a], U[b], U[c]
-        if max(ua, ub, uc) - min(ua, ub, uc) > 0.5:   # cylinder seam triangle
-            ua, ub, uc = [x + 1.0 if x < 0.5 else x for x in (ua, ub, uc)]
-        tU[yy, xx] = (wa * ua + wb * ub + wc * uc) % 1.0
+        # Charts are unwrapped with a duplicated seam column, so u is a plain
+        # 0..1 ramp across every triangle; no wrap-around repair is needed.
+        tU[yy, xx] = wa * U[a] + wb * U[b] + wc * U[c]
         tVP[yy, xx] = wa * VP[a] + wb * VP[b] + wc * VP[c]
         tVY[yy, xx] = wa * VY[a] + wb * VY[b] + wc * VY[c]
         tAO[yy, xx] = wa * ao[a] + wb * ao[b] + wc * ao[c]
