@@ -156,6 +156,12 @@ check catches it — a held hammer and a floating one measure the same distance
 from the arm. The compiler warns if you graft a model that declares an anchor
 without using it.
 
+Held props are checked for you: anything grafted that fuses no bones is
+carried, and a carried thing that intersects its carrier is reported with the
+depth and the two parts. That is the "sword reversed into the chest" bug, and
+it needs no assertion. Add the `overlap` flag to a graft that is supposed to
+intersect (a rider on a mount).
+
 Then check the fit in the set file: `covers(knight.plate.cuirass,
 knight.body.torso) > 0.45` proves the armour actually contains the body, which
 `gap` and `clip` cannot tell you (both read 0 when one part swallows another).

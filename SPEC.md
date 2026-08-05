@@ -882,6 +882,36 @@ That is the warning worth having, because no proximity check finds this bug:
 a hammer floating beside the arm and a hammer held in the hand measured 0.026
 and 0.023 apart respectively. Only the anchor knows which one is *held*.
 
+#### Held props are checked automatically
+
+A weapon reversed into its owner's chest is the most common composition
+failure and the hardest to catch in a render, because the blade reads as
+being *behind* the body rather than inside it. It is also unambiguous, so
+every composition is checked for it with no assertion to remember:
+
+```
+WARN: in 'knight' the held 'sword' passes 0.147 through the body:
+      'sword.blade' into 'body.torso' — a carried prop should never enter its
+      carrier, so its aim is reversed or swung across the body
+```
+
+The rule needs no heuristics: a model that joined the skeleton **without
+fusing any bones** is carried rather than worn, and a carried thing does not
+intersect its carrier. The limb gripping it is excluded, since a haft
+overlapping the fist around it is the whole point. Measured on one body: a
+correctly carried hammer is clear of the body core, the same hammer aimed
+into it reads 0.147, and swung across the chest 0.144.
+
+A graft that is *meant* to overlap — a rider straddling a mount, a pack
+pressed into a back — says so:
+
+```
+graft rider to=spine:0.9 fuse=none scale=0.55 overlap
+```
+
+Default checked, because forgetting the flag on a rider costs one warning
+while forgetting an assertion on a sword ships the sword through the ribcage.
+
 #### `noclip` at set level
 
 `every: noclip` already sweeps every member, compositions included. In the

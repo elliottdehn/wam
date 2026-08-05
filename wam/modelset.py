@@ -189,6 +189,8 @@ def parse(text, path=None):
                 for f in flags:
                     if f in wparser.DIR_WORDS:
                         g["dir"] = f
+                    elif f == "overlap":
+                        g["overlap"] = True
                 for k in ("at", "pitch", "yaw", "tilt", "spin", "scale"):
                     if k in kv:
                         g[k] = wparser._num(kv[k], line_no, line)
@@ -365,7 +367,7 @@ def build_composition(spec, models, warn):
         raise wchecks.CheckError("compose %r: no base model %r"
                                  % (spec["name"], spec["base"]))
     out = wmesh.MeshOut()
-    parts, seen_colors = [], {}
+    parts, seen_colors, held = [], {}, []
     bones = dict(base.bones)
     anims = [dict(a) for a in base.model.anims]
     poses = dict(base.model.poses)
@@ -418,12 +420,12 @@ def build_composition(spec, models, warn):
                      % (alias, landed[1], landed[0], g.get("bone"), landed[1]))
 
         # decide, per bone, whether it fuses with the host or joins as new
-        namemap, xform, fused = {}, {}, []
+        namemap, xform, fused_any = {}, {}, False
         for name, b in c.bones.items():
             if fuse and name in base.bones:
                 namemap[name] = name
                 xform[name] = _affine_fuse(b, base.bones[name])
-                fused.append(name)
+                fused_any = True
             else:
                 new = "%s.%s" % (g.get("prefix") or alias, name) \
                     if name in bones else name
@@ -444,6 +446,8 @@ def build_composition(spec, models, warn):
                 parent.children.append(nb)
             bones[namemap[name]] = nb
 
+        if not fused_any and not g.get("overlap"):
+            held.append((alias, g.get("bone")))
         V = np.zeros_like(c.V)
         for i, sk in enumerate(c.mesh.skin):
             total = sum(w for _, w in sk) or 1.0
@@ -472,7 +476,54 @@ def build_composition(spec, models, warn):
     model = _Composite(base.model, parts)
     model.anims = anims
     model.poses = poses
-    return Compiled(spec["name"], model, bones, out)
+    comp = Compiled(spec["name"], model, bones, out)
+    comp.base_alias = spec["base"]
+    comp.held = held
+    return comp
+
+
+def check_held_props(comp, warn, limit=0.02):
+    """A held prop must not pass through the body holding it.
+
+    A weapon reversed into its owner's chest is the most common composition
+    failure and the hardest to see in a render, because the blade reads as
+    being *behind* the body rather than inside it. It is also unambiguous:
+    something that joined the skeleton without fusing any bones is carried,
+    not worn, and carried things do not intersect their carrier — except at
+    the limb gripping them, which is excluded.
+    """
+    if not comp.held:
+        return
+    funcs = comp.funcs
+    base_parts = [k for k in comp.mesh.part_ranges
+                  if k.split(".", 1)[0] == comp.base_alias]
+    for alias, host in comp.held:
+        holding = set()
+        if host is not None:
+            for k in base_parts:
+                v0, v1 = comp.mesh.part_ranges[k]
+                names = set()
+                for i in range(v0, v1):
+                    names.update(n for n, w in comp.mesh.skin[i] if w > 0.05)
+                if host in names:
+                    holding.add(k)          # the limb gripping it: expected
+        worst = (0.0, None, None)
+        for pk in comp.mesh.part_ranges:
+            if pk.split(".", 1)[0] != alias:
+                continue
+            for bk in base_parts:
+                if bk in holding:
+                    continue
+                d = funcs["clip"](wchecks._Ref(pk), wchecks._Ref(bk))
+                if d > worst[0]:
+                    worst = (d, pk, bk)
+        if worst[0] > limit:
+            warn("in %r the held %r passes %.3f through the body: %r into %r "
+                 "— a carried prop should never enter its carrier, so its aim "
+                 "is reversed or swung across the body. If it is meant to "
+                 "overlap (a rider straddling a mount), say so with the "
+                 "`overlap` flag"
+                 % (comp.alias, alias, worst[0], worst[1], worst[2]))
 
 
 def build_functions(models):
@@ -661,7 +712,9 @@ def compile_set(path, quiet=False, out_dir=None):
         if spec["name"] in models:
             raise wparser.WamError("compose %r collides with a model alias"
                                    % spec["name"])
-        models[spec["name"]] = build_composition(spec, models, notes.append)
+        comp = build_composition(spec, models, notes.append)
+        check_held_props(comp, notes.append)
+        models[spec["name"]] = comp
 
     funcs = build_functions(models)
     scalars = {"pi": float(np.pi), "models": float(len(models))}
