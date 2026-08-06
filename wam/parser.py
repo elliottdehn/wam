@@ -15,7 +15,7 @@ class WamError(Exception):
         super().__init__(msg + loc)
 
 
-DIR_WORDS = ("up", "down", "fwd", "back", "side", "in")
+DIR_WORDS = ("up", "down", "fwd", "back", "side", "in", "left", "right")
 CAP_WORDS = ("flat", "dome", "point", "none")
 SHAPE_WORDS = ("round", "squarish", "box")
 FRAME_WORDS = ("auto", "up", "fwd", "side")
@@ -71,6 +71,7 @@ class Model:
         self.pins = []             # list of dicts: bone -> absolute head/tail
         self.anchors = {}          # name -> dict(pos, dir, pitch, yaw, tilt)
         self.markers = {}          # name -> (x, y, z) in the model's own space
+        self.sides = {}            # name -> local direction that side faces
         self.parts = []            # list of dicts
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
         self.anims = []            # list of dicts
@@ -83,14 +84,14 @@ class Model:
 # a typo that is silently dropped is the worst failure mode the language has:
 # the model compiles, looks plausible, and quietly ignores what you asked for.
 KNOWN_KEYS = {
-    "bone": {"parent", "dir", "pitch", "yaw", "roll", "tilt", "len", "at",
+    "bone": {"parent", "dir", "pitch", "yaw", "roll", "tilt", "len", "at", "to",
              "side", "fwd", "up", "offset", "head", "tail"},
     "pin": {"at", "head", "tail"},
     "part": {"material", "bones", "bone", "dir", "shape", "kind", "on", "press",
              "frame", "refaxis", "skin", "material_arc", "anchor", "trailing",
              "at", "len", "pitch", "yaw", "tilt", "size", "w", "d", "h",
              "sides", "taper", "inset", "scallop", "thickness", "steps",
-             "usteps", "offset"},
+             "usteps", "offset", "rest", "layer", "push"},
     "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot",
              "dtop", "dbot", "shape", "material", "material_arc", "follow",
              "skin"},
@@ -101,6 +102,7 @@ KNOWN_KEYS = {
               "aim", "offset"},
     "anchor": {"at", "dir", "pitch", "yaw", "tilt"},
     "marker": {"at"},
+    "side": {"dir", "pitch", "yaw", "tilt"},
 }
 
 
@@ -364,6 +366,24 @@ def parse(text, path=None):
                 if v <= 0:
                     raise WamError("%s must be above zero" % kw, line_no, line)
                 setattr(model, kw, v)
+            elif kw == "side":
+                # Which way one named face of this model points, in its own
+                # space. Composition then says where that side should end up
+                # ("the shield's front faces left") without the author
+                # deriving a single angle.
+                if len(tokens) < 2:
+                    raise WamError("side needs a name", line_no, line)
+                _, kv, flags = _split_kv(tokens[2:], line_no, line)
+                _check_keys(model, "side", kv, line_no, line)
+                d = kv.get("dir")
+                for f in flags:
+                    if f in DIR_WORDS or f in ("left", "right"):
+                        d = f
+                if d is None:
+                    raise WamError("side %r needs dir=" % tokens[1], line_no, line)
+                model.sides[tokens[1]] = dict(
+                    dir=d, **{k: _num(kv[k], line_no, line)
+                              for k in ("pitch", "yaw", "tilt") if k in kv})
             elif kw == "marker":
                 # A named point in the model's own space. Parts can only be
                 # addressed by their bounding-box centre, which says nothing
@@ -451,6 +471,8 @@ def parse(text, path=None):
                 for k in ("pitch", "yaw", "roll", "tilt", "len", "at", "side", "fwd", "up"):
                     if k in kv:
                         b[k] = _num(kv[k], line_no, line)
+                if "to" in kv:
+                    b["to"] = kv["to"]
                 if "offset" in kv:
                     b["offset"] = _vec(kv["offset"], line_no, line)
                 for k in ("head", "tail"):
@@ -458,8 +480,15 @@ def parse(text, path=None):
                         b["pin_" + k] = _vec(kv[k], line_no, line)
                 if b["parent"] is None:
                     raise WamError("bone %r needs parent=" % b["name"], line_no, line)
-                if b.get("len") is None or "len" not in b:
-                    raise WamError("bone %r needs len=" % b["name"], line_no, line)
+                if b.get("to") is None and ("len" not in b or b.get("len") is None):
+                    raise WamError(
+                        "bone %r needs len= or to=<landmark>" % b["name"],
+                        line_no, line)
+                if b.get("to") is not None and "len" in b:
+                    raise WamError(
+                        "bone %r has both len= and to= — to= solves the "
+                        "length, so the len= would be discarded"
+                        % b["name"], line_no, line)
                 model.bones.append(b)
             elif kw == "pin":
                 if len(tokens) < 2:
@@ -537,6 +566,11 @@ def parse(text, path=None):
                     p["trailing"] = kv["trailing"]
                 if "at" in kv and kv["at"].startswith("("):
                     p["gpos"] = _vec(kv.pop("at"), line_no, line)
+                for k in ("rest", "push"):
+                    if k in kv:
+                        p[k] = kv[k]
+                if "layer" in kv:
+                    p["layer"] = _num(kv["layer"], line_no, line)
                 for k in ("at", "len", "pitch", "yaw", "tilt", "size", "w", "d",
                           "h", "sides", "taper", "inset", "scallop",
                           "thickness", "steps", "usteps"):

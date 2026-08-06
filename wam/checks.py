@@ -51,6 +51,103 @@ def _subsample(a):
     return a[:: (len(a) + _SAMPLE_CAP - 1) // _SAMPLE_CAP]
 
 
+def _point_tri_dist(P, A, B, C):
+    """Distance from each point in P to the nearest of triangles (A,B,C)."""
+    P = np.asarray(P, float)[:, None, :]
+    AB, AC = B - A, C - A
+    AP = P - A
+    d1 = (AB * AP).sum(-1)
+    d2 = (AC * AP).sum(-1)
+    BP = P - B
+    d3 = (AB * BP).sum(-1)
+    d4 = (AC * BP).sum(-1)
+    CP = P - C
+    d5 = (AB * CP).sum(-1)
+    d6 = (AC * CP).sum(-1)
+    vc = d1 * d4 - d3 * d2
+    vb = d5 * d2 - d1 * d6
+    va = d3 * d6 - d5 * d4
+    denom = va + vb + vc
+    with np.errstate(divide="ignore", invalid="ignore"):
+        v = np.where(np.abs(denom) > 1e-20, vb / denom, 0.0)
+        w = np.where(np.abs(denom) > 1e-20, vc / denom, 0.0)
+        # region tests, resolved in the order of Ericson's closest-point
+        s_ab = np.clip(np.where(np.abs(d1 - d3) > 1e-20,
+                                d1 / np.where(np.abs(d1 - d3) > 1e-20, d1 - d3, 1.0),
+                                0.0), 0, 1)
+        s_ac = np.clip(np.where(np.abs(d2 - d6) > 1e-20,
+                                d2 / np.where(np.abs(d2 - d6) > 1e-20, d2 - d6, 1.0),
+                                0.0), 0, 1)
+        bc_d = (d4 - d3) - (d6 - d5)
+        s_bc = np.clip(np.where(np.abs(bc_d) > 1e-20,
+                                (d4 - d3) / np.where(np.abs(bc_d) > 1e-20, bc_d, 1.0),
+                                0.0), 0, 1)
+    Q = A + AB * v[..., None] + AC * w[..., None]
+    Q = np.where(((vc <= 0) & (d1 >= 0) & (d3 <= 0))[..., None],
+                 A + AB * s_ab[..., None], Q)
+    Q = np.where(((vb <= 0) & (d2 >= 0) & (d6 <= 0))[..., None],
+                 A + AC * s_ac[..., None], Q)
+    Q = np.where(((va <= 0) & ((d4 - d3) >= 0) & ((d5 - d6) >= 0))[..., None],
+                 B + (C - B) * s_bc[..., None], Q)
+    Q = np.where(((d1 <= 0) & (d2 <= 0))[..., None], A, Q)
+    Q = np.where(((d3 >= 0) & (d4 <= d3))[..., None], B, Q)
+    Q = np.where(((d6 >= 0) & (d5 <= d6))[..., None], C, Q)
+    return np.linalg.norm(P - Q, axis=-1).min(axis=1)
+
+
+def surface_distance(Va, Ta, Vb, Tb):
+    """Closest approach between two *surfaces*, not their vertex clouds.
+
+    Vertex-to-vertex distance overestimates whenever a face is larger than
+    the gap being measured: a low-poly shield board resting flat on a forearm
+    has no vertex anywhere near the arm, so it reads 0.084 apart while the
+    surfaces are touching. Anything asking "do these meet?" has to sample the
+    faces, not the corners.
+    """
+    Va, Vb = np.asarray(Va, float), np.asarray(Vb, float)
+    if not len(Va) or not len(Vb):
+        return float("inf")
+    best = float("inf")
+    if len(Tb):
+        A, B, C = Vb[Tb[:, 0]], Vb[Tb[:, 1]], Vb[Tb[:, 2]]
+        best = min(best, float(_point_tri_dist(Va, A, B, C).min()))
+    if len(Ta):
+        A, B, C = Va[Ta[:, 0]], Va[Ta[:, 1]], Va[Ta[:, 2]]
+        best = min(best, float(_point_tri_dist(Vb, A, B, C).min()))
+    return best
+
+
+def rest_shift(PV, PT, TV, TT, u, layer, iters=34):
+    """How far to slide P along u so it rests on T with `layer` clearance.
+
+    Solved on the real separation rather than on extremes along the axis:
+    picking the furthest vertex of each along u is only right for two
+    parallel slabs, and a shield strapped to a forearm is a flat plate beside
+    a tilted cone — that solve clears the shoulder and leaves the shield
+    hanging 0.07 out from the arm it is strapped to.
+    """
+    PV, TV = np.asarray(PV, float), np.asarray(TV, float)
+    u = np.asarray(u, float)
+    u = u / max(np.linalg.norm(u), 1e-12)
+    span = float(max((PV.max(0) - PV.min(0)).max(),
+                     (TV.max(0) - TV.min(0)).max(),
+                     np.linalg.norm(PV.mean(0) - TV.mean(0)))) * 2.0 + 1.0
+
+    def clear(t):
+        return surface_distance(PV + u * t, PT, TV, TT) > layer
+
+    lo, hi = -span, span          # lo: overlapping, hi: comfortably clear
+    if not clear(hi):
+        return 0.0
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        if clear(mid):
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+
 def _min_pair_distance(A, B):
     """Closest approach between two point sets, in chunks to bound memory."""
     A, B = _subsample(A), _subsample(B)
@@ -60,6 +157,196 @@ def _min_pair_distance(A, B):
         d = np.linalg.norm(chunk[:, None, :] - B[None, :, :], axis=2)
         best = min(best, float(d.min()))
     return best
+
+
+def boundary_loops(V, T):
+    """Ordered vertex-index loops along a surface's open boundary."""
+    V, T = np.asarray(V, float), np.asarray(T, int)
+    if not len(T):
+        return []
+    edges = {}
+    for a, b, c in T:
+        for e in ((a, b), (b, c), (c, a)):
+            k = tuple(sorted(e))
+            edges[k] = edges.get(k, 0) + 1
+    border = [e for e, n in edges.items() if n == 1]
+    if not border:
+        return []
+    adj = {}
+    for a, b in border:
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    seen, loops = set(), []
+    for start in adj:
+        if start in seen:
+            continue
+        loop, cur, prev = [start], start, None
+        seen.add(start)
+        while True:
+            nxt = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxt:
+                break
+            prev, cur = cur, nxt[0]
+            seen.add(cur)
+            loop.append(cur)
+        if len(loop) >= 3:
+            loops.append(loop)
+    return loops
+
+
+def bone_fit_leak(bones, body_pts, body_skin, garment_pts,
+                  bands=12, sectors=16, reach=3.0):
+    """Does the body outgrow the garment around it, measured against bones.
+
+    Every earlier attempt asked a containment question — is this point inside
+    that surface — and containment is the wrong tool, because a garment is not
+    a closed volume. Cloth has mouths the body is *meant* to leave through, so
+    ray parity reports the legs below a hem as a leak of near-constant size
+    however the garment is cut, and gating that away by "how much is enclosed"
+    inverts the test: the worse a garment splits, the less of the body it
+    contains, so the severe cases go quiet.
+
+    Bones make the question well posed without any of that. A worn thing wraps
+    the limb or trunk it is worn on, so at each position along a bone both the
+    body and the cloth have a radius about it, and fitting means the cloth's
+    is the larger. Openings need no special case: at a hem the leg is well
+    inside the cloth's radius and scores nothing, while a thigh broader than
+    the waistband scores exactly its overhang. It makes no assumption about
+    the garment being open, closed, a tube, a sheet or a cap.
+    """
+    worst = 0.0
+    body_pts = np.asarray(body_pts, float)
+    garment_pts = np.asarray(garment_pts, float)
+    if not len(body_pts) or not len(garment_pts):
+        return 0.0
+    by_bone = {}
+    for i, sk in enumerate(body_skin):
+        if not sk:
+            continue
+        name = max(sk, key=lambda nw: nw[1])[0]
+        by_bone.setdefault(name, []).append(i)
+
+    for name, ids in by_bone.items():
+        b = bones.get(name)
+        if b is None or b.len <= 1e-9:
+            continue
+        o = np.asarray(b.head, float)
+        u = np.asarray(b.dir, float)
+        u = u / max(np.linalg.norm(u), 1e-12)
+        e1, e2 = _frame_perp(u)
+
+        def polar(X):
+            d = X - o
+            t = d @ u
+            r = d - np.outer(t, u)
+            return t, np.hypot(r @ e1, r @ e2), np.arctan2(r @ e2, r @ e1)
+
+        gt, gr, ga = polar(garment_pts)
+        near = np.abs(gt - b.len * 0.5) <= b.len * reach
+        if not near.any():
+            continue
+        gt, gr, ga = gt[near], gr[near], ga[near]
+        lo, hi = gt.min(), gt.max()
+        span = max(float(hi - lo), 1e-9)
+
+        pt, pr, pa = polar(body_pts[ids])
+        keep = (pt >= lo) & (pt <= hi)
+        if not keep.any():
+            continue
+
+        gb = np.clip(((gt - lo) / span * bands).astype(int), 0, bands - 1)
+        gs = np.clip(((ga + np.pi) / (2 * np.pi) * sectors).astype(int), 0, sectors - 1)
+        grid = np.full((bands, sectors), -1.0)
+        np.maximum.at(grid, (gb, gs), gr)
+        for row in grid:                       # a sector with no cloth in this
+            seen = row[row >= 0]               # band inherits the band's reach
+            if len(seen):
+                row[row < 0] = seen.mean()
+
+        pb = np.clip(((pt[keep] - lo) / span * bands).astype(int), 0, bands - 1)
+        ps = np.clip(((pa[keep] + np.pi) / (2 * np.pi) * sectors).astype(int), 0, sectors - 1)
+        cloth = grid[pb, ps]
+        live = cloth >= 0
+        if live.any():
+            worst = max(worst, float(np.max(pr[keep][live] - cloth[live])))
+    return max(worst, 0.0)
+
+
+def _frame_perp(u):
+    """Two unit vectors completing an orthonormal frame with u."""
+    a = np.array([1.0, 0.0, 0.0])
+    if abs(float(np.dot(a, u))) > 0.9:
+        a = np.array([0.0, 1.0, 0.0])
+    e1 = a - u * float(np.dot(a, u))
+    e1 = e1 / np.linalg.norm(e1)
+    return e1, np.cross(u, e1)
+
+
+def boundary_verts(V, T):
+    """Vertex positions on a surface's open boundary loops."""
+    V, T = np.asarray(V, float), np.asarray(T, int)
+    if not len(T):
+        return V[:0]
+    edges = {}
+    for a, b, c in T:
+        for e in ((a, b), (b, c), (c, a)):
+            k = tuple(sorted(e))
+            edges[k] = edges.get(k, 0) + 1
+    idx = sorted({i for e, n in edges.items() if n == 1 for i in e})
+    return V[idx] if idx else V[:0]
+
+
+def seal(V, T):
+    """Close a surface's open boundaries so inside/outside means something.
+
+    Cloth is authored open — `cap start=none end=none` is what makes a skirt a
+    skirt rather than a bag. But every containment test here is ray parity,
+    and parity through an open tube is undefined: a ray can leave through the
+    hem without ever crossing a face. The failure is not a wrong number, it is
+    an unstable one — the reported leak of a skirt that provably clears the
+    body *grew* from 0.012 to 0.050 as the skirt was widened.
+
+    Each boundary loop is fanned from its own centroid, which is exactly the
+    lid the author left off and nothing more.
+    """
+    V, T = np.asarray(V, float), np.asarray(T, int)
+    if not len(T):
+        return V, T
+    edges = {}
+    for a, b, c in T:
+        for e in ((a, b), (b, c), (c, a)):
+            edges[tuple(sorted(e))] = edges.get(tuple(sorted(e)), 0) + 1
+    border = [e for e, n in edges.items() if n == 1]
+    if not border:
+        return V, T
+    adj = {}
+    for a, b in border:
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    seen, loops = set(), []
+    for start in adj:
+        if start in seen:
+            continue
+        loop, cur, prev = [start], start, None
+        seen.add(start)
+        while True:
+            nxt = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxt:
+                break
+            prev, cur = cur, nxt[0]
+            seen.add(cur)
+            loop.append(cur)
+        if len(loop) >= 3:
+            loops.append(loop)
+    if not loops:
+        return V, T
+    V2, T2 = list(V), list(T)
+    for loop in loops:
+        ci = len(V2)
+        V2.append(V[loop].mean(axis=0))
+        for i in range(len(loop)):
+            T2.append([ci, loop[i], loop[(i + 1) % len(loop)]])
+    return np.asarray(V2, float), np.asarray(T2, int)
 
 
 def points_inside(points, A, B, C):
@@ -268,6 +555,23 @@ class Env:
         t = self.part_tris(ref)
         return V[t[:, 0]], V[t[:, 1]], V[t[:, 2]]
 
+    def sealed_tri_verts(self, ref, V=None):
+        """`tri_verts`, but with any open boundary closed off first.
+
+        Containment questions must be asked of a closed surface. Cloth is not
+        one, so the lid the author deliberately left off is added back here
+        and nowhere else — the rendered geometry is untouched.
+        """
+        V = self.V if V is None else V
+        t = self.part_tris(ref)
+        if not len(t):
+            return V[:0], V[:0], V[:0]
+        idx = np.unique(t)
+        remap = {int(o): i for i, o in enumerate(idx)}
+        local = np.vectorize(remap.__getitem__)(t)
+        SV, ST = seal(V[idx], local)
+        return SV[ST[:, 0]], SV[ST[:, 1]], SV[ST[:, 2]]
+
     def part_edges(self, ref, V=None):
         """(P0, P1) endpoint arrays for a part's unique triangle edges."""
         key = _name_of(ref)
@@ -437,7 +741,7 @@ def build_functions(env):
         pts = env.part_verts_in(inner)
         if len(pts) > _CLIP_SAMPLES:
             pts = pts[:: (len(pts) + _CLIP_SAMPLES - 1) // _CLIP_SAMPLES]
-        A, B, C = env.tri_verts(outer)
+        A, B, C = env.sealed_tri_verts(outer)
         if not len(A) or not len(pts):
             return 0.0
         return float(points_inside(pts, A, B, C).mean())
@@ -456,7 +760,7 @@ def build_functions(env):
         # measure, and dropping half the vertices drops the one poking out
         pts = _subsample(env.part_verts_in(inner))
         ov = env.part_verts_in(outer)
-        A, B, C = env.tri_verts(outer)
+        A, B, C = env.sealed_tri_verts(outer)
         if not len(A) or not len(pts):
             return 0.0
         lo, hi = ov.min(axis=0), ov.max(axis=0)

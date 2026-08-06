@@ -183,7 +183,8 @@ def parse(text, path=None):
             elif kw == "graft":
                 g = dict(alias=tokens[1], line_no=line_no, dir=kv.get("dir"),
                          fuse=kv.get("fuse", "name"), prefix=kv.get("prefix"),
-                         align=kv.get("align"), face=kv.get("face"))
+                         align=kv.get("align"), face=kv.get("face"),
+                         facing=kv.get("facing"))
                 if g["fuse"] not in ("name", "none"):
                     raise wparser.WamError("fuse= must be name|none",
                                            line_no, line)
@@ -206,6 +207,11 @@ def parse(text, path=None):
                         g[k] = wparser._num(kv[k], line_no, line)
                 if "offset" in kv:
                     g["offset"] = wparser._vec(kv["offset"], line_no, line)
+                for k in ("rest", "push"):
+                    if k in kv:
+                        g[k] = kv[k]
+                if "layer" in kv:
+                    g["layer"] = wparser._num(kv["layer"], line_no, line)
                 if "to" in kv:
                     if kv["to"].startswith("("):
                         g["world"] = wparser._vec(kv["to"], line_no, line)
@@ -312,6 +318,72 @@ def dir_words(v):
     return "-".join(out) or "fwd"
 
 
+def _facing_rotation(g, c, host):
+    """Rotation from `facing=<side>:<direction>,...` wishes, plus residuals."""
+    pairs, wishes = [], []
+    for item in g["facing"].split(","):
+        item = item.strip()
+        if not item:
+            continue
+        sname, _, hint = item.partition(":")
+        side = (getattr(c.model, "sides", {}) or {}).get(sname)
+        if side is None:
+            raise wchecks.CheckError(
+                "graft %r: no side %r declared in that model (it has: %s)"
+                % (g["alias"], sname,
+                   ", ".join(sorted(getattr(c.model, "sides", {}) or {}))
+                   or "none"))
+        src = wskel.resolve_dir(side["dir"], side.get("pitch", 0.0),
+                                side.get("yaw", 0.0), side.get("tilt", 0.0))
+        dst = wskel.axis_hint(host, hint or "fwd",
+                              "graft %r facing=" % g["alias"])
+        pairs.append((src, dst, 1.0))
+        wishes.append((sname, hint or "fwd", src, dst))
+    if not pairs:
+        raise wchecks.CheckError("graft %r: facing= needs <side>:<direction>"
+                                 % g["alias"])
+    R = wskel.best_fit_rotation(pairs)
+    resid = []
+    for sname, hint, src, dst in wishes:
+        got = R @ (src / max(np.linalg.norm(src), 1e-12))
+        d = dst / max(np.linalg.norm(dst), 1e-12)
+        resid.append((sname, hint,
+                      math.degrees(math.acos(float(np.clip(got @ d, -1, 1))))))
+
+    # A best fit is the right answer for wishes that *nearly* agree; it is a
+    # nonsense answer for wishes that cannot agree. Two sides 90 degrees apart
+    # on the model aimed at directions 0 degrees apart in the world have no
+    # solution, and splitting the error 45/45 satisfies nobody while looking
+    # like it worked. Tell them apart by whether the angles between the wishes
+    # match: rotation preserves angles, so any mismatch is irreducible.
+    worst = max((r[2] for r in resid), default=0.0)
+    if worst > 20.0:
+        detail = []
+        for i in range(len(wishes)):
+            for j in range(i + 1, len(wishes)):
+                a = math.degrees(math.acos(float(np.clip(
+                    _unit(wishes[i][2]) @ _unit(wishes[j][2]), -1, 1))))
+                b = math.degrees(math.acos(float(np.clip(
+                    _unit(wishes[i][3]) @ _unit(wishes[j][3]), -1, 1))))
+                if abs(a - b) > 20.0:
+                    detail.append(
+                        "%r and %r are %.0f\u00b0 apart on the model but you "
+                        "asked for directions %.0f\u00b0 apart"
+                        % (wishes[i][0], wishes[j][0], a, b))
+        raise wchecks.CheckError(
+            "graft %r: these facing= wishes cannot all be met — %s. A rotation "
+            "preserves the angles between sides, so no orientation satisfies "
+            "them; the closest fit leaves %.0f\u00b0 of error. Drop one wish "
+            "or pick directions that sit apart the way the sides do"
+            % (g["alias"], "; ".join(detail) or "they disagree", worst))
+    return R, resid
+
+
+def _unit(v):
+    v = np.asarray(v, dtype=float)
+    return v / max(np.linalg.norm(v), 1e-12)
+
+
 def _join_frame(g, base, c):
     """Affine placing a grafted model's own space into the base's.
 
@@ -344,6 +416,11 @@ def _join_frame(g, base, c):
             dst = np.asarray(host.dir, dtype=float)
             dst = dst / max(np.linalg.norm(dst), 1e-12)
         R = wmesh._align_rotation(src, dst)
+        if g.get("facing"):
+            # Sides win over axis aiming: they state the whole orientation
+            # at once, and a best fit across them beats resolving one axis
+            # and then hoping the roll lands somewhere sensible.
+            R, g["_facing_resid"] = _facing_rotation(g, c, host)
 
         anchor_pos = np.asarray(anchor["pos"], dtype=float)
         edge = None
@@ -496,6 +573,16 @@ def build_composition(spec, models, warn, notes_aim=None):
             adir = wskel.resolve_dir(anchor.get("dir", "up")) if anchor else \
                 np.array([0.0, 1.0, 0.0])
             note = "graft %r aims %s" % (alias, dir_words(A0 @ adir))
+            if g.get("_facing_resid"):
+                slack = max(r[2] for r in g["_facing_resid"])
+                if slack > 5.0:
+                    notes_aim.append(
+                        "graft %r: facing= wishes do not quite agree; the best "
+                        "fit leaves %.0f\u00b0 of error (fine if you meant "
+                        "them as preferences)" % (alias, slack))
+                note += ", sides " + ", ".join(
+                    "%s->%s off %.0f\u00b0" % (n, h, d)
+                    for n, h, d in g["_facing_resid"])
             if g.get("face"):
                 mk = g["face"].partition(":")[0]
                 mv = (getattr(c.model, "markers", {}) or {}).get(mk)
@@ -534,7 +621,15 @@ def build_composition(spec, models, warn, notes_aim=None):
                 new = "%s.%s" % (g.get("prefix") or alias, name) \
                     if name in bones else name
                 namemap[name] = new
-                xform[name] = (A0, t0)
+                # A bone the wearer does not have still hangs off one it does:
+                # a skirt's hemline is parented to the pelvis, a cape's panels
+                # to the chest. Giving it the graft's own join frame instead
+                # detaches it from that parent, and the garment lands wherever
+                # the frame happens to point — a tasset authored at the hip
+                # ends up round the ankles, at three times its size.
+                xform[name] = xform[b.parent.name] \
+                    if b.parent is not None and b.parent.name in xform \
+                    else (A0, t0)
         for name, b in c.bones.items():
             if namemap[name] in bones:
                 continue
@@ -564,6 +659,8 @@ def build_composition(spec, models, warn, notes_aim=None):
             V[i] = acc
         skins = [[(namemap[n], w) for n, w in sk] for sk in c.mesh.skin]
         merge(alias, c, V, skins)
+        if g.get("rest"):
+            _rest_graft(out, spec, alias, g, base_alias=spec["base"], host=host)
         # markers ride along, so "the tip of the blade" stays addressable
         # after the sword has been placed on someone
         for nm, pos in (getattr(c.model, "markers", {}) or {}).items():
@@ -593,6 +690,100 @@ def build_composition(spec, models, warn, notes_aim=None):
     comp.held = held
     comp.worn = worn
     return comp
+
+
+def _rest_graft(out, spec, alias, g, base_alias, host=None):
+    """Slide a whole grafted model until it touches the body.
+
+    Same problem as a part resting on another part, one level up: the gap
+    between a strapped shield and the forearm it straps to is not a number
+    the author can know, and `offset=(0.115,0,0.01)` is a guess that reads as
+    floating while satisfying every check in the language.
+    """
+    ref = g["rest"]
+    layer = float(g.get("layer", 0.008))
+    keys = [k for k in out.part_ranges if k.split(".", 1)[0] == alias]
+    tgt = None
+    for cand in ("%s.%s" % (base_alias, ref), ref):
+        if cand in out.part_ranges:
+            tgt = cand
+            break
+    if tgt is None:
+        raise wchecks.CheckError(
+            "graft %r: rest=%r names no part of the base model %r"
+            % (alias, ref, base_alias))
+    P = np.array([out.verts[i] for k in keys
+                  for i in range(*out.part_ranges[k])], dtype=float)
+    b0, b1 = out.part_ranges[tgt]
+    T = np.array(out.verts[b0:b1], dtype=float)
+    if not len(P) or not len(T):
+        return
+    if g.get("push"):
+        if g["push"] not in wskel.BASE_DIRS:
+            raise wchecks.CheckError(
+                "graft %r: push=%r is not a direction" % (alias, g["push"]))
+        u = np.array(wskel.BASE_DIRS[g["push"]], dtype=float)
+    elif host is not None and host.len > 0:
+        # Away from the host bone's *axis*, not from the target's centre: a
+        # forearm is long, so centre-to-centre on a shield strapped halfway
+        # along it points up the arm and slides the shield toward the elbow.
+        axis = np.asarray(host.dir, dtype=float)
+        u = P.mean(axis=0) - np.asarray(host.point_at(g.get("at", 1.0)), float)
+        u = u - axis * float(np.dot(u, axis))
+        if np.linalg.norm(u) < 1e-9:
+            raise wchecks.CheckError(
+                "graft %r: rest=%r, but it is centred on the bone it hangs "
+                "from, so there is no side to rest on — give push=<direction>"
+                % (alias, ref))
+    else:
+        u = P.mean(axis=0) - T.mean(axis=0)
+        if np.linalg.norm(u) < 1e-9:
+            raise wchecks.CheckError(
+                "graft %r: rest=%r, but the two share a centre — give "
+                "push=<direction>" % (alias, ref))
+    u = u / max(np.linalg.norm(u), 1e-12)
+    tris = np.asarray(out.tris, dtype=int)
+
+    def sub(v0, v1):
+        sel = tris[((tris >= v0) & (tris < v1)).all(axis=1)] - v0 \
+            if len(tris) else np.zeros((0, 3), dtype=int)
+        return sel
+
+    PT = np.concatenate([sub(*out.part_ranges[k]) +
+                         (out.part_ranges[k][0] - out.part_ranges[keys[0]][0])
+                         for k in keys]) if len(keys) else np.zeros((0, 3), int)
+    shift = wchecks.rest_shift(P, PT, T, sub(b0, b1), u, layer)
+    for k in keys:
+        for i in range(*out.part_ranges[k]):
+            out.verts[i] = out.verts[i] + u * shift
+    return shift
+
+
+def _sits_under(comp, garment, part):
+    """Is `part` passing through `garment`, or merely alongside it?
+
+    Decided on position rather than on containment. The body that a garment is
+    worn over runs through it — a thigh enters a skirt at the waist whether or
+    not the skirt is wide enough to hold it — so its centre stays on the
+    garment's axis while it leaks. Something beside the garment never does: an
+    arm hangs outside a tasset and a chest lies inboard of a pauldron, and
+    both overlap those garments' bounding boxes completely.
+
+    So compare the *centre* of what lies in the garment's span against the
+    garment's own cross-section. That reading does not soften as the leak gets
+    worse, which is the property a containment ratio lacks.
+    """
+    gv = comp.V[slice(*comp.mesh.part_ranges[garment])]
+    pts = comp.V[slice(*comp.mesh.part_ranges[part])]
+    lo, hi = gv.min(axis=0), gv.max(axis=0)
+    within = pts[(pts[:, 1] >= lo[1]) & (pts[:, 1] <= hi[1])]
+    if not len(within):
+        return False
+    c = within.mean(axis=0)
+    for ax in (0, 2):                       # x and z; y is the span itself
+        if not (lo[ax] <= c[ax] <= hi[ax]):
+            return False
+    return True
 
 
 def check_worn_cover(comp, warn, limit=0.005):
@@ -627,7 +818,7 @@ def check_worn_cover(comp, warn, limit=0.005):
     # compare the two parts that actually matter.
     base_box = {k: box(k) for k in base_parts}
     for alias in comp.worn:
-        worst = (0.0, None, None)
+        found = []
         for gk in comp.mesh.part_ranges:
             if gk.split(".", 1)[0] != alias:
                 continue
@@ -636,14 +827,74 @@ def check_worn_cover(comp, warn, limit=0.005):
                 blo, bhi = base_box[bk]
                 if np.any(ghi < blo) or np.any(bhi < glo):
                     continue        # no shared space at all
-                d = funcs["leak"](wchecks._Ref(gk), wchecks._Ref(bk))
-                if d > worst[0]:
-                    worst = (d, bk, gk)
-        if worst[0] > limit:
+                # Sharing a bounding box is not being worn over: an arm hangs
+                # alongside a tasset and overlaps its box completely without
+                # ever being inside it. Only something the garment actually
+                # encloses can be said to burst out of it — and without this
+                # test the arm outranks the real leak and hides it, because
+                # only the worst pair was ever reported.
+                #
+                # "Under" vs "beside", decided on where the body part sits,
+                # not how much of it is enclosed. Fraction-enclosed is exactly
+                # backwards as a gate: the worse a garment leaks, the less of
+                # the body it contains, so a majority test goes quiet on the
+                # severe cases it most needs to catch — a skirt so narrow the
+                # thighs are half outside it reported perfectly clean.
+                if not _sits_under(comp, gk, bk):
+                    continue
+                bv0, bv1 = comp.mesh.part_ranges[bk]
+                gv0, gv1 = comp.mesh.part_ranges[gk]
+                d = wchecks.bone_fit_leak(
+                    comp.bones, comp.V[bv0:bv1],
+                    comp.mesh.skin[bv0:bv1], comp.V[gv0:gv1])
+                if d > limit:
+                    found.append((d, bk, gk))
+        # every leak, worst first: one garment usually fails in more than one
+        # place, and fixing the deepest leaves the others silently in place
+        for d, bk, gk in sorted(found, reverse=True):
             warn("in %r the body breaks out through worn %r: %r pokes %.3f "
                  "outside %r within the span it covers — widen the garment "
                  "there, or narrow the body under it"
-                 % (comp.alias, alias, worst[1], worst[0], worst[2]))
+                 % (comp.alias, alias, bk, d, gk))
+
+
+def check_contact(comp, warn, limit=0.02):
+    """Anything grafted onto a body should touch it.
+
+    A strapped shield, a worn pauldron, a held haft: all of them meet the
+    body somewhere. Geometry that hovers near the right place passes every
+    placement check — the anchor solved, the sides face correctly, nothing
+    intersects — and still reads as floating, because "close to the arm" and
+    "on the arm" are the same to every measure except contact.
+    """
+    base_parts = [k for k in comp.mesh.part_ranges
+                  if k.split(".", 1)[0] == comp.base_alias]
+    if not base_parts:
+        return
+    tris = np.asarray(comp.mesh.tris, dtype=int)
+
+    def surf(key):
+        v0, v1 = comp.mesh.part_ranges[key]
+        sel = tris[((tris >= v0) & (tris < v1)).all(axis=1)] - v0 \
+            if len(tris) else np.zeros((0, 3), dtype=int)
+        return comp.V[v0:v1], sel
+
+    for alias in [a for a, _ in comp.held] + list(getattr(comp, "worn", [])):
+        best, who = float("inf"), None
+        for gk in comp.mesh.part_ranges:
+            if gk.split(".", 1)[0] != alias:
+                continue
+            gV, gT = surf(gk)
+            for bk in base_parts:
+                bV, bT = surf(bk)
+                d = wchecks.surface_distance(gV, gT, bV, bT)
+                if d < best:
+                    best, who = d, (gk, bk)
+        if who and best > limit:
+            warn("in %r the grafted %r touches nothing — its nearest approach "
+                 "to the body is %.3f (%r to %r). Worn and held things meet "
+                 "the body somewhere; this one hovers beside it"
+                 % (comp.alias, alias, best, who[0], who[1]))
 
 
 def check_held_props(comp, warn, limit=0.02):
@@ -904,6 +1155,7 @@ def compile_set(path, quiet=False, out_dir=None):
         infos.extend(aim_notes)
         check_held_props(comp, notes.append)
         check_worn_cover(comp, notes.append)
+        check_contact(comp, notes.append)
         models[spec["name"]] = comp
 
     funcs = build_functions(models)

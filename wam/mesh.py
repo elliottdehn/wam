@@ -37,6 +37,7 @@ class MeshOut:
         self.sweep_paths = {}
         # part key -> degrees the `on=` press turned it off its authored aim
         self.pressed = {}
+        self.rests = {}
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -1323,6 +1324,84 @@ def _fix_winding(out, t0, t1):
                 out.tris[ti] = (i, k, j)
 
 
+def _lay_against(out, part, key, suffix, reflect):
+    """Slide a finished part until it rests on another one.
+
+    The standoff between a cape and a back, or a shield and a forearm, is not
+    a number the author knows — it is whatever makes the two surfaces meet.
+    Written as `fwd=-0.135` it is a guess that silently stops being true when
+    either side changes shape, and a garment floating a centimetre clear of
+    the body passes every placement, coverage and intersection check there is.
+    """
+    ref = part["rest"]
+    layer = float(part.get("layer", 0.008))
+    tgt = None
+    for cand in (ref + (".r" if reflect else suffix), ref):
+        if cand in out.part_ranges:
+            tgt = cand
+            break
+    if tgt is None:
+        raise WamError(
+            "part %r: rest=%r names no part built before it — the surface "
+            "to rest on has to already exist" % (key, ref))
+    if tgt == key:
+        raise WamError("part %r cannot rest against itself" % key)
+    a0, a1 = out.part_ranges[key]
+    b0, b1 = out.part_ranges[tgt]
+    P = np.array(out.verts[a0:a1], dtype=float)
+    T = np.array(out.verts[b0:b1], dtype=float)
+    if not len(P) or not len(T):
+        return
+
+    if part.get("push"):
+        if part["push"] not in BASE_DIRS:
+            raise WamError("part %r: push=%r is not a direction (%s)"
+                           % (key, part["push"], ", ".join(sorted(BASE_DIRS))))
+        u = np.array(BASE_DIRS[part["push"]], dtype=float)
+        if reflect:
+            u = np.array([-u[0], u[1], u[2]])
+    else:
+        u = P.mean(axis=0) - T.mean(axis=0)
+        n = np.linalg.norm(u)
+        if n < 1e-9:
+            raise WamError(
+                "part %r: rest=%r, but the two share a centre so there is "
+                "no side to rest on — give push=<direction>" % (key, tgt))
+        u = u / n
+    u = u / max(np.linalg.norm(u), 1e-12)
+
+    if not part.get("push"):
+        # A skirt surrounds the hips; a cape hangs behind a back. Only the
+        # second can rest on a side, and the difference shows up as the push
+        # direction coming out parallel to the part's own long axis — at
+        # which point sliding it "clear" walks it down the body to the ankles.
+        ext = P.max(axis=0) - P.min(axis=0)
+        axis = np.zeros(3)
+        axis[int(np.argmax(ext))] = 1.0
+        if abs(float(np.dot(u, axis))) > 0.9:
+            raise WamError(
+                "part %r: rest=%r, but the two are coaxial — %r surrounds "
+                "%r rather than sitting on one side of it, so there is no "
+                "direction to slide it that would make it 'rest'. A garment "
+                "that wraps clears its body by being wider, not by being "
+                "moved: size its rings past the part underneath. Use "
+                "push=<direction> only if you really did mean to slide it."
+                % (key, tgt, key, tgt))
+
+    from . import checks as _checks
+    tris = np.asarray(out.tris, dtype=int)
+
+    def sub(v0, v1):
+        sel = tris[((tris >= v0) & (tris < v1)).all(axis=1)] - v0 \
+            if len(tris) else np.zeros((0, 3), dtype=int)
+        return sel
+
+    shift = _checks.rest_shift(P, sub(a0, a1), T, sub(b0, b1), u, layer)
+    for i in range(a0, a1):
+        out.verts[i] = out.verts[i] + u * shift
+    out.rests[key] = (tgt, shift, u.copy())
+
+
 def build(model, bones):
     out = MeshOut()
     builders = {"loft": build_loft, "sweep": build_sweep,
@@ -1394,5 +1473,9 @@ def build(model, bones):
             fn(out, model, bones, part, suffix=suffix, reflect=reflect)
             if part["kind"] == "attach":
                 _fix_winding(out, t0, len(out.tris))
+            if part.get("rest"):
+                _lay_against(out, part,
+                             part["name"] + (".r" if reflect else suffix),
+                             suffix, reflect)
     finalize_group()
     return out

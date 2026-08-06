@@ -16,6 +16,8 @@ BASE_DIRS = {
     "up": (0, 1, 0), "down": (0, -1, 0),
     "fwd": (0, 0, 1), "back": (0, 0, -1),
     "side": (1, 0, 0), "in": (-1, 0, 0),
+    # the character's own left/right, for saying which way a thing faces
+    "left": (1, 0, 0), "right": (-1, 0, 0),
 }
 
 
@@ -114,6 +116,47 @@ def resolve_dir(spec, pitch=0.0, yaw=0.0, tilt=0.0):
     return v / np.linalg.norm(v)
 
 
+def reach_len(spec, origin, d, bones, suffix, who):
+    """Length that carries a bone from `origin` along `d` to a landmark.
+
+    A hem is not a length, it is a place: "down to mid-calf". Written as
+    `len=0.22` that place is only correct for the one body it was tuned on,
+    and nothing notices when it stops being true — a cape authored on a 1.95m
+    hero drags on the floor of a 2.6m dragon, and a skirt lands on the knee
+    because the number happened to equal the thigh.
+
+    The solve is a projection, not a strict rendezvous: the bone keeps the
+    direction it was given and extends until it is *level with* the landmark
+    along its own axis. That is what "reaches the calf" means for cloth that
+    also has to hang in a particular direction.
+    """
+    spec = str(spec).strip()
+    if spec == "ground":
+        if abs(d[1]) < 1e-6:
+            raise WamError("bone %r: to=ground, but it points along the "
+                           "ground and so never arrives" % who)
+        return float((0.0 - origin[1]) / d[1])
+    ref, _, tspec = spec.partition(":")
+    try:
+        t = float(tspec) if tspec else 1.0
+    except ValueError:
+        raise WamError("bone %r: to=%r — expected <bone>[:0..1] or 'ground'"
+                       % (who, spec))
+    target = None
+    for cand in (ref + suffix, ref):
+        if cand in bones:
+            target = bones[cand]
+            break
+    if target is None:
+        raise WamError(
+            "bone %r: to=%r names no bone defined before it. A landmark has "
+            "to already exist to be measured against — move it earlier, or "
+            "add it to this model's skeleton stub if it lives on the body "
+            "this one is worn by." % (who, ref))
+    p = target.point_at(t) if target.len > 0 else target.head
+    return float(np.dot(np.asarray(p, float) - np.asarray(origin, float), d))
+
+
 def solve(model):
     """Return dict name -> Bone (mirror blocks expanded to .l / .r)."""
     bones = {}
@@ -185,14 +228,23 @@ def solve(model):
                 d = flip(d)
             # A pin overrides where the parent chain would have put this bone,
             # so upstream edits (a longer spine) leave it exactly where it is.
+            blen = b.get("len", 0.0)
             if "head" in pin:
                 origin = pin["head"]
             elif "tail" in pin:
-                origin = pin["tail"] - d * b["len"]
+                origin = pin["tail"] - d * blen
             else:
                 origin = head + off
+            if b.get("to") is not None:
+                blen = reach_len(b["to"], origin, d, bones, suffix, name)
+                if blen <= 1e-6:
+                    raise WamError(
+                        "bone %r: to=%r lies behind it (solved length %.3f) — "
+                        "the landmark is in the opposite direction from the "
+                        "one this bone points"
+                        % (name, b["to"], blen))
             roll = b.get("roll", 0.0)
-            bone = Bone(name, parent, origin, d, b["len"],
+            bone = Bone(name, parent, origin, d, blen,
                         roll=-roll if mirrored else roll)
             parent.children.append(bone)
         bones[name] = bone
@@ -266,6 +318,27 @@ def bone_relative_dir(bone, spec, what="aim"):
             % (what, hint if isinstance(hint, str) else tuple(np.round(h, 3)),
                bone.name))
     return perp / n
+
+
+def best_fit_rotation(pairs):
+    """Rotation best satisfying several (source dir -> target dir) wishes.
+
+    Orientation is three degrees of freedom, and saying "this side faces
+    left" spends only one of them. Stating two or three sides over-determines
+    the problem, and the honest answer is the rotation that comes closest to
+    all of them at once rather than obeying one and silently ignoring the
+    rest. This is Wahba's problem; the SVD gives the least-squares fit.
+    """
+    B = np.zeros((3, 3))
+    for src, dst, w in pairs:
+        s = np.asarray(src, dtype=float)
+        d = np.asarray(dst, dtype=float)
+        s = s / max(np.linalg.norm(s), 1e-12)
+        d = d / max(np.linalg.norm(d), 1e-12)
+        B += w * np.outer(d, s)
+    U, _, Vt = np.linalg.svd(B)
+    D = np.diag([1.0, 1.0, float(np.sign(np.linalg.det(U @ Vt)))])
+    return U @ D @ Vt
 
 
 def axis_hint(bone, hint, what="aim"):
