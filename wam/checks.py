@@ -798,8 +798,22 @@ def run_noclip(env, spec, funcs):
         # overlaps the language mandates; the blanket sweep also forgives
         # parts that merely share a joint
         pairs -= _hard_pairs(env)
+        # Sharing a joint is NOT on its own a licence to interpenetrate. A
+        # thigh entering a hip and a cape hanging through a chest both share
+        # a bone; what separates them is *where* they overlap — the thigh
+        # only at its root, the cape along its whole length. So the joint
+        # exemption is applied through the rooted test below rather than as
+        # a blanket subtraction, which used to hide every cloth-through-body
+        # bug in the language.
+        # Sharing a joint forgives a thigh entering a hip, and it used to
+        # forgive a cape hanging straight through a chest. What separates
+        # them is shape, not kinship: cloth is a *sheet* — one small extent
+        # and two large ones — while body masses are blobs and limbs are
+        # rods. A sheet passing through anything is a clipping bug, so pairs
+        # involving one keep no joint exemption.
         if not spec.get("strict"):
-            pairs -= _soft_pairs(env)
+            pairs -= {p for p in _soft_pairs(env)
+                      if not any(_is_sheet(env, n) for n in p)}
     for ex in spec["exempt"]:
         pairs -= {frozenset(resolve(list(ex)))} if len(ex) == 2 else set()
         pairs = {p for p in pairs
@@ -839,6 +853,41 @@ def run_noclip(env, spec, funcs):
                             % (scope, len(pairs),
                                "" if not anims else " across " + ", ".join(anims)))
     return failures, measurements
+
+
+def _is_sheet(env, name):
+    """Is this part cloth-like — a broad thin sheet rather than a rod or mass?
+
+    Judged from the *authored* cross-sections, not the bounding box: a curved
+    tentacle has a fat bbox and is still a rod, so geometry alone misreads it
+    as a sheet and strips exemptions from every digit and feeler in the model.
+    A ring that is many times wider than deep is cloth; a `web` without
+    thickness is cloth by definition.
+    """
+    base = name
+    if base.endswith((".l", ".r")):
+        base = base[:-2]
+    for part in getattr(env.model, "parts", ()):
+        if part.get("name") != base:
+            continue
+        if part.get("kind") == "web":
+            return float(part.get("thickness", 0.0)) <= 0.02
+        ratios = []
+        for r in part.get("rings", ()):
+            w = float(r.get("w", 0.0))
+            d = float(r.get("d", w))
+            lo, hi = min(w, d), max(w, d)
+            if hi > 1e-9:
+                ratios.append(hi / max(lo, 1e-9))
+        if ratios:
+            ratios.sort()
+            return ratios[len(ratios) // 2] > 3.5
+        if part.get("kind") == "attach":
+            size = float(part.get("size", 0.05))
+            e = sorted(float(part.get(k, size)) for k in ("w", "d", "h"))
+            return e[2] > 1e-9 and e[0] / e[2] < 0.3
+        return False
+    return False
 
 
 def _rooted_overlap(env, a, b, V=None, span=0.35):
