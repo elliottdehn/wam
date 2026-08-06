@@ -439,6 +439,32 @@ def build_functions(env):
             return 0.0
         return float(points_inside(pts, A, B, C).mean())
 
+    def leak(outer, inner):
+        """How far `inner` pokes out through `outer` where `outer` covers it.
+
+        A garment is supposed to leave the body sticking out of its openings —
+        legs below a hem, a head above a collar — so `covers` cannot tell a
+        correct skirt from one a thigh is bursting through. This asks the
+        narrower question: within the span the garment actually occupies, how
+        far outside its surface does the body get? Legs below the hem are out
+        of that span and ignored; a thigh through the cloth is not.
+        """
+        # deliberately not subsampled to _CLIP_SAMPLES: this is a worst-case
+        # measure, and dropping half the vertices drops the one poking out
+        pts = _subsample(env.part_verts_in(inner))
+        ov = env.part_verts_in(outer)
+        A, B, C = env.tri_verts(outer)
+        if not len(A) or not len(pts):
+            return 0.0
+        lo, hi = ov.min(axis=0), ov.max(axis=0)
+        within = pts[np.all((pts >= lo) & (pts <= hi), axis=1)]
+        if not len(within):
+            return 0.0
+        outside = within[~points_inside(within, A, B, C)]
+        if not len(outside):
+            return 0.0
+        return max(_dist_to_surface(p, A, B, C) for p in outside)
+
     def asymmetry(ref=None):
         """Worst distance from a part to its own mirror image across X=0.
 
@@ -623,6 +649,7 @@ def build_functions(env):
         "gap": gap,
         "clip": clip,
         "covers": covers,
+        "leak": leak,
         "asymmetry": asymmetry,
         # rig
         "influences": influences,

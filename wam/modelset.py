@@ -380,7 +380,7 @@ def build_composition(spec, models, warn):
         raise wchecks.CheckError("compose %r: no base model %r"
                                  % (spec["name"], spec["base"]))
     out = wmesh.MeshOut()
-    parts, seen_colors, held = [], {}, []
+    parts, seen_colors, held, worn = [], {}, [], []
     bones = dict(base.bones)
     anims = [dict(a) for a in base.model.anims]
     poses = dict(base.model.poses)
@@ -461,6 +461,8 @@ def build_composition(spec, models, warn):
 
         if not fused_any and not g.get("overlap"):
             held.append((alias, g.get("bone")))
+        if fused_any and not g.get("overlap"):
+            worn.append(alias)
         V = np.zeros_like(c.V)
         for i, sk in enumerate(c.mesh.skin):
             total = sum(w for _, w in sk) or 1.0
@@ -492,7 +494,59 @@ def build_composition(spec, models, warn):
     comp = Compiled(spec["name"], model, bones, out)
     comp.base_alias = spec["base"]
     comp.held = held
+    comp.worn = worn
     return comp
+
+
+def check_worn_cover(comp, warn, limit=0.005):
+    """Worn geometry must not have the body bursting out through it.
+
+    The classic is a thigh through a skirt. It is invisible to `covers`,
+    which cannot distinguish the hem the legs are *supposed* to come out of
+    from a hole they are bursting through, and invisible to `clip`, because a
+    correct skirt and a leaking one both cross the body's surface somewhere.
+    Only the span the garment occupies makes the question answerable.
+    """
+    if not getattr(comp, "worn", None):
+        return
+    funcs = comp.funcs
+    base_parts = [k for k in comp.mesh.part_ranges
+                  if k.split(".", 1)[0] == comp.base_alias]
+
+    def bones_of(key):
+        v0, v1 = comp.mesh.part_ranges[key]
+        names = set()
+        for i in range(v0, v1):
+            names.update(n for n, w in comp.mesh.skin[i] if w > 0.05)
+        return names
+
+    def box(key):
+        v0, v1 = comp.mesh.part_ranges[key]
+        chunk = comp.V[v0:v1]
+        return chunk.min(axis=0), chunk.max(axis=0)
+
+    # Pair by spatial overlap, not by shared bones: a skirt hangs *over* the
+    # thighs without being skinned to them, so bone kinship would never
+    # compare the two parts that actually matter.
+    base_box = {k: box(k) for k in base_parts}
+    for alias in comp.worn:
+        worst = (0.0, None, None)
+        for gk in comp.mesh.part_ranges:
+            if gk.split(".", 1)[0] != alias:
+                continue
+            glo, ghi = box(gk)
+            for bk in base_parts:
+                blo, bhi = base_box[bk]
+                if np.any(ghi < blo) or np.any(bhi < glo):
+                    continue        # no shared space at all
+                d = funcs["leak"](wchecks._Ref(gk), wchecks._Ref(bk))
+                if d > worst[0]:
+                    worst = (d, bk, gk)
+        if worst[0] > limit:
+            warn("in %r the body breaks out through worn %r: %r pokes %.3f "
+                 "outside %r within the span it covers — widen the garment "
+                 "there, or narrow the body under it"
+                 % (comp.alias, alias, worst[1], worst[0], worst[2]))
 
 
 def check_held_props(comp, warn, limit=0.02):
@@ -662,6 +716,7 @@ def build_functions(models):
         "clip": lambda a, b, anim=None: within("clip", a, b, anim),
         "gap": lambda a, b, anim=None: within("gap", a, b, anim),
         "covers": lambda a, b: within("covers", a, b),
+        "leak": lambda a, b: within("leak", a, b),
         "dist": dist,
         "x": lambda r: float(point(r)[1][0]),
         "y": lambda r: float(point(r)[1][1]),
@@ -727,6 +782,7 @@ def compile_set(path, quiet=False, out_dir=None):
                                    % spec["name"])
         comp = build_composition(spec, models, notes.append)
         check_held_props(comp, notes.append)
+        check_worn_cover(comp, notes.append)
         models[spec["name"]] = comp
 
     funcs = build_functions(models)

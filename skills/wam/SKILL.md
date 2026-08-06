@@ -163,6 +163,13 @@ check catches it — a held hammer and a floating one measure the same distance
 from the arm. The compiler warns if you graft a model that declares an anchor
 without using it.
 
+Worn coverings are checked for you too: `leak(garment, body)` asks how far the
+body gets outside the garment *within the span the garment covers*, so legs
+below a hem are ignored and a thigh through the cloth is not. A thigh bursting
+out of a skirt is reported automatically, with the depth. Neither `covers` nor
+`clip` can see this — `clip` false-alarms on any capped garment and misses a
+garment the body has swallowed entirely.
+
 Held props are checked for you: anything grafted that fuses no bones is
 carried, and a carried thing that intersects its carrier is reported with the
 depth and the two parts. That is the "sword reversed into the chest" bug, and

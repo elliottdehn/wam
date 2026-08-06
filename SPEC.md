@@ -920,6 +920,41 @@ does not. This is the same argument as `on=` pressing (the surface decides the
 angle) and `align=` (the anchor decides the position) — name the relationship
 and the compiler keeps it true.
 
+#### Worn coverings are checked automatically
+
+A thigh bursting out through a skirt is the worn-side twin of a reversed
+sword, and every composition is checked for it:
+
+```
+WARN: in 'knight' the body breaks out through worn 'plate': 'body.torso'
+      pokes 0.017 outside 'plate.cuirass' within the span it covers —
+      widen the garment there, or narrow the body under it
+```
+
+The measure is `leak(outer, inner)`: within the span the garment actually
+occupies, how far outside its surface does the body get? Legs below a hem and
+a head above a collar are outside that span and ignored, which is what makes
+an *opening* distinguishable from a *hole*.
+
+Neither existing measure can do this. Over a cuirass that fits and the same
+cuirass over a `girth 1.35` body:
+
+| | `leak` | `covers` | `clip` |
+|---|---|---|---|
+| fits | **0.000** | 0.634 | **0.102** — false alarm |
+| body bursts out | **0.017** | 0.000 | **0.000** — misses it |
+
+`clip` false-alarms on the good fit, because the torso emerges through the
+cuirass's flat caps, and then *misses* the bad fit entirely, because a
+swallowed garment crosses no surfaces. `covers` needs a hand-set threshold per
+pair and still cannot tell a hem from a tear. `leak` reads zero when correct
+in both cases.
+
+Garment and body are paired by **spatial overlap, not shared bones** — a
+skirt hangs over the thighs without being skinned to them, so bone kinship
+would never compare the two parts that matter. Use the `overlap` flag on a
+graft that is meant to be swallowed.
+
 #### Held props are checked automatically
 
 A weapon reversed into its owner's chest is the most common composition
