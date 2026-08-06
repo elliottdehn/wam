@@ -136,6 +136,30 @@ skeleton
 - Inside `mirror`, `parent=` references resolve to the same-side bone first
   (`clavicle` → `clavicle.l`), falling back to central bones.
 
+**`to=` — reach a landmark instead of guessing a length.** A hem, a fringe, a
+trailing strut: these end at a *place* on the body, not at a number. Written
+as `len=0.22` that place is correct only for the body it was tuned on, and
+nothing notices when it stops being true.
+
+```
+bone cape1   parent=chest  dir=down pitch=-5 to=thigh.l:0.9   # to the hip
+bone cape2   parent=cape1  dir=down pitch=-3 to=shin.l:0.55   # to mid-calf
+bone hemline parent=pelvis dir=down to=thigh.l:0.55           # mid-thigh tasset
+bone drape   parent=chest  dir=down to=ground                 # floor-length
+```
+
+`to=<bone>[:t]` extends the bone along the direction it was already given
+until it is *level with* that point — a projection, not a rendezvous, which
+is what "reaches the calf" means for cloth that must also hang a particular
+way. `to=ground` solves against the y=0 plane. `len=` and `to=` are mutually
+exclusive, and a landmark that lies behind the bone is an error rather than a
+negative length.
+
+The landmark must already exist. A worn model therefore carries a **landmark
+stub** — the wearer's own bones, under the wearer's own names, mirrored the
+way the wearer mirrors them — which costs nothing (bones without geometry are
+exempt from the usual lint) and is what makes one cape fit two bodies.
+
 **Pinning** — every bone's position is derived from its ancestors, so
 lengthening the trunk moves every wing, limb, and prop mounted downstream.
 Rather than hand-solving a compensating offset, nail the bone down:
@@ -457,6 +481,40 @@ sideways, a horn deliberately swept back — turn it off:
 ```
 sweep rib bone=spine at=0.6 offset=(0.03,0,0.15) dir=side on=thorax press=off
 ```
+
+### `rest=` — sit on a surface instead of guessing a standoff
+
+The gap between a cape and a back, or a shield and a forearm, is not a number
+the author can know. Written as `fwd=-0.135` it is a guess that reads as
+floating while satisfying every other check in the language.
+
+```
+loft cloth bones=cape1..cape2 material=wool double_sided \
+     rest=back push=back layer=0.012
+```
+
+`rest=<part>` slides the finished part along one direction until its surface
+meets the target's with `layer=` clearance (default 0.008), solved by
+bisection on real surface separation — not on extremes along an axis, which
+overshoots badly for anything sitting beside a tilted limb. `push=` names the
+direction; omitted, it is taken away from the host bone's *axis*, since
+centre-to-centre on a long limb points up the arm.
+
+**`rest=` is for things that sit on one side of something.** A cape hangs
+behind a back; a shield straps to the outside of a forearm. A skirt *wraps*
+the hips, and a wrapping garment clears its body by being **wider**, not by
+being moved. Asking anyway is an error, because the alternative is silently
+walking the garment down the body until it clears the ankles:
+
+```
+ERROR: part 'skirt': rest='hips', but the two are coaxial — 'skirt' surrounds
+       'hips' rather than sitting on one side of it ... A garment that wraps
+       clears its body by being wider, not by being moved
+```
+
+A graft takes the same three keys, which is usually the better place for
+them: `graft cape rest=torso push=back layer=0.012` rests against the real
+body, so the worn model needs no stand-in geometry of its own.
 
 ### `group` — rigid props in their own frame
 
@@ -865,9 +923,68 @@ models
 compose knight
   base body
   graft plate                                   # every bone name matches: fuses
-  graft hammer to=hand.r:0.5 dir=up pitch=35    # no names match: joins as new
+  graft hammer to=hand.r:0.5                    # no names match: joins as new
   graft cape  to=spine                          # a mixture, which is the point
 ```
+
+Each worn slot is its own model — helm, pauldrons, cuirass, gauntlets,
+greaves, boots. A single "plate set" cannot be half-swapped, so every
+combination of pieces becomes another file, which is the duplication problem
+again one level up.
+
+#### `hold` — the model states how it is carried
+
+Placement written in the set file has to be re-derived by hand for every
+character who picks the thing up, and it gets re-derived wrong: a blade
+reversed into a chest, or presenting its flat like a paddle. How a sword is
+gripped is a fact about the *sword*, so it belongs in the sword.
+
+```
+model sword
+  anchor grip   at=(0,0.055,0) dir=up      # the point and axis meeting a hand
+  marker tip    at=(0,0.470,0)
+  marker edge   at=(0.030,0.280,0)
+  hold grip point=tip edge=edge carry=62   # stated once, by the sword
+```
+
+`hold <anchor> point=<marker> [edge=<marker>] [carry=<deg>]`. Then the whole
+graft is:
+
+```
+graft sword to=hand.r:0.55
+```
+
+which produces exactly what `align=grip aim=62:fwd face=edge:bone.up` produced
+by hand. Anything the composition states explicitly still wins, for a
+two-handed stance or a weapon slung across a back.
+
+`point=` is required: it is what tells the compiler which end is the business
+end, and without it nothing can distinguish a sword from a reversed one. With
+it, **a weapon whose point finishes nearer the body than its grip is rejected
+outright** — an error, not a warning, because this is the failure that
+survives every other check. A reversed sword sits on the right bone, grips
+correctly, and frequently intersects nothing at all. Raised and shouldered
+carries pass; only aiming at the carrier fails. A reverse-grip dagger or a
+point-down sword declares the `backhand` flag and the check stands down.
+
+#### Stating an aim by hand
+
+When you do place something explicitly, state it *relative to the host bone*,
+never as world Euler angles — a hand-tuned `pitch=90` is a fact about one rest
+pose and drifts as soon as the wrist moves.
+
+- `align=<anchor>` maps a declared anchor onto the host bone. Position stops
+  being a guess.
+- `aim=<deg>:<hint>` sets the carry angle off the bone axis, leaning toward
+  the hint. `along` and `against` are its 0° and 180°; `across=<hint>` is its
+  90°. Those three alone are not enough — a wrist points down, so *every*
+  `across` hint yields a horizontal blade and there is no way to angle one
+  downward, which is what `aim=` exists for.
+- `face=<marker>:<dir>` solves the roll by pointing a named marker somewhere.
+- `facing=<side>:<dir>,...` orients declared `side`s at once, best-fit across
+  all the wishes. Wishes that cannot be jointly satisfied are an error rather
+  than a silent 45° compromise: a rotation preserves the angles between sides,
+  so contradictory ones have no solution and the residual is reported.
 
 **Bones that match by name fuse**: the grafted geometry is re-solved onto the
 host's version of that bone, carrying its rotation, position and length ratio.
@@ -1045,29 +1162,40 @@ WARN: in 'knight' the body breaks out through worn 'plate': 'body.torso'
       widen the garment there, or narrow the body under it
 ```
 
-The measure is `leak(outer, inner)`: within the span the garment actually
-occupies, how far outside its surface does the body get? Legs below a hem and
-a head above a collar are outside that span and ignored, which is what makes
-an *opening* distinguishable from a *hole*.
+Fit is measured **against bones**, and the reason is worth knowing, because
+the wrong instinct here is very strong. "Is the body inside the garment"
+sounds like the question, and it is not one cloth can answer: a garment is
+not a closed volume, and its mouths are exactly where the body is *supposed*
+to come out. Ray-parity containment therefore reports the legs below a hem as
+a leak of near-constant size however the garment is cut — a skirt that splits
+over the thighs and one that fits both read 0.040 — and gating that away by
+"how much of the body is enclosed" inverts the test, because the worse a
+garment splits the less of the body it contains, so the severe cases go
+silent.
 
-Neither existing measure can do this. Over a cuirass that fits and the same
-cuirass over a `girth 1.35` body:
+Bones make it well posed with no special cases. A worn thing wraps the limb
+or trunk it is worn on, so at each position along a bone both the body and
+the cloth have a radius about it, and fitting means the cloth's is the larger.
+Openings need no handling at all: at a hem the leg is well inside the cloth's
+radius and scores nothing, while a thigh broader than the waistband scores
+exactly its overhang. It responds to the defect rather than to the topology,
+and the same measure serves an open skirt, a closed cuirass, a cape and a
+pauldron:
 
-| | `leak` | `covers` | `clip` |
-|---|---|---|---|
-| fits | **0.000** | 0.634 | **0.102** — false alarm |
-| body bursts out | **0.017** | 0.000 | **0.000** — misses it |
+| skirt waist | reported | | body scaled under a closed cuirass | reported |
+|---|---|---|---|---|
+| 0.16 (splits open) | **0.036** | | x1.00 | **0.008** |
+| 0.21 (thighs out) | **0.017** | | x1.25 | **0.026** |
+| 0.27 (fits) | **clean** | | x1.50 | **0.043** |
+| 0.32 (wide) | **clean** | | | |
 
-`clip` false-alarms on the good fit, because the torso emerges through the
-cuirass's flat caps, and then *misses* the bad fit entirely, because a
-swallowed garment crosses no surfaces. `covers` needs a hand-set threshold per
-pair and still cannot tell a hem from a tear. `leak` reads zero when correct
-in both cases.
+Every leak is reported, not the worst one — a garment usually fails in more
+than one place, and reporting only the deepest hides the rest. Body parts the
+garment never encloses are skipped: an arm hangs alongside a tasset and
+overlaps its bounding box completely without ever being under it, and while
+that pair was compared it outranked the real leak and hid it.
 
-Garment and body are paired by **spatial overlap, not shared bones** — a
-skirt hangs over the thighs without being skinned to them, so bone kinship
-would never compare the two parts that matter. Use the `overlap` flag on a
-graft that is meant to be swallowed.
+Use the `overlap` flag on a graft that is meant to be swallowed.
 
 #### Held props are checked automatically
 
@@ -1296,6 +1424,32 @@ Symmetry is checked per part, not per silhouette: a part that straddles the
 centerline is claiming to be symmetric, while a one-sided part or a rigid
 `group` prop is the author's business. A sword-and-shield loadout no longer
 has to be tuned against itself to reach zero warnings.
+
+## Comparing against a reference image
+
+Never judge a model by laying the whole reference next to the whole render
+sheet. At that scale you are comparing silhouettes and nothing else: a head
+20% too large, a pauldron an inch low, a muzzle with the wrong taper and
+horns curving the wrong way all survive a whole-image comparison intact, and
+every one of them is obvious in a crop.
+
+```bash
+python3 scripts/crop.py ref.jpg --grid 3x3 -o out/refcrops   # survey it
+python3 scripts/crop.py ref.jpg out/mine_sheet.png \
+    --box 0.30,0.00,0.70,0.35 --box2 0.05,0.02,0.20,0.30 -o out/cmp_head.png
+```
+
+Boxes are normalized `x0,y0,x1,y1` in 0..1, so they do not depend on either
+image's pixel size. `--box2` aims the render separately — you will always
+need it, because a reference is framed differently from a four-view sheet.
+Both crops arrive at the same height in one image.
+
+**Match the view before comparing anything**: find which panel is closest to
+the reference's camera, and re-render with `--views threequarter` alone if it
+helps. Comparing a 3/4 reference against a front render produces confident and
+completely wrong conclusions about width and depth. Crops are also the only
+way to judge texture work — atlas ops (`noise`, `streaks`, `planks`) are
+invisible at sheet scale and obvious at 3x.
 
 ## Files
 
