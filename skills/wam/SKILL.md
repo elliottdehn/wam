@@ -141,6 +141,13 @@ Two rules that make it work:
    itself — give it a skeleton matching the intended wearer, and iterate on it
    without recompiling the character.
 
+**Aim relative to the bone, not the world.** `across=fwd` means "perpendicular
+to that bone, leaning forward"; `along`/`against` run with or counter to it.
+Both `graft` and `group` take them. A hand-tuned `pitch=90` is a fact about
+one rest pose — repose the wrist and it drifts 42 degrees off square, while
+`across=fwd` stays perpendicular. If you find yourself saying "it should be
+perpendicular to the wrist", write that, do not convert it to Euler angles.
+
 **Never aim a held prop by hand.** Give the prop an `anchor` — the point and
 axis by which it meets something — and graft with `align=`:
 

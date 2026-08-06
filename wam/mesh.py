@@ -8,7 +8,7 @@ import math
 import numpy as np
 
 from .parser import WamError
-from .skeleton import (BASE_DIRS, resolve_dir, rot_axis, chain_bones,
+from .skeleton import (BASE_DIRS, bone_relative_dir, resolve_dir, rot_axis, chain_bones,
                        resolve_bone_ref, rot_x, rot_y, rot_z, Bone)
 
 STYLE_SIDES = {"chunky": 8, "smooth": 12, "fine": 16}
@@ -1312,7 +1312,15 @@ def build(model, bones):
         if g is None:
             return
         host = resolve_bone_ref(bones, g["bone"])
-        if g.get("dir"):
+        rel = bone_relative_dir(host, g, "group %r" % g["name"])
+        if rel is not None:
+            # stated relative to the host bone, so it survives a repose
+            R = _align_rotation(np.array([0.0, 1.0, 0.0]), rel)
+            R = rot_axis(rel, g.get("spin", 0.0)) @ R
+            for k, fn in (("pitch", rot_x), ("yaw", rot_y), ("tilt", rot_z)):
+                if g.get(k):
+                    R = fn(g[k]) @ R
+        elif g.get("dir"):
             # aim the group's local +Y along the resolved direction, then spin
             v = resolve_dir(g["dir"], g.get("pitch", 0.0), g.get("yaw", 0.0),
                             g.get("tilt", 0.0))

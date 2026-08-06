@@ -882,6 +882,44 @@ That is the warning worth having, because no proximity check finds this bug:
 a hammer floating beside the arm and a hammer held in the hand measured 0.026
 and 0.023 apart respectively. Only the anchor knows which one is *held*.
 
+#### `along` / `against` / `across=` — aim relative to the bone
+
+"The sword should be perpendicular to the wrist" is a *relationship*, and the
+only way to write it with world angles is to guess which of pitch/yaw/tilt
+and which sign — producing three numbers that are correct for exactly one
+rest pose. Say the relationship instead:
+
+```
+graft sword to=hand.r align=grip across=fwd     # perpendicular to the wrist
+graft sheath to=spine align=strap along          # running with the bone
+group blade bone=hand.r at=0.6 across=fwd spin=15
+```
+
+- `along` / `against` run with or counter to the host bone.
+- `across=<hint>` is perpendicular to it. Perpendicular alone names a whole
+  circle of directions, so the hint (`fwd`, `up`, `side`, … or a vector)
+  picks the half-plane; a hint parallel to the bone is an error saying so.
+- `spin=`, `pitch=`, `yaw=`, `tilt=` still apply, now as deviations from a
+  relationship rather than as the entire aim.
+
+Both `graft` and `group` take them, so it reads the same whether the prop is
+a separate model or authored in place.
+
+**Why it is not just shorthand.** A hand-tuned `pitch=90` is a fact about one
+arm pose. Reposing the wrist 55° and remeasuring:
+
+| | hand direction | angle between shaft and wrist |
+|---|---|---|
+| `pitch=90`, as tuned | (0, −1, 0) | 90.0° |
+| `pitch=90`, wrist reposed | (−0.82, −0.57, 0) | **47.9°** |
+| `across=fwd`, as tuned | (0, −1, 0) | 90.0° |
+| `across=fwd`, wrist reposed | (−0.82, −0.57, 0) | **90.0°** |
+
+The guess drifts 42° off square the moment the wrist moves; the relationship
+does not. This is the same argument as `on=` pressing (the surface decides the
+angle) and `align=` (the anchor decides the position) — name the relationship
+and the compiler keeps it true.
+
 #### Held props are checked automatically
 
 A weapon reversed into its owner's chest is the most common composition

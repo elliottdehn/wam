@@ -280,6 +280,12 @@ def parse(text, path=None):
             for f in flags:
                 if f in DIR_WORDS:
                     g["dir"] = f
+            if "across" in kv:
+                g["across"] = (_vec(kv["across"], line_no, line)
+                               if kv["across"].startswith("(") else kv["across"])
+            for f in flags:
+                if f in ("along", "against"):
+                    g[f] = True
             for k in ("at", "pitch", "yaw", "tilt", "spin"):
                 if k in kv:
                     g[k] = _num(kv[k], line_no, line)

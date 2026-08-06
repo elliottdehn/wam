@@ -176,6 +176,41 @@ def solve(model):
     return bones, order
 
 
+def bone_relative_dir(bone, spec, what="aim"):
+    """A direction stated *relative to a bone* rather than to the world.
+
+    "The sword is perpendicular to the wrist" is a relationship, and writing
+    it as pitch/yaw/tilt turns it into three numbers that are only correct
+    for one rest pose — repose the arm and the sword silently drifts off
+    square. Naming the relationship instead keeps it true by construction.
+
+    `along` / `against` run with or counter to the bone. `across=<hint>` is
+    perpendicular to it, in the half-plane nearest the hint, which is what
+    disambiguates the whole circle of perpendicular directions.
+    """
+    d = np.asarray(bone.dir, dtype=float)
+    d = d / max(np.linalg.norm(d), 1e-12)
+    if spec.get("along"):
+        return d
+    if spec.get("against"):
+        return -d
+    hint = spec.get("across")
+    if hint is None:
+        return None
+    h = (np.array(BASE_DIRS[hint], dtype=float) if hint in BASE_DIRS
+         else np.asarray(hint, dtype=float))
+    perp = h - float(h @ d) * d
+    n = float(np.linalg.norm(perp))
+    if n < 1e-6:
+        raise WamError(
+            "%s: across=%s is parallel to bone %r, so 'perpendicular to it' "
+            "names a whole circle of directions — pick a hint that leans "
+            "across the bone, not along it"
+            % (what, hint if isinstance(hint, str) else tuple(np.round(h, 3)),
+               bone.name))
+    return perp / n
+
+
 def resolve_bone_ref(bones, ref, suffix=""):
     """Resolve a bone reference, preferring the suffixed (mirrored) variant."""
     if suffix:

@@ -191,6 +191,13 @@ def parse(text, path=None):
                         g["dir"] = f
                     elif f == "overlap":
                         g["overlap"] = True
+                if "across" in kv:
+                    g["across"] = (wparser._vec(kv["across"], line_no, line)
+                                   if kv["across"].startswith("(")
+                                   else kv["across"])
+                for f in flags:
+                    if f in ("along", "against"):
+                        g[f] = True
                 for k in ("at", "pitch", "yaw", "tilt", "spin", "scale"):
                     if k in kv:
                         g[k] = wparser._num(kv[k], line_no, line)
@@ -308,8 +315,14 @@ def _join_frame(g, base, c):
                                      % g["alias"])
         src = wskel.resolve_dir(anchor["dir"], anchor.get("pitch", 0.0),
                                 anchor.get("yaw", 0.0), anchor.get("tilt", 0.0))
-        dst = np.asarray(host.dir, dtype=float)
-        dst = dst / max(np.linalg.norm(dst), 1e-12)
+        # the anchor axis may be stated relative to the host bone rather than
+        # aligned with it: "perpendicular to the wrist" is a relationship
+        rel = wskel.bone_relative_dir(host, g, "graft %r" % g["alias"])
+        if rel is not None:
+            dst = rel
+        else:
+            dst = np.asarray(host.dir, dtype=float)
+            dst = dst / max(np.linalg.norm(dst), 1e-12)
         R = wmesh._align_rotation(src, dst)
         if g.get("spin"):
             R = wskel.rot_axis(dst, g["spin"]) @ R
