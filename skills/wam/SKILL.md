@@ -122,10 +122,11 @@ few rings per part, compile and **look**, and only then add detail.
    toward **left** is a paddle, and it is in the output before you render.
 4. **View the rendered sheet** — front, three-quarter, side, three-quarter
    rear, rear.
-5. **Audit every panel before claiming anything.** Twice in this project's
-   history a change was declared correct from a single cropped view and was
-   wrong in the panel not looked at. Does every attachment visibly touch its
-   base? Does anything float, fold, or read as the wrong object?
+5. **Audit every panel, then measure what you found.** Twice in this
+   project's history a change was declared correct from a single cropped view
+   and was wrong in the panel not looked at. Use the sheet to find suspects —
+   something floating, folded, or reading as the wrong object — and then
+   settle each one with a number rather than a second look.
 6. Fix by editing angles and ratios. Never by adding coordinate math.
 
 Render animation strips for every gait and action you author — reversed gaits
@@ -134,15 +135,36 @@ and non-moving cloth are invisible in static views.
 Do the planning and iteration in your own passes; show the user work when you
 have confidence in it, not every intermediate sheet.
 
-## Checks are the memory
+## Measure, do not squint
 
-A render tells you the model is wrong *now*. A check tells you the moment it
-goes wrong, three edits later, in a view you did not render. **Nothing
-verified by eye stays verified by eye.** Turn every finding into an
-assertion, including findings from a reference crop: a crop says the head is
-too big today; `assert height / height(skull) in 6..7` keeps it right after
-the next twenty edits. See SPEC for the vocabulary, and prefer relational
-checks (`closer`, `leak`, `silhouette`) over absolute distances.
+The single most expensive mistake in this project is judging by eye something
+a measurement would settle. **The render is for noticing; it is not for
+concluding.** Eyes generate good hypotheses — "that looks short", "that seems
+detached" — and are unreliable at every step after, frequently wrong about
+the *direction* of an error and not merely its size. A cape that read as "too
+short, starting at mid-thigh" measured through the floor, and the actual
+fault was its width at the shoulders.
+
+**Before asserting anything about a model, name the measurement that settles
+it.** If you cannot name one, that is the finding: the language is missing a
+check and building it is the work. Say the number, not the impression — "the
+board rests 0.006 from the arm", not "the shield looks attached".
+
+"I can't tell, it's occluded" is not a reason to guess. It is the strongest
+possible reason to measure, and low-poly shading at three-quarter view hides
+exactly the contacts and clearances you most need to judge.
+
+Then make it durable. A render tells you the model is wrong *now*; a check
+tells you the moment it goes wrong, three edits later, in a view you did not
+render. **Nothing verified by eye stays verified by eye.** Turn every finding
+into an assertion, including findings from a reference crop: a crop says the
+head is too big today, `assert height / height(skull) in 6..7` keeps it right
+after the next twenty edits. Prefer relational checks (`closer`, `leak`,
+`silhouette`) over absolute distances — see SPEC for the vocabulary.
+
+**Sanity-check the check itself.** A measurement that does not move when the
+defect does is worthless and reads as authoritative. Sweep the input across
+good and bad and confirm the number tracks it before you trust it.
 
 ## Restraint
 

@@ -11,7 +11,49 @@ several of these are ambient lints today precisely because they cost hours.
 
 ---
 
-## 1. Held props are placed by guessing a transform
+## 1. Judging by eye what a measurement would settle
+
+This is the mistake that produces all the others, and it is the one you will
+make. Every entry below was found by measuring something that had already
+been looked at and declared fine.
+
+**The render is for noticing. It is not for concluding.** Eyes are good at
+generating hypotheses — "that looks short", "that seems detached" — and bad
+at every step after. A glance is confident, fast, and frequently wrong about
+the direction of the error, not just its size.
+
+From this project's own history, eye-verdict against measurement:
+
+| looked like | actually measured | verdict |
+|---|---|---|
+| "the cape starts at mid-thigh — too short" | hem at **-0.05**, through the floor; it was too **long** | wrong direction, wrong cause — the real fault was 0.30 width at the shoulders |
+| "`wtrail2` is the whole fix for the wing" | deleting it **raises** membrane area 4% | backwards |
+| "a dragon wing needs a 25–45° fan spread" | the accepted wing spreads **69°** | asserted as canonical, contradicted by the model itself |
+| "the fit check named the real leak (0.011)" | reported **~0.040 at every waist width**, including the correct one | it was measuring the hem the whole time |
+| "the skirt is at the knee" | hem **0.26**, knee **0.26** | correct, and settled in one command |
+| "can't tell if the shield is on the arm" | surface distance **0.0060** = exactly the declared layer | the eye *could not* see it; the number could |
+
+Note the last row. Occlusion, a three-quarter camera, and low-poly shading
+routinely make the thing you need to judge invisible. "I can't tell" is not a
+reason to guess — it is a reason to measure.
+
+**The rule: before asserting anything about a model, name the measurement
+that settles it.** If you cannot name one, that is the finding — the language
+is missing a check, and building it is the work. Half the constructs in SPEC
+exist because someone hit exactly that wall.
+
+Two corollaries that cost real time here:
+
+- **Audit every panel.** Twice a change was declared correct from one cropped
+  view and was wrong in a panel that was never opened.
+- **A measurement that does not move is not a measurement.** Before trusting
+  a number, sweep the input across good and bad and confirm the number
+  tracks it. A fit check that read 0.040 for a splitting skirt *and* a
+  fitting one looked authoritative for hours.
+
+---
+
+## 2. Held props are placed by guessing a transform
 
 **Symptom.** The sword floats beside the fist instead of in it; the blade
 reverses into the chest; the blade presents its flat like a paddle instead of
@@ -96,7 +138,7 @@ paddle, and it is in the compile output before you render anything.
 
 ---
 
-## 2. Wings come out as webbed hands
+## 3. Wings come out as webbed hands
 
 **Symptom.** Weak 3–4 fingered wings. Spiky, small, splayed. Not big and swept.
 
@@ -181,7 +223,7 @@ WARN: web 'wing.l': the outline does not close — the first rib begins 0.34
 
 ---
 
-## 3. Capes and skirts pass straight through the body
+## 4. Capes and skirts pass straight through the body
 
 **Symptom.** Cloth intersects the torso or the legs. Renders hide it: the
 cloth is behind the body from the front and in front of it from the back.
@@ -311,7 +353,7 @@ Same measure for an open skirt, a closed cuirass, a cape and a pauldron.
 
 ---
 
-## 4. Armour authored as one lump, or welded into the body
+## 5. Armour authored as one lump, or welded into the body
 
 **Symptom.** A character file where 35% of the parts are an equipment layer —
 helmet, visor, chestplate, pauldrons, greaves, boots — fused into the body.
@@ -368,7 +410,7 @@ dragon's scales. If it cannot come off, it is the body.
 
 ---
 
-## 5. Chain animations fold the limb through itself
+## 6. Chain animations fold the limb through itself
 
 **Symptom.** A tail, tentacle or neck curls into a closed loop mid-animation
 and passes through the body.
@@ -397,7 +439,7 @@ WARN: anim 'strike' turns bone 'bulb' 163° away from rest (its own channels
 
 ---
 
-## 6. Typos are silently discarded
+## 7. Typos are silently discarded
 
 `materal_arc=` and `dpth=` used to be dropped without a word: the model
 compiled, looked plausible, and ignored what you asked. Every directive now
