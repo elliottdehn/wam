@@ -52,14 +52,49 @@ def rot_axis(axis, deg):
         [z * x * C - y * s, z * y * C + x * s, c + z * z * C]])
 
 
+def _perp_frame(d):
+    """A stable (side, up) pair perpendicular to a direction."""
+    d = np.asarray(d, dtype=float)
+    d = d / max(np.linalg.norm(d), 1e-12)
+    ref = np.array([0.0, 0.0, 1.0]) if abs(d[2]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    up = ref - float(ref @ d) * d
+    n = np.linalg.norm(up)
+    if n < 1e-9:
+        ref = np.array([1.0, 0.0, 0.0])
+        up = ref - float(ref @ d) * d
+        n = np.linalg.norm(up)
+    up = up / n
+    return np.cross(up, d), up
+
+
 class Bone:
-    def __init__(self, name, parent, head, direction, length):
+    """A bone is a *frame*, not just a segment.
+
+    Direction alone cannot say which way a hand's palm faces, so anything
+    gripped by it has to be oriented against world axes instead — and those
+    stop being right the moment the arm is reposed. `roll=` twists the bone
+    about its own axis to fix its `up`, giving `bone.up` / `bone.side` /
+    `bone.along` to aim against.
+    """
+
+    def __init__(self, name, parent, head, direction, length, roll=0.0):
         self.name = name
         self.parent = parent          # Bone or None
         self.head = np.asarray(head, dtype=float)
         self.dir = np.asarray(direction, dtype=float)
         self.len = float(length)
+        self.roll = float(roll)
         self.children = []
+        side, up = _perp_frame(self.dir)
+        if roll:
+            R = rot_axis(self.dir, roll)
+            side, up = R @ side, R @ up
+        self.side = side
+        self.up = up
+
+    def axis(self, name):
+        return {"along": self.dir / max(np.linalg.norm(self.dir), 1e-12),
+                "up": self.up, "side": self.side}.get(name)
 
     @property
     def tail(self):
@@ -156,7 +191,9 @@ def solve(model):
                 origin = pin["tail"] - d * b["len"]
             else:
                 origin = head + off
-            bone = Bone(name, parent, origin, d, b["len"])
+            roll = b.get("roll", 0.0)
+            bone = Bone(name, parent, origin, d, b["len"],
+                        roll=-roll if mirrored else roll)
             parent.children.append(bone)
         bones[name] = bone
         order.append(bone)
@@ -184,9 +221,13 @@ def bone_relative_dir(bone, spec, what="aim"):
     for one rest pose — repose the arm and the sword silently drifts off
     square. Naming the relationship instead keeps it true by construction.
 
-    `along` / `against` run with or counter to the bone. `across=<hint>` is
-    perpendicular to it, in the half-plane nearest the hint, which is what
-    disambiguates the whole circle of perpendicular directions.
+    `along` / `against` run with or counter to the bone; `across=<hint>` is
+    perpendicular to it, in the half-plane nearest the hint. Those are only
+    0 and 90 degrees, which is not enough: a wrist points down, so *every*
+    `across` hint yields a horizontal blade and there is no way to angle one
+    downward. `aim=<deg>:<hint>` is the general form — that many degrees off
+    the bone axis, leaning toward the hint — with `along` and `across` as its
+    0 and 90.
     """
     d = np.asarray(bone.dir, dtype=float)
     d = d / max(np.linalg.norm(d), 1e-12)
@@ -194,11 +235,27 @@ def bone_relative_dir(bone, spec, what="aim"):
         return d
     if spec.get("against"):
         return -d
+    if spec.get("aim"):
+        deg, _, hint = str(spec["aim"]).partition(":")
+        try:
+            deg = float(deg)
+        except ValueError:
+            raise WamError("%s: aim= wants <degrees>:<direction>, got %r"
+                           % (what, spec["aim"]))
+        h = axis_hint(bone, hint or "fwd", what)
+        h = h - float(h @ d) * d
+        n = float(np.linalg.norm(h))
+        if n < 1e-6:
+            raise WamError(
+                "%s: aim=%s leans toward a direction parallel to bone %r, "
+                "which does not say which way to tilt — pick one across it"
+                % (what, spec["aim"], bone.name))
+        a = math.radians(deg)
+        return math.cos(a) * d + math.sin(a) * (h / n)
     hint = spec.get("across")
     if hint is None:
         return None
-    h = (np.array(BASE_DIRS[hint], dtype=float) if hint in BASE_DIRS
-         else np.asarray(hint, dtype=float))
+    h = axis_hint(bone, hint, what)
     perp = h - float(h @ d) * d
     n = float(np.linalg.norm(perp))
     if n < 1e-6:
@@ -209,6 +266,22 @@ def bone_relative_dir(bone, spec, what="aim"):
             % (what, hint if isinstance(hint, str) else tuple(np.round(h, 3)),
                bone.name))
     return perp / n
+
+
+def axis_hint(bone, hint, what="aim"):
+    """Resolve a direction hint: a world word, `bone.up|side|along`, or a vector."""
+    if isinstance(hint, str):
+        if hint in BASE_DIRS:
+            return np.array(BASE_DIRS[hint], dtype=float)
+        if hint.startswith("bone."):
+            v = bone.axis(hint[5:])
+            if v is None:
+                raise WamError("%s: bone axes are bone.along, bone.up and "
+                               "bone.side, not %r" % (what, hint))
+            return np.asarray(v, dtype=float)
+        raise WamError("%s: unknown direction %r — use a world word, a "
+                       "bone.<axis>, or a vector" % (what, hint))
+    return np.asarray(hint, dtype=float)
 
 
 def resolve_bone_ref(bones, ref, suffix=""):

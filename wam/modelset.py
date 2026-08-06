@@ -196,6 +196,8 @@ def parse(text, path=None):
                     g["across"] = (wparser._vec(kv["across"], line_no, line)
                                    if kv["across"].startswith("(")
                                    else kv["across"])
+                if "aim" in kv:
+                    g["aim"] = kv["aim"]
                 for f in flags:
                     if f in ("along", "against"):
                         g[f] = True
@@ -295,6 +297,21 @@ def _affine_fuse(worn, host):
     return A, hh - A @ wh
 
 
+def dir_words(v):
+    """Name a direction the way a person would: 'down-fwd', 'left', ..."""
+    v = np.asarray(v, dtype=float)
+    n = np.linalg.norm(v)
+    if n < 1e-9:
+        return "nowhere"
+    v = v / n
+    out = []
+    for comp, (pos, neg) in zip(v, (("left", "right"), ("up", "down"),
+                                    ("fwd", "back"))):
+        if abs(comp) > 0.4:
+            out.append(pos if comp > 0 else neg)
+    return "-".join(out) or "fwd"
+
+
 def _join_frame(g, base, c):
     """Affine placing a grafted model's own space into the base's.
 
@@ -327,17 +344,13 @@ def _join_frame(g, base, c):
             dst = np.asarray(host.dir, dtype=float)
             dst = dst / max(np.linalg.norm(dst), 1e-12)
         R = wmesh._align_rotation(src, dst)
-        if g.get("spin"):
-            R = wskel.rot_axis(dst, g["spin"]) @ R
-        for k, fn in (("pitch", wskel.rot_x), ("yaw", wskel.rot_y),
-                      ("tilt", wskel.rot_z)):
-            if g.get(k):
-                R = fn(g[k]) @ R
+
+        anchor_pos = np.asarray(anchor["pos"], dtype=float)
+        edge = None
         if g.get("face"):
             # The last free number in a placement is the roll about the aim
-            # axis, and guessing it is how a blade ends up edge-on or upside
-            # down. Naming a marker and the way it should point solves it:
-            # spin until that marker lies as near the target as it can.
+            # axis, and guessing it is how a blade ends up flat-on like a
+            # paddle. Name a marker and the way it should point instead.
             mk, _, hint = g["face"].partition(":")
             hint = hint or "up"
             markers = getattr(c.model, "markers", {}) or {}
@@ -345,11 +358,9 @@ def _join_frame(g, base, c):
                 raise wchecks.CheckError(
                     "graft %r: no marker %r (it has: %s)"
                     % (g["alias"], mk, ", ".join(sorted(markers)) or "none"))
-            h = (np.array(wskel.BASE_DIRS[hint], dtype=float)
-                 if hint in wskel.BASE_DIRS else np.asarray(hint, dtype=float))
+            h = wskel.axis_hint(host, hint, "graft %r face=" % g["alias"])
             t = h - float(h @ dst) * dst
-            v = R @ (np.asarray(markers[mk], dtype=float)
-                     - np.asarray(anchor["pos"], dtype=float))
+            v = R @ (np.asarray(markers[mk], dtype=float) - anchor_pos)
             v = v - float(v @ dst) * dst
             if np.linalg.norm(t) < 1e-6:
                 raise wchecks.CheckError(
@@ -366,6 +377,25 @@ def _join_frame(g, base, c):
             ang = math.degrees(math.atan2(float(np.cross(v, t) @ dst),
                                           float(v @ t)))
             R = wskel.rot_axis(dst, ang) @ R
+            edge = t
+
+        # Deviations act in the frame the relationships just built, not in
+        # world axes. A world `pitch` would swing the aim off the axis
+        # `across=` established and undo the roll `face=` solved; in-frame it
+        # raises the prop within its own plane and leaves both intact.
+        if edge is None:
+            e0 = np.asarray(host.up, dtype=float)
+            e0 = e0 - float(e0 @ dst) * dst
+            if np.linalg.norm(e0) < 1e-6:
+                e0 = np.asarray(host.side, dtype=float)
+                e0 = e0 - float(e0 @ dst) * dst
+            edge = e0 / max(np.linalg.norm(e0), 1e-12)
+        flat = np.cross(dst, edge)
+        for key, ax in (("spin", dst), ("pitch", flat), ("yaw", edge)):
+            if g.get(key):
+                R = wskel.rot_axis(ax, g[key]) @ R
+        if g.get("tilt"):
+            R = wskel.rot_axis(dst, g["tilt"]) @ R
         A = scale * R
         T = host.point_at(g.get("at", 1.0)) + np.asarray(
             g.get("offset", (0.0, 0.0, 0.0)), dtype=float)
@@ -399,7 +429,7 @@ def _join_frame(g, base, c):
     return A, T - A @ root, host
 
 
-def build_composition(spec, models, warn):
+def build_composition(spec, models, warn, notes_aim=None):
     """Merge a base model with everything grafted into it.
 
     Wearing and holding are not primitives, they are outcomes. The one
@@ -411,6 +441,7 @@ def build_composition(spec, models, warn):
     fuse while its own sway bones come along, a rider that keeps its entire
     rig and animations while its root rides a saddle.
     """
+    notes_aim = [] if notes_aim is None else notes_aim
     base = models.get(spec["base"])
     if base is None:
         raise wchecks.CheckError("compose %r: no base model %r"
@@ -454,6 +485,27 @@ def build_composition(spec, models, warn):
                                      % (spec["name"], alias))
         A0, t0, host = _join_frame(g, base, c)
         fuse = g.get("fuse", "name") == "name"
+
+        # Say where the placement actually pointed things. A roll reference
+        # that is off by ninety degrees produces a perfectly valid frame and
+        # a blade presenting its flat, and nothing about the source shows it.
+        if host is not None and (g.get("align") or g.get("aim")
+                                 or g.get("across") or g.get("face")):
+            anchor = c.model.anchors.get(g.get("align") or "", {})
+            apos = np.asarray(anchor.get("pos", (0, 0, 0)), dtype=float)
+            adir = wskel.resolve_dir(anchor.get("dir", "up")) if anchor else \
+                np.array([0.0, 1.0, 0.0])
+            note = "graft %r aims %s" % (alias, dir_words(A0 @ adir))
+            if g.get("face"):
+                mk = g["face"].partition(":")[0]
+                mv = (getattr(c.model, "markers", {}) or {}).get(mk)
+                if mv is not None:
+                    w = A0 @ (np.asarray(mv, dtype=float) - apos)
+                    ax = A0 @ adir
+                    ax = ax / max(np.linalg.norm(ax), 1e-12)
+                    w = w - float(w @ ax) * ax
+                    note += ", with %r toward %s" % (mk, dir_words(w))
+            notes_aim.append(note)
 
         # A model that declares an anchor is telling you where it meets
         # something. Placing it by hand anyway is how a weapon ends up
@@ -839,15 +891,17 @@ def compile_set(path, quiet=False, out_dir=None):
         mesh = wmesh.build(model, bones)
         models[alias] = Compiled(alias, model, bones, mesh)
 
-    notes = []
+    notes, infos = [], []
     for spec in ms.compositions:
         if spec["name"] in models:
             raise wparser.WamError("compose %r collides with a model alias"
                                    % spec["name"])
+        aim_notes = []
         try:
-            comp = build_composition(spec, models, notes.append)
+            comp = build_composition(spec, models, notes.append, aim_notes)
         except wchecks.CheckError as e:
             raise wparser.WamError("compose %r: %s" % (spec["name"], e))
+        infos.extend(aim_notes)
         check_held_props(comp, notes.append)
         check_worn_cover(comp, notes.append)
         models[spec["name"]] = comp
@@ -884,6 +938,8 @@ def compile_set(path, quiet=False, out_dir=None):
         measurements.extend("[%s] %s" % (alias, x) for x in m)
 
     if not quiet:
+        for n in infos:
+            print("info: %s" % n)
         for n in notes:
             print("WARN: %s" % n)
         for alias in sorted(models):

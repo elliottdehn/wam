@@ -284,6 +284,8 @@ def parse(text, path=None):
             if "across" in kv:
                 g["across"] = (_vec(kv["across"], line_no, line)
                                if kv["across"].startswith("(") else kv["across"])
+            if "aim" in kv:
+                g["aim"] = kv["aim"]
             for f in flags:
                 if f in ("along", "against"):
                     g[f] = True
