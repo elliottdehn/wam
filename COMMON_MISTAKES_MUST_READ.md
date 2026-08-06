@@ -27,8 +27,10 @@ Worse, no proximity check can find it. A hammer floating beside the arm and
 one held in the fist measure **0.026** and **0.023** from that arm. Only the
 prop itself knows which is *held*.
 
-**Correct form.** Declare where the prop meets a hand and what its sides are;
-let the compiler solve position, aim and roll.
+**Correct form: the weapon states how it is carried, and no composition ever
+states it again.** This is the whole fix. Placement written in the `.wamset`
+has to be re-derived by hand for every character who picks the thing up, and
+it gets re-derived wrong — that is why this failure keeps coming back.
 
 ```
 model sword
@@ -36,11 +38,20 @@ model sword
   marker pommel at=(0,0.000,0)
   marker tip    at=(0,0.470,0)
   marker edge   at=(0.030,0.280,0)
+  hold grip point=tip edge=edge carry=62  # stated once, by the sword
 ```
 
 ```
-graft sword to=hand.r:0.55 align=grip aim=62:fwd face=edge:bone.up
+graft sword to=hand.r:0.55
 ```
+
+That is the entire graft. It produces exactly the placement that
+`align=grip aim=62:fwd face=edge:bone.up` produced by hand — `hold` supplies
+all three. Anything the composition says explicitly still wins, for a
+two-handed stance or a weapon slung across a back.
+
+`point=` is not optional, because it is what tells the compiler which end is
+the business end. Without it nothing can tell a sword from a reversed sword.
 
 - `align=` puts the grip in the fist. Position stops being a guess.
 - `aim=<deg>:<hint>` sets the carry angle **relative to the wrist**, so it
@@ -54,13 +65,30 @@ graft sword to=hand.r:0.55 align=grip aim=62:fwd face=edge:bone.up
 Give the host bone a `roll=` so `bone.up` means something — a bone is a frame,
 not a line, and "which way the palm faces" is otherwise unrepresentable.
 
-**The compiler now says:**
+**A weapon aimed into its wielder is now rejected outright.** Once a model
+declares `point=`, the business end must not finish nearer the body than the
+grip does — and that is a hard error, not a warning, because this is the
+failure that survives everything else. A reversed sword sits on the right
+bone, grips correctly, and frequently does not even intersect anything.
+
+| graft | verdict |
+|---|---|
+| `graft sword to=hand.r:0.55` (from `hold`) | accepted |
+| `... aim=90:left` — blade across the body | **rejected**, tip 0.027 vs grip 0.039 |
+| `... aim=120:left` — further across | **rejected**, tip 0.032 vs grip 0.039 |
+| `... aim=170:back` — raised overhead | accepted |
+| `... aim=90:left backhand` | accepted |
+
+Raised and shouldered carries pass; only pointing at the carrier fails. If you
+genuinely want a reverse-grip dagger or a point-down sword, the `backhand`
+flag says so deliberately and the check stands down.
+
+**The compiler also says:**
 
 ```
 info: graft 'sword' aims down-fwd, with 'edge' toward up-fwd
 WARN: graft 'hammer' was aimed by hand, but that model declares an anchor
       'grip' which landed 0.073 from hand.r — use align=grip
-WARN: in 'knight' the held 'sword' passes 0.147 through the body
 ```
 
 Read the `aims … with 'edge' toward …` line. "Edge toward **left**" is a

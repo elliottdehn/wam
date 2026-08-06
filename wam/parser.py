@@ -71,6 +71,7 @@ class Model:
         self.pins = []             # list of dicts: bone -> absolute head/tail
         self.anchors = {}          # name -> dict(pos, dir, pitch, yaw, tilt)
         self.markers = {}          # name -> (x, y, z) in the model's own space
+        self.hold = None           # dict(anchor, point, edge, carry) or None
         self.sides = {}            # name -> local direction that side faces
         self.parts = []            # list of dicts
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
@@ -103,6 +104,7 @@ KNOWN_KEYS = {
     "anchor": {"at", "dir", "pitch", "yaw", "tilt"},
     "marker": {"at"},
     "side": {"dir", "pitch", "yaw", "tilt"},
+    "hold": {"point", "edge", "carry"},
 }
 
 
@@ -396,6 +398,28 @@ def parse(text, path=None):
                     raise WamError("marker %r needs at=(x,y,z)" % tokens[1],
                                    line_no, line)
                 model.markers[tokens[1]] = _vec(kv["at"], line_no, line)
+            elif kw == "hold":
+                # How this model is carried, stated once by the model that
+                # knows — the sword. Written in the composition instead, the
+                # same three facts get re-derived by hand for every character
+                # who picks it up, and they get re-derived wrong: a blade
+                # reversed into a chest, or presenting its flat like a paddle.
+                if len(tokens) < 2:
+                    raise WamError("hold needs the name of a grip anchor",
+                                   line_no, line)
+                _, kv, _ = _split_kv(tokens[2:], line_no, line)
+                _check_keys(model, "hold", kv, line_no, line)
+                if "point" not in kv:
+                    raise WamError(
+                        "hold %r needs point=<marker> — the business end. "
+                        "Without it nothing knows which way round the model "
+                        "goes, which is exactly how blades end up reversed"
+                        % tokens[1], line_no, line)
+                model.hold = dict(anchor=tokens[1], point=kv["point"],
+                                  edge=kv.get("edge"),
+                                  carry=_num(kv["carry"], line_no, line)
+                                  if "carry" in kv else 55.0,
+                                  line_no=line_no)
             elif kw == "anchor":
                 # A named frame on the model — the point and axis by which it
                 # meets something else. `graft ... align=<name>` maps it onto

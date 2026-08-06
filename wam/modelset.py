@@ -200,7 +200,7 @@ def parse(text, path=None):
                 if "aim" in kv:
                     g["aim"] = kv["aim"]
                 for f in flags:
-                    if f in ("along", "against"):
+                    if f in ("along", "against", "backhand"):
                         g[f] = True
                 for k in ("at", "pitch", "yaw", "tilt", "spin", "scale"):
                     if k in kv:
@@ -384,6 +384,37 @@ def _unit(v):
     return v / max(np.linalg.norm(v), 1e-12)
 
 
+def _apply_hold(g, c):
+    """Fill a graft's placement from the model's own `hold` declaration.
+
+    The point of stating it on the weapon is that nobody has to state it
+    again. Anything the composition says explicitly still wins — a two-handed
+    stance, a weapon slung across a back — but the default is the way that
+    model is carried, so `graft sword to=hand.r` is a correct hold instead of
+    the starting point for three rounds of guessing.
+    """
+    hold = getattr(c.model, "hold", None)
+    if not hold or g.get("bone") is None:
+        return
+    if hold["anchor"] not in (c.model.anchors or {}):
+        raise wchecks.CheckError(
+            "model %r declares hold %r but has no anchor by that name"
+            % (g["alias"], hold["anchor"]))
+    for name in ("point", "edge"):
+        ref = hold.get(name)
+        if ref and ref not in (c.model.markers or {}):
+            raise wchecks.CheckError(
+                "model %r: hold %s=%r names no marker" % (g["alias"], name, ref))
+    g.setdefault("align", hold["anchor"])
+    if g["align"] is None:
+        g["align"] = hold["anchor"]
+    if not (g.get("aim") or g.get("across") or g.get("along")
+            or g.get("against") or g.get("dir")):
+        g["aim"] = "%g:fwd" % hold["carry"]
+    if hold.get("edge") and not (g.get("face") or g.get("facing")):
+        g["face"] = "%s:bone.up" % hold["edge"]
+
+
 def _join_frame(g, base, c):
     """Affine placing a grafted model's own space into the base's.
 
@@ -525,6 +556,7 @@ def build_composition(spec, models, warn, notes_aim=None):
                                  % (spec["name"], spec["base"]))
     out = wmesh.MeshOut()
     parts, seen_colors, held, worn = [], {}, [], []
+    backhand = set()
     markers = {}
     bones = dict(base.bones)
     anims = [dict(a) for a in base.model.anims]
@@ -560,6 +592,7 @@ def build_composition(spec, models, warn, notes_aim=None):
         if c is None:
             raise wchecks.CheckError("compose %r: no model %r to graft"
                                      % (spec["name"], alias))
+        _apply_hold(g, c)
         A0, t0, host = _join_frame(g, base, c)
         fuse = g.get("fuse", "name") == "name"
 
@@ -647,6 +680,8 @@ def build_composition(spec, models, warn, notes_aim=None):
 
         if not fused_any and not g.get("overlap"):
             held.append((alias, g.get("bone")))
+            if g.get("backhand"):
+                backhand.add(alias)
         if fused_any and not g.get("overlap"):
             worn.append(alias)
         V = np.zeros_like(c.V)
@@ -664,8 +699,13 @@ def build_composition(spec, models, warn, notes_aim=None):
         # markers ride along, so "the tip of the blade" stays addressable
         # after the sword has been placed on someone
         for nm, pos in (getattr(c.model, "markers", {}) or {}).items():
-            A, t = xform.get(list(c.bones)[0], (A0, t0))
             markers["%s.%s" % (alias, nm)] = A0 @ np.asarray(pos, dtype=float) + t0
+        # an anchor is a named point too, and the one that matters most —
+        # where the thing meets its carrier — so it has to survive placement
+        # if anything is to reason about the hold afterwards
+        for nm, a in (getattr(c.model, "anchors", {}) or {}).items():
+            markers["%s.%s" % (alias, nm)] = \
+                A0 @ np.asarray(a.get("pos", (0, 0, 0)), dtype=float) + t0
 
         # the grafted model's own motion comes with it, remapped onto the
         # names its bones ended up with
@@ -689,6 +729,7 @@ def build_composition(spec, models, warn, notes_aim=None):
     comp.base_alias = spec["base"]
     comp.held = held
     comp.worn = worn
+    comp.backhand = backhand
     return comp
 
 
@@ -856,6 +897,55 @@ def check_worn_cover(comp, warn, limit=0.005):
                  "outside %r within the span it covers — widen the garment "
                  "there, or narrow the body under it"
                  % (comp.alias, alias, bk, d, gk))
+
+
+def check_points_away(comp, models, warn):
+    """A carried weapon points away from its carrier. No exceptions.
+
+    This is the failure that keeps coming back — a blade reversed into a
+    chest, a haft driven through a hip — and it survives every other check,
+    because a reversed sword is placed on the right bone, grips correctly,
+    and often does not even intersect anything. Nothing about it is wrong
+    except the one thing that matters.
+
+    A model that declares `hold ... point=` has said which end is the business
+    end, so the question becomes answerable: that end must finish further from
+    the body than the grip does. Stated as a relation it holds for any pose,
+    any arm, any weapon length.
+    """
+    base_pts = None
+    for k, (v0, v1) in comp.mesh.part_ranges.items():
+        if k.split(".", 1)[0] != comp.base_alias:
+            continue
+        chunk = comp.V[v0:v1]
+        base_pts = chunk if base_pts is None else np.concatenate([base_pts, chunk])
+    if base_pts is None or not len(base_pts):
+        return
+
+    def clearance(p):
+        return float(np.linalg.norm(base_pts - np.asarray(p, float), axis=1).min())
+
+    for alias, host in comp.held:
+        if alias in getattr(comp, "backhand", ()):
+            continue                    # the author has taken responsibility
+        c = models.get(alias)
+        hold = getattr(getattr(c, "model", None), "hold", None)
+        if not hold:
+            continue
+        tip = comp.model.markers.get("%s.%s" % (alias, hold["point"]))
+        grip = comp.model.markers.get("%s.%s" % (alias, hold["anchor"]))
+        if tip is None or grip is None:
+            continue
+        dt, dg = clearance(tip), clearance(grip)
+        if dt < dg:
+            raise wchecks.CheckError(
+                "in %r the held %r points back into the wielder: its %r ends "
+                "%.3f from the body while its grip is %.3f away, so the "
+                "business end is the end nearer the carrier. Reverse it — or "
+                "if it really is meant to be held that way (a reverse-grip "
+                "dagger, a sword carried point-down), add the `backhand` flag "
+                "to this graft to say so deliberately."
+                % (comp.alias, alias, hold["point"], dt, dg))
 
 
 def check_contact(comp, warn, limit=0.02):
@@ -1156,6 +1246,7 @@ def compile_set(path, quiet=False, out_dir=None):
         check_held_props(comp, notes.append)
         check_worn_cover(comp, notes.append)
         check_contact(comp, notes.append)
+        check_points_away(comp, models, notes.append)
         models[spec["name"]] = comp
 
     funcs = build_functions(models)
