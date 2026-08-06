@@ -842,6 +842,69 @@ animation intact and driving them — measured on a real pair, the cape swings
 | `fuse=name\|none` | `none` forces everything to join, even where names match |
 | `prefix=` | namespace the joined bones (defaults to the alias) |
 
+#### `marker` — name the points you need to reason about
+
+A part can only be addressed by its bounding-box centre, which says nothing
+useful about a long blade: the centre of a sword is halfway up the steel, so
+"is the sword pointing away from the body" is unaskable. Name the points
+instead:
+
+```
+model sword
+  anchor grip   at=(0,0.06,0) dir=up
+  marker tip    at=(0,0.78,0)
+  marker edge   at=(0.05,0.42,0)
+  marker pommel at=(0,0.00,0)
+```
+
+Markers are points in the model's own space. They ride through a graft, so
+after composition they are addressable as `knight.sword.tip`, and they work
+in a model's own `checks` too.
+
+#### `closer(a, b, c)` — relations, not angles
+
+Placement bugs are relational, and relations are unsayable in degrees but
+trivial in terms of which of two things is nearer. `closer(a, b, c)` is how
+much nearer `a` is to `b` than to `c`, in meters; positive means nearer `b`.
+It is a check, usable in `assert` and `measure` at both levels.
+
+```
+assert closer(knight.hand.r, knight.sword.pommel, knight.sword.tip) > 0
+```
+
+"The hand is nearer the pommel than the tip" — the sword is held by the hilt.
+Anchor the same sword by its blade end instead and the same expression reads
+**−1.36** where the correct grip reads **+1.36**: a sign flip, no angles, and
+nothing to retune when the arm is reposed.
+
+**Pick references that are not equidistant by symmetry.** Asking whether a
+blade points away from the body by comparing distances to the *spine* proves
+nothing: the spine sits at z=0, so a blade pointing forward and the same blade
+pointing backward put the tip exactly as far away. Compare against something
+off the plane you are testing — a marker on the chest, the hand, a shoulder.
+A `closer` that returns the identical value for a good and a bad case is
+almost always this mistake.
+
+#### `face=` — solve the roll too
+
+`align=` fixes the position and `across=` the aim axis, which leaves exactly
+one free number: the roll about that axis. Guessing it is how a blade ends up
+edge-on or upside down. Name a marker and where it should point:
+
+```
+graft sword to=hand.r:0.6 align=grip across=fwd face=edge:up
+```
+
+The compiler spins the prop about its aim until that marker lies as near the
+target as it can. Measured against a hand-tuned `spin=55`: the guess leaves
+the edge **35°** away from up-across-the-blade, `face=edge:up` leaves it
+**0.0°**. With `align`, `across` and `face` together there is no guessed
+number left in a placement.
+
+Both degenerate cases are errors rather than silent no-ops — a hint pointing
+along the aim axis says nothing about roll, and a marker sitting *on* the aim
+axis does not move when you spin it.
+
 #### `anchor` / `align=` — solve the placement, do not guess it
 
 A prop placed with `to=hand.r dir=up pitch=35 offset=(0,0,0.02)` is a

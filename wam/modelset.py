@@ -31,6 +31,7 @@ the next model, which is exactly the drift nobody notices until two units
 are side by side.
 """
 import argparse
+import math
 import os
 import sys
 
@@ -182,7 +183,7 @@ def parse(text, path=None):
             elif kw == "graft":
                 g = dict(alias=tokens[1], line_no=line_no, dir=kv.get("dir"),
                          fuse=kv.get("fuse", "name"), prefix=kv.get("prefix"),
-                         align=kv.get("align"))
+                         align=kv.get("align"), face=kv.get("face"))
                 if g["fuse"] not in ("name", "none"):
                     raise wparser.WamError("fuse= must be name|none",
                                            line_no, line)
@@ -270,6 +271,8 @@ class _Composite:
         self.anims = base_model.anims          # the wearer drives the motion
         self.poses = base_model.poses
         self.parts = parts
+        self.markers = {}
+        self.anchors = dict(getattr(base_model, "anchors", {}) or {})
         self.checks = []
 
 
@@ -330,6 +333,39 @@ def _join_frame(g, base, c):
                       ("tilt", wskel.rot_z)):
             if g.get(k):
                 R = fn(g[k]) @ R
+        if g.get("face"):
+            # The last free number in a placement is the roll about the aim
+            # axis, and guessing it is how a blade ends up edge-on or upside
+            # down. Naming a marker and the way it should point solves it:
+            # spin until that marker lies as near the target as it can.
+            mk, _, hint = g["face"].partition(":")
+            hint = hint or "up"
+            markers = getattr(c.model, "markers", {}) or {}
+            if mk not in markers:
+                raise wchecks.CheckError(
+                    "graft %r: no marker %r (it has: %s)"
+                    % (g["alias"], mk, ", ".join(sorted(markers)) or "none"))
+            h = (np.array(wskel.BASE_DIRS[hint], dtype=float)
+                 if hint in wskel.BASE_DIRS else np.asarray(hint, dtype=float))
+            t = h - float(h @ dst) * dst
+            v = R @ (np.asarray(markers[mk], dtype=float)
+                     - np.asarray(anchor["pos"], dtype=float))
+            v = v - float(v @ dst) * dst
+            if np.linalg.norm(t) < 1e-6:
+                raise wchecks.CheckError(
+                    "graft %r: face=%s:%s points along the aim axis, so it "
+                    "says nothing about the roll around it — pick a direction "
+                    "across the aim, not along it" % (g["alias"], mk, hint))
+            if np.linalg.norm(v) < 1e-6:
+                raise wchecks.CheckError(
+                    "graft %r: marker %r sits on the aim axis, so spinning "
+                    "does not move it — pick a marker off to one side"
+                    % (g["alias"], mk))
+            v /= np.linalg.norm(v)
+            t /= np.linalg.norm(t)
+            ang = math.degrees(math.atan2(float(np.cross(v, t) @ dst),
+                                          float(v @ t)))
+            R = wskel.rot_axis(dst, ang) @ R
         A = scale * R
         T = host.point_at(g.get("at", 1.0)) + np.asarray(
             g.get("offset", (0.0, 0.0, 0.0)), dtype=float)
@@ -381,6 +417,7 @@ def build_composition(spec, models, warn):
                                  % (spec["name"], spec["base"]))
     out = wmesh.MeshOut()
     parts, seen_colors, held, worn = [], {}, [], []
+    markers = {}
     bones = dict(base.bones)
     anims = [dict(a) for a in base.model.anims]
     poses = dict(base.model.poses)
@@ -406,6 +443,8 @@ def build_composition(spec, models, warn):
         parts.extend(_prefixed_parts(alias, c.model))
 
     merge(spec["base"], base, base.V, base.mesh.skin)
+    for nm, pos in (getattr(base.model, "markers", {}) or {}).items():
+        markers[nm] = np.asarray(pos, dtype=float)
 
     for g in spec["grafts"]:
         alias = g["alias"]
@@ -473,6 +512,11 @@ def build_composition(spec, models, warn):
             V[i] = acc
         skins = [[(namemap[n], w) for n, w in sk] for sk in c.mesh.skin]
         merge(alias, c, V, skins)
+        # markers ride along, so "the tip of the blade" stays addressable
+        # after the sword has been placed on someone
+        for nm, pos in (getattr(c.model, "markers", {}) or {}).items():
+            A, t = xform.get(list(c.bones)[0], (A0, t0))
+            markers["%s.%s" % (alias, nm)] = A0 @ np.asarray(pos, dtype=float) + t0
 
         # the grafted model's own motion comes with it, remapped onto the
         # names its bones ended up with
@@ -489,6 +533,7 @@ def build_composition(spec, models, warn):
             poses[key] = dict(pose, bones={namemap.get(b, b): r
                                            for b, r in pose["bones"].items()})
     model = _Composite(base.model, parts)
+    model.markers = markers
     model.anims = anims
     model.poses = poses
     comp = Compiled(spec["name"], model, bones, out)
@@ -671,6 +716,24 @@ def build_functions(models):
                 % (wchecks._name_of(a), wchecks._name_of(b)))
         return float(np.linalg.norm(pa - pb))
 
+    def closer(a, b, c):
+        """How much nearer `a` is to `b` than to `c`, in meters.
+
+        Positive means a is nearer b. Placement bugs are usually relational —
+        "the pommel should be nearer the hand than the tip is", "the edge
+        should face away from the chest" — and those are unsayable in terms
+        of angles but trivial in terms of which of two things is closer.
+        """
+        ca, pa = point(a)
+        cb, pb = point(b)
+        cc, pc = point(c)
+        if not (ca is cb is cc):
+            raise wchecks.CheckError(
+                "closer() compares points in one model; %r, %r and %r are "
+                "not all in the same one"
+                % (wchecks._name_of(a), wchecks._name_of(b), wchecks._name_of(c)))
+        return float(np.linalg.norm(pa - pc) - np.linalg.norm(pa - pb))
+
     def within(fname, a, b, extra=None):
         """Delegate a part-vs-part query to the model that owns both parts."""
         ca, pa = resolve(a)
@@ -718,6 +781,7 @@ def build_functions(models):
         "covers": lambda a, b: within("covers", a, b),
         "leak": lambda a, b: within("leak", a, b),
         "dist": dist,
+        "closer": closer,
         "x": lambda r: float(point(r)[1][0]),
         "y": lambda r: float(point(r)[1][1]),
         "z": lambda r: float(point(r)[1][2]),
@@ -780,7 +844,10 @@ def compile_set(path, quiet=False, out_dir=None):
         if spec["name"] in models:
             raise wparser.WamError("compose %r collides with a model alias"
                                    % spec["name"])
-        comp = build_composition(spec, models, notes.append)
+        try:
+            comp = build_composition(spec, models, notes.append)
+        except wchecks.CheckError as e:
+            raise wparser.WamError("compose %r: %s" % (spec["name"], e))
         check_held_props(comp, notes.append)
         check_worn_cover(comp, notes.append)
         models[spec["name"]] = comp

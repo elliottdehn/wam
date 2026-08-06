@@ -148,6 +148,19 @@ one rest pose — repose the wrist and it drifts 42 degrees off square, while
 `across=fwd` stays perpendicular. If you find yourself saying "it should be
 perpendicular to the wrist", write that, do not convert it to Euler angles.
 
+**`closer(a, b, c)` is the relational check**: how much nearer `a` is to `b`
+than to `c`. `assert closer(hand.r, sword.pommel, sword.tip) > 0` says the
+sword is held by the hilt — it reads +1.36 when correct and −1.36 when gripped
+by the blade. Pick references that are not equidistant by symmetry: comparing
+to a spine at z=0 gives the same answer for a blade pointing forward and one
+pointing backward.
+
+**Name the points you need to argue about.** `marker tip at=(0,0.78,0)` in the
+prop; then `assert dist(knight.sword.tip, knight.spine) > dist(knight.sword.pommel,
+knight.spine)` says "points away from the body" without a single angle, and
+`closer(a, b, c)` says which of two things something is nearer. A part's
+bounding-box centre is halfway up a blade and tells you nothing.
+
 **Never aim a held prop by hand.** Give the prop an `anchor` — the point and
 axis by which it meets something — and graft with `align=`:
 
@@ -156,8 +169,9 @@ anchor grip at=(0,0.06,0) dir=up               # in the weapon
 graft hammer to=hand.r:0.6 align=grip pitch=-155   # in the set
 ```
 
-The grip lands in the hand by construction, and the carry angle is one number
-relative to the hand instead of four relative to the world. A weapon floating
+The grip lands in the hand by construction. Add `across=` for the aim axis and
+`face=<marker>:<dir>` for the roll — with all three there is no guessed number
+left: `graft sword to=hand.r align=grip across=fwd face=edge:up`. A weapon floating
 beside the fist is the single most common composition bug, and no proximity
 check catches it — a held hammer and a floating one measure the same distance
 from the arm. The compiler warns if you graft a model that declares an anchor

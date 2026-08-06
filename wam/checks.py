@@ -223,6 +223,9 @@ class Env:
 
     def point(self, ref):
         name = _name_of(ref)
+        markers = getattr(self.model, "markers", None) or {}
+        if name in markers:
+            return np.asarray(markers[name], dtype=float)
         if self.is_bone(name):
             b, want = self.bone(ref)
             return {"head": b.head, "tail": b.tail,
@@ -231,7 +234,7 @@ class Env:
             if key in self.ranges:
                 chunk = self.part_verts(ref)
                 return (chunk.min(axis=0) + chunk.max(axis=0)) / 2.0
-        raise CheckError("%r is neither a bone nor a part" % name)
+        raise CheckError("%r is not a marker, a bone or a part" % name)
 
     def direction(self, ref):
         name = _name_of(ref)
@@ -621,6 +624,9 @@ def build_functions(env):
     return {
         # points and distance
         "dist": lambda a, b: float(np.linalg.norm(env.point(a) - env.point(b))),
+        "closer": lambda a, b, c: float(
+            np.linalg.norm(env.point(a) - env.point(c))
+            - np.linalg.norm(env.point(a) - env.point(b))),
         "len": bone_len,
         "x": lambda r: float(env.point(r)[0]),
         "y": lambda r: float(env.point(r)[1]),

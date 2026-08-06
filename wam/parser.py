@@ -70,6 +70,7 @@ class Model:
         self.bones = []            # list of dicts
         self.pins = []             # list of dicts: bone -> absolute head/tail
         self.anchors = {}          # name -> dict(pos, dir, pitch, yaw, tilt)
+        self.markers = {}          # name -> (x, y, z) in the model's own space
         self.parts = []            # list of dicts
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
         self.anims = []            # list of dicts
@@ -308,6 +309,18 @@ def parse(text, path=None):
                 if v <= 0:
                     raise WamError("%s must be above zero" % kw, line_no, line)
                 setattr(model, kw, v)
+            elif kw == "marker":
+                # A named point in the model's own space. Parts can only be
+                # addressed by their bounding-box centre, which says nothing
+                # useful about a long blade — a marker names the tip, the
+                # edge, the pommel, so they can be reasoned about at all.
+                if len(tokens) < 2:
+                    raise WamError("marker needs a name", line_no, line)
+                _, kv, _ = _split_kv(tokens[2:], line_no, line)
+                if "at" not in kv:
+                    raise WamError("marker %r needs at=(x,y,z)" % tokens[1],
+                                   line_no, line)
+                model.markers[tokens[1]] = _vec(kv["at"], line_no, line)
             elif kw == "anchor":
                 # A named frame on the model — the point and axis by which it
                 # meets something else. `graft ... align=<name>` maps it onto
