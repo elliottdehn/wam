@@ -1,7 +1,7 @@
 # WAM — WoW-ish Art Model language
 
 A text language + compiler for **LLM-authored low-poly characters**: mesh,
-skeleton, and animations from ~150 lines of readable source, compiled to
+skeleton, and animations from many lines of readable source, compiled to
 glTF 2.0 with software-rendered turntables for visual iteration.
 
 ## Try it
