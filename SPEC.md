@@ -339,6 +339,57 @@ end
   a zero-thickness web is emitted as one sheet and its material is marked
   double-sided automatically.
 
+#### A wing is an outline, not a fan
+
+The ribs above all leave one anchor, and that shape has a hard limit: **a fan
+of ribs from a single hub can only produce a sector.** It is right for a
+webbed foot or a frill, and it cannot be a wing at any size. Membrane exists
+only *between* ribs, so if every rib leaves the wrist there is nothing behind
+the arm, and the result reads as a splayed hand on a stick — tuning rib
+lengths, sweep angles or spar thickness never fixes it, because the topology
+is wrong rather than the numbers.
+
+A wing is bounded by an **outline that closes back to the body**: a leading
+edge from the body out to the tip, spars inside it, and a trailing edge that
+returns past the elbow to the hip. Ribs therefore anchor at *different*
+points along the leading edge, which is what `from=` is for:
+
+```
+mirror
+  bone whum parent=spine2 at=0.35 side=0.09 up=0.06 dir=side tilt=40 yaw=-24 len=0.30
+  bone wrad parent=whum dir=side tilt=18 yaw=16 len=0.42
+  bone wf1 parent=wrad dir=side tilt=4   yaw=10 len=0.66     # spars, graded so
+  bone wf2 parent=wrad dir=side tilt=-20 yaw=22 len=0.50     # their tips land
+  bone wf3 parent=wrad dir=side tilt=-42 yaw=30 len=0.38     # on a swept line,
+  bone wf4 parent=wrad dir=side tilt=-62 yaw=34 len=0.30     # not an arc
+  bone wtrail1 parent=wrad dir=down pitch=38 len=0.46        # closes the hand
+  bone wtrail2 parent=whum at=1.0 dir=down pitch=54 len=0.58 # from the ELBOW
+
+  web wing anchor=wrad:0.0 material=membrane trailing=scallop scallop=0.07
+    rib bones=whum..wf1 from=spine2:0.55       # leading edge starts at the body
+    rib bones=wf2..wf2
+    rib bones=wf3..wf3
+    rib bones=wf4..wf4
+    rib bones=wtrail1..wtrail1
+    rib bones=wtrail2..wtrail2 from=whum:1.0   # trailing edge behind the arm
+    rib bones=thigh..thigh from=spine1:0.30    # and home to the hip
+end
+```
+
+**`wtrail2` is the bone that matters.** Anchored at the elbow rather than the
+wrist, it is the only thing putting membrane behind the arm, and the arm is
+the middle of the wing. Without it the silhouette is a Y — a stem that splits
+into prongs. With it the silhouette is a diamond.
+
+The compiler checks for this: a membrane of four or more ribs whose first and
+last ribs *begin* far apart has an outline that never closes, and says so:
+
+```
+WARN: web 'wing.l': the outline does not close — the first rib begins 0.34
+      from where the last one does, 48% of the membrane's own size, so the
+      trailing edge ends at the hub instead of coming back toward the body.
+```
+
 Two things the compiler does that you would otherwise do by hand and get
 wrong: the whole fan is **one grid**, so adjacent panels share their boundary
 vertices instead of cracking apart, and every vertex is skinned to a
@@ -1202,7 +1253,29 @@ The load-bearing rules, each learned the hard way:
 
 ## The compiler fights back (by design)
 
-`wam.cli` runs a semantic lint on every compile: bones with no geometry,
+`wam.cli` runs a semantic lint on every compile. **Nothing below has to be
+asked for** — these are ambient, and the point is that a model written in one
+pass gets told what is wrong with it without the author having guessed what to
+look for:
+
+- **Unknown keys.** `materal_arc=` or `dpth=` used to be dropped in silence,
+  so the model compiled, looked plausible, and ignored what you asked. Each
+  directive now knows its own vocabulary and names the nearest match: *"part
+  does not understand 'materal_arc', did you mean 'material_arc'?"*
+- **Parts intersecting**, with the same forgiveness tiers `noclip` uses. Put
+  a `noclip` in `checks` and the ambient sweep stands down — you have set your
+  own bar.
+- **A mirrored limb crossing the centreline**, which is a `yaw`/`side` sign
+  inversion: both copies build correctly and then pass through each other in
+  front of the body.
+- **Chain rotations compounding.** Animation channels are deltas about each
+  bone's own head, so they add up down a chain: *"anim 'strike' turns bone
+  'bulb' 163° away from rest (its own channels only ask for 22°)"*. Six
+  modest-looking bends fold a tail through the body, and nothing in the
+  source hints at it.
+- **An animation that moves nothing**, when every channel resolves to zero.
+
+On top of those: bones with no geometry,
 feet dipping below / floating above ground, asymmetry, degenerate triangles,
 **loft folds** (a ring wider than the bend it sits on doubles the surface
 back — the classic "invisible faces" bug; split the loft at the joint),

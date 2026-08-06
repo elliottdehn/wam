@@ -1143,6 +1143,28 @@ def build_web(out, model, bones, part, suffix="", reflect=False):
         for (r0, c0), (r1, c1) in zip(loop, loop[1:] + loop[:1]):
             quad(front[r0][c0], back[r0][c0], back[r1][c1], front[r1][c1])
 
+    # A membrane is exactly the polygon its ribs bound, and the classic
+    # failure is an outline that never closes: the leading rib starts at the
+    # body, every other rib starts at one hub, so the trailing boundary ends
+    # at the hub instead of returning to the body. That is a splayed hand —
+    # no membrane exists behind the limb, and no amount of tuning rib lengths
+    # or sweep angles fixes it, because the shape is wrong, not the numbers.
+    starts = [np.asarray(sp.at(0.0)[0], dtype=float) for sp in spars]
+    pts = np.array(out.verts[v0:len(out.verts)]) if len(out.verts) > v0 else None
+    if len(spars) >= 4 and pts is not None and len(pts):
+        size = float(np.max(pts.max(axis=0) - pts.min(axis=0)))
+        gap = float(np.linalg.norm(starts[0] - starts[-1]))
+        if size > 0.35 and gap > 0.35 * size:
+            out.warnings.append(
+                "web %r: the outline does not close — the first rib begins "
+                "%.2f from where the last one does, %.0f%% of the membrane's "
+                "own size, so the trailing edge ends at the hub instead of "
+                "coming back toward the body. That is a splayed hand, not a "
+                "wing; anchor the trailing ribs further up the leading edge "
+                "with from=<elbow> and close to the body"
+                % (part["name"] + (".r" if reflect else suffix),
+                   gap, 100.0 * gap / size))
+
     if reflect:
         _reflect_range(out, v0, suffix)
     if thickness > 0:

@@ -75,7 +75,59 @@ class Model:
         self.poses = {}            # name -> {bone: {pitch,yaw,roll}}
         self.anims = []            # list of dicts
         self.checks = []           # list of dicts: assert / measure
+        self.warnings = []         # ambient parse-time complaints
         self.source_path = None
+
+
+# Every key each directive understands. A key outside its set is a typo, and
+# a typo that is silently dropped is the worst failure mode the language has:
+# the model compiles, looks plausible, and quietly ignores what you asked for.
+KNOWN_KEYS = {
+    "bone": {"parent", "dir", "pitch", "yaw", "roll", "tilt", "len", "at",
+             "side", "fwd", "up", "offset", "head", "tail"},
+    "pin": {"at", "head", "tail"},
+    "part": {"material", "bones", "bone", "dir", "shape", "kind", "on", "press",
+             "frame", "refaxis", "skin", "material_arc", "anchor", "trailing",
+             "at", "len", "pitch", "yaw", "tilt", "size", "w", "d", "h",
+             "sides", "taper", "inset", "scallop", "thickness", "steps",
+             "usteps", "offset"},
+    "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot",
+             "dtop", "dbot", "shape", "material", "material_arc", "follow",
+             "skin"},
+    "seg": {"len", "r", "up", "down", "fwd", "back", "curl", "roll",
+            "material", "skin"},
+    "rib": {"bones", "bone", "from", "inset", "start", "skin"},
+    "group": {"bone", "dir", "at", "pitch", "yaw", "tilt", "spin", "across",
+              "aim", "offset"},
+    "anchor": {"at", "dir", "pitch", "yaw", "tilt"},
+    "marker": {"at"},
+}
+
+
+def _check_keys(model, kind, kv, line_no, line):
+    unknown = sorted(set(kv) - KNOWN_KEYS[kind])
+    for k in unknown:
+        near = sorted(KNOWN_KEYS[kind], key=lambda c: _similar(k, c))[:1]
+        model.warnings.append(
+            "line %d: %s does not understand %r%s — it was ignored, so "
+            "whatever you meant by it did not happen"
+            % (line_no, kind, k,
+               (", did you mean %r?" % near[0]) if near and
+               _similar(k, near[0]) < max(3, len(k) // 2) else ""))
+
+
+def _similar(a, b):
+    """Cheap edit distance, for suggesting the key someone meant."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                           prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
 
 
 def _hex_color(tok, line_no, line):
@@ -273,6 +325,7 @@ def parse(text, path=None):
             if len(tokens) < 2:
                 raise WamError("group needs a name", line_no, line)
             _, kv, flags = _split_kv(tokens[2:], line_no, line)
+            _check_keys(model, "group", kv, line_no, line)
             g = dict(name=tokens[1], bone=kv.get("bone"))
             if g["bone"] is None:
                 raise WamError("group needs bone=", line_no, line)
@@ -389,6 +442,7 @@ def parse(text, path=None):
                 if len(tokens) < 2:
                     raise WamError("bone needs a name", line_no, line)
                 _, kv, flags = _split_kv(tokens[2:], line_no, line)
+                _check_keys(model, "bone", kv, line_no, line)
                 b = dict(name=tokens[1], parent=kv.get("parent"),
                          dir=kv.get("dir"), mirror=mirror, line_no=line_no)
                 for f in flags:
@@ -429,6 +483,7 @@ def parse(text, path=None):
                 if len(tokens) < 2:
                     raise WamError("%s needs a name" % kw, line_no, line)
                 _, kv, flags = _split_kv(tokens[2:], line_no, line)
+                _check_keys(model, "part", kv, line_no, line)
                 p = dict(kind=kw, name=tokens[1], mirror=mirror, rings=[], segs=[],
                          ribs=[], cap_start="flat", cap_end="flat",
                          line_no=line_no)
@@ -503,6 +558,7 @@ def parse(text, path=None):
                     t = _num(pos[0], line_no, line)
                 else:
                     raise WamError("ring needs t", line_no, line)
+                _check_keys(model, "ring", kv, line_no, line)
                 r = dict(t=t)
                 for k in ("w", "d", "fwd", "side", "up", "roll",
                           "wtop", "wbot", "dtop", "dbot"):
@@ -530,6 +586,7 @@ def parse(text, path=None):
                 if cur_part is None or cur_part["kind"] != "sweep":
                     raise WamError("seg outside a sweep", line_no, line)
                 _, kv, flags = _split_kv(tokens[1:], line_no, line)
+                _check_keys(model, "seg", kv, line_no, line)
                 s = {}
                 for k in ("len", "r", "up", "down", "fwd", "back",
                           "curl", "roll"):
@@ -552,6 +609,7 @@ def parse(text, path=None):
                 if chain is None:
                     raise WamError("rib needs bones=<a>..<b> or bone=<x>",
                                    line_no, line)
+                _check_keys(model, "rib", kv, line_no, line)
                 rib = dict(chain=chain)
                 if "from" in kv:
                     rib["from"] = _bone_point(kv["from"], line_no, line)

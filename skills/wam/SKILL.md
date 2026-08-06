@@ -39,7 +39,12 @@ To compile a model that lives in another project:
 2. **Write the `checks` for what you just added, in the same edit.** See the
    next section — this is not optional polish, it is how you avoid breaking
    things you already fixed.
-3. Compile. **Read every lint warning** — they name the fix.
+3. Compile. **Read every lint warning** — they name the fix. Many are
+   ambient and need no `checks` entry: unknown/misspelled keys (silently
+   dropped otherwise), parts intersecting, a mirrored limb crossing the
+   centreline from an inverted sign, chain rotations compounding into a fold,
+   an animation that moves nothing, a membrane outline that never closes,
+   a part buried inside another. Treat a clean compile as meaningful.
 4. **View the rendered sheet PNG** (front / three-quarter / side / back).
 5. Audit all four views before claiming success: does every attachment
    visibly touch its base? Is every prop oriented right? Does anything float,
@@ -320,13 +325,21 @@ silently wrong.
   A sweep is **rigid** unless given `bones=a..b`, which binds its rings along
   that chain by arc length. Decide that before tuning the shape: converting
   afterwards means re-deriving every segment length as a ring fraction.
-- `web` — **a membrane across a fan of bones**: wings, frills, fins, webbed
+- `web` — **a membrane across a set of ribs**: wings, frills, fins, webbed
   feet, capes, sails. `web wing anchor=wrist material=membrane
   trailing=scallop` plus one `rib bones=a..b` line per spar (`inset=` stops
   short of the tip, `from=` re-roots the leading edge). The compiler builds
   one shared grid and blends each vertex across the ribs it lies between, so
   the panels never crack apart and every digit deforms it independently.
   Do not try to fake this with tubes — that is six failed topologies.
+  **For a wing, the ribs must not all share one anchor.** A fan from a single
+  hub can only be a sector, which is a webbed hand; membrane exists only
+  between ribs, so nothing fills behind the arm and the silhouette is a Y
+  rather than a diamond. Anchor the leading rib at the body, the spars at the
+  wrist, and trailing ribs at the *elbow* and the hip with `from=`. The
+  compiler warns when a multi-rib outline fails to close back toward the
+  body. Tuning rib lengths or sweep angles never fixes a fan — the topology
+  is wrong, not the numbers.
 - `attach` — stock parts: `hoof box sphere eye` with `size w d h taper`.
 - `group` — **compound props (weapons, etc.)**: author once in a clean local
   frame (spine along +Y), mount with one aim:

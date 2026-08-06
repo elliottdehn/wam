@@ -2,6 +2,7 @@
 """Semantic lint: catches the mistakes that make models look broken."""
 import numpy as np
 
+from . import animation as wanim
 from . import checks as wchecks
 
 
@@ -68,7 +69,8 @@ def _buried_parts(V, T, ranges, samples=24):
 
 
 def lint(model, bones, mesh):
-    warnings = list(getattr(mesh, "warnings", []))
+    warnings = list(getattr(model, "warnings", []))
+    warnings += list(getattr(mesh, "warnings", []))
     infos = []
     V, T, M = mesh.arrays()
     if len(V) == 0:
@@ -302,6 +304,81 @@ def lint(model, bones, mesh):
                     "`skin=` overrides that pin its rings"
                     % (key, len(names)))
             break
+
+    # 5d. a mirrored limb that crosses the centreline is a sign error.
+    # Nothing else notices: both copies are built correctly, they just point
+    # inward and pass through each other in front of the body.
+    for pname, (v0, v1) in mesh.part_ranges.items():
+        if not pname.endswith(".l") or v1 - v0 < 4:
+            continue
+        chunk = V[v0:v1]
+        over = float(-chunk[:, 0].min())
+        reach = float(chunk[:, 0].max())
+        if over > 0.02 and over > 0.25 * max(reach, 1e-6):
+            warnings.append(
+                "mirrored part %r reaches %.3f across the centreline into its "
+                "twin's side — a mirrored limb should stay on its own half, so "
+                "a `yaw`/`side` sign is probably inverted and the pair now "
+                "crosses in front of the body" % (pname, over))
+
+    # 5e. self-intersection, always on. `noclip` in `checks` is for pairs you
+    # want held to a tighter bar; a model should not have to ask whether its
+    # own parts pass through each other.
+    author_sweeps = any(c.get("kind") == "noclip"
+                        for c in getattr(model, "checks", ()))
+    try:
+        if author_sweeps:
+            raise StopIteration            # the author set their own bar
+        env, mscalars, mfuncs, mnoclip = wchecks.namespace(model, bones, mesh, V)
+        fails, _ = mnoclip(dict(kind="noclip", subject=None, against=None,
+                                strict=False, anim=None, depth=0.02,
+                                exempt=[], line_no=0))
+        for f in fails[:6]:
+            warnings.append("parts intersect — %s" % f)
+    except Exception:
+        pass
+
+    # 5f. animation channels are deltas about each bone's own head, so they
+    # compound down a chain: six "modest" thirty-degree bends land the tip a
+    # hundred and eighty degrees from rest and fold the limb through itself.
+    # Nothing in the source hints at it, so say what actually happened.
+    for anim in getattr(model, "anims", ()):
+        worst = (0.0, None, 0.0)
+        moved = 0.0
+        for i in range(8):
+            ph = i / 8.0
+            try:
+                rots = wanim.anim_rotations_at(model, bones, anim, ph)
+                G = wanim.global_transforms(bones, list(bones.values()), rots)
+            except Exception:
+                break
+            for name, b in bones.items():
+                if b.len <= 1e-6:
+                    continue
+                d0 = b.dir / max(np.linalg.norm(b.dir), 1e-12)
+                d1 = G[name][:3, :3] @ d0
+                n = np.linalg.norm(d1)
+                if n < 1e-12:
+                    continue
+                turn = np.degrees(np.arccos(np.clip(float(d0 @ (d1 / n)), -1, 1)))
+                moved = max(moved, turn)
+                authored = abs(sum(
+                    max(abs(v) for _, v in ch["keys"]) for ch in anim["channels"]
+                    if ch["bone"] == name)) or 0.0
+                if turn > worst[0]:
+                    worst = (turn, name, authored)
+        if worst[0] > 120.0:
+            warnings.append(
+                "anim %r turns bone %r %.0f\u00b0 away from rest (its own "
+                "channels only ask for %.0f\u00b0) — rotations accumulate "
+                "down a chain, so per-bone values add up; the limb is very "
+                "likely folding through itself"
+                % (anim["name"], worst[1], worst[0], worst[2]))
+        elif moved < 1.0 and anim["channels"]:
+            warnings.append(
+                "anim %r moves nothing — every channel resolves to no "
+                "rotation, so the clip plays as a still frame"
+                % anim["name"])
 
     # 6b. parts swallowed whole by another part
     for a, b in _buried_parts(V, T, mesh.part_ranges):

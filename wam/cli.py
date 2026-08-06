@@ -1,7 +1,7 @@
 """WAM compiler CLI.
 
 Usage:
-  python3 -m wam.cli model.wam -o out/name [--views front,threequarter,side,back]
+  python3 -m wam.cli model.wam -o out/name [--views front,threequarter,side,...]
                      [--anim walk --frames 6] [--anim-views side,front]
                      [--bones] [--no-gltf] [--width 480 --height 600]
 """
@@ -155,7 +155,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="wam")
     ap.add_argument("input")
     ap.add_argument("-o", "--out", default=None)
-    ap.add_argument("--views", default="front,threequarter,side,back")
+    ap.add_argument("--views",
+                    default="front,threequarter,side,threequarter_back,back",
+                    help="turnaround order; a three-quarter rear is included "
+                         "because a flat back view puts wings, capes and "
+                         "spines edge-on exactly where you need to read them")
     ap.add_argument("--anim", default=None)
     ap.add_argument("--anim-views", default=None,
                     help="views for the animation strip (default: --views); "
