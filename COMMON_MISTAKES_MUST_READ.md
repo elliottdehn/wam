@@ -37,6 +37,10 @@ Note the last row. Occlusion, a three-quarter camera, and low-poly shading
 routinely make the thing you need to judge invisible. "I can't tell" is not a
 reason to guess — it is a reason to measure.
 
+Its qualitative twin has its own file: details from a reference image are not
+measured, they are **enumerated**, and dropping them is just as invisible.
+See `README_IF_GIVEN_IMAGE.md` whenever the user supplies a picture.
+
 **The rule: before asserting anything about a model, name the measurement
 that settles it.** If you cannot name one, that is the finding — the language
 is missing a check, and building it is the work. Half the constructs in SPEC

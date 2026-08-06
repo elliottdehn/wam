@@ -22,7 +22,9 @@ spent on arithmetic is time available for the thing that actually matters,
 which is whether the character reads.
 
 **Read `SPEC.md` for the grammar and `COMMON_MISTAKES_MUST_READ.md` before
-you author.** There are no bundled example models. Every construct in SPEC
+you author. If the user gave you a reference image, read
+`README_IF_GIVEN_IMAGE.md` first** — working from a picture has its own
+failure mode, and it is not one you will notice happening. There are no bundled example models. Every construct in SPEC
 has a worked snippet, and half of them (`web`, `frame=`, `to=`, `rest=`,
 `hold`, `material_arc=`, `pin`, `checks`) have no analogue in other 3D
 formats, so memory of other tools actively misleads here.
@@ -46,6 +48,14 @@ python3 -m wam.modelset kit.wamset             # compose body + gear
 From another project: `PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m wam.cli …`
 
 ## Ground it in the creature
+
+**If you were given a reference image, stop and read
+`README_IF_GIVEN_IMAGE.md`.** The short version: you will compress the image
+into a gist and model the gist, losing exactly the details that make the
+character recognizable — a numeral on a badge, one chipped horn, a count of
+three studs, a pauldron on one shoulder only. Enumerate the specifics into a
+checklist before modelling, and verify them one at a time against crops
+afterwards. A whole-image comparison cannot see any of it.
 
 If the brief does not pin down what this thing *is*, pin it yourself before
 modelling: name the creature, what it does, and the single thing a player
