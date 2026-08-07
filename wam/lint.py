@@ -68,6 +68,32 @@ def _buried_parts(V, T, ranges, samples=24):
     return found
 
 
+def _edges_of(T):
+    if not len(T):
+        return np.zeros((0, 2), dtype=int)
+    e = np.concatenate([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]])
+    return np.unique(np.sort(e, axis=1), axis=0)
+
+
+def _surfaces_cross(Va, Ta, Vb, Tb):
+    """Do two surfaces actually pass through each other?
+
+    Nearest-point distance cannot answer this on coarse meshes: two crossing
+    tubes can interpenetrate deeply while every vertex of each stays far from
+    every face of the other. Edges against faces can, and it is the same test
+    the clipping checks already use.
+    """
+    from . import checks as wchecks
+    for (V1, T1, V2, T2) in ((Va, Ta, Vb, Tb), (Vb, Tb, Va, Ta)):
+        e = _edges_of(T1)
+        if not len(e) or not len(T2):
+            continue
+        A, B, C = V2[T2[:, 0]], V2[T2[:, 1]], V2[T2[:, 2]]
+        if wchecks._crossing_depth(V1[e[:, 0]], V1[e[:, 1]], A, B, C) > 0.0:
+            return True
+    return False
+
+
 def _islands(V, T, ranges, touch):
     """Group parts into clumps of geometry that actually touch each other.
 
@@ -77,9 +103,14 @@ def _islands(V, T, ranges, touch):
     off the shoulder it was meant to sit on. Proximity to a *bone* cannot see
     it either, because the bone runs right through where the part is hovering.
 
-    Surfaces are compared face-to-face rather than vertex-to-vertex: a
-    low-poly plate resting flat on an arm has no vertex anywhere near it and
-    would otherwise read as detached.
+    Contact is two tests, because neither alone is right. Face-to-face
+    distance catches a low-poly plate resting flat on an arm, which has no
+    vertex anywhere near it. But it *overestimates* separation exactly where
+    two low-poly tubes cross with no ring near the crossing — neither surface
+    has a vertex there, so a genuine interpenetration measured 0.0116 against
+    a 0.010 threshold, did not respond to `inset=` at all, and got worse as
+    `sides=` went up. So a pair that looks separated is then tested for
+    surfaces actually crossing, which is what interpenetration means.
     """
     from . import checks as wchecks
     keys = [k for k in ranges if ranges[k][1] > ranges[k][0]]
@@ -116,6 +147,8 @@ def _islands(V, T, ranges, touch):
             av, at = surf(a)
             bv, bt = surf(b)
             if wchecks.surface_distance(av, at, bv, bt) <= touch:
+                parent[find(a)] = find(b)
+            elif _surfaces_cross(av, at, bv, bt):
                 parent[find(a)] = find(b)
 
     groups = {}
@@ -436,6 +469,59 @@ def lint(model, bones, mesh):
                 "rotation, so the clip plays as a still frame"
                 % anim["name"])
 
+    # 5g. gaits: which way does each channel actually move the contact part,
+    # and is the foot lifting enough for slide() to mean anything?
+    for anim in getattr(model, "anims", ()):
+        chans = anim.get("channels") or []
+        if not chans:
+            continue
+        border = list(bones.values())
+        ground_key = min(mesh.part_ranges,
+                         key=lambda k: V[slice(*mesh.part_ranges[k])][:, 1].min()
+                         if mesh.part_ranges[k][1] > mesh.part_ranges[k][0]
+                         else 1e9)
+        g0, g1 = mesh.part_ranges[ground_key]
+        rest_low = float(V[g0:g1, 1].min())
+
+        lows = []
+        for i in range(8):
+            ph = i / 8.0 if anim.get("loop") else i / 7.0
+            rots = wanim.anim_rotations_at(model, bones, anim, ph)
+            P = wanim.skin_verts(mesh, bones, border, rots)
+            lows.append(float(P[g0:g1, 1].min()))
+        lift = max(lows) - min(lows)
+        if lift < 0.02:
+            warnings.append(
+                "anim %r never lifts %r more than %.3f, and the planted test "
+                "has a floor at 0.020 — so every frame counts as planted and "
+                "slide() charges the whole cycle as drag. The number is "
+                "misleading until the lift clears that floor; raise the "
+                "flexion rather than trusting it"
+                % (anim["name"], ground_key, lift))
+
+        # Which way does each channel drive the contact part? Rotations run
+        # through every joint below them, so the sign that reads as "lift the
+        # knee" on one rig drives the toe through the floor on another, and
+        # the only reliable answer is the propagated one.
+        moved = []
+        for ch in chans:
+            peak = max((abs(v) for _, v in ch["keys"]), default=0.0)
+            if peak < 1e-9:
+                continue
+            probe = dict(anim, channels=[dict(ch, keys=[(0.0, 10.0), (1.0, 10.0)])])
+            rots = wanim.anim_rotations_at(model, bones, probe, 0.5)
+            P = wanim.skin_verts(mesh, bones, border, rots)
+            dy = float(P[g0:g1, 1].min()) - rest_low
+            if abs(dy) > 1e-4:
+                moved.append((abs(dy), ch["bone"], ch["chan"], dy))
+        if moved:
+            moved.sort(reverse=True)
+            shown = ", ".join("%s %s+ -> %s %.3f" % (b, c, "UP" if d > 0 else "DOWN", abs(d))
+                              for _, b, c, d in moved[:5])
+            infos.append("anim %r, +10\u00b0 on each channel moves %r: %s%s"
+                         % (anim["name"], ground_key, shown,
+                            ", ..." if len(moved) > 5 else ""))
+
     # 6a2. geometry that touches nothing else
     islands = _islands(V, T, mesh.part_ranges, touch=0.01 * max(height, 1e-6))
     if len(islands) > 1:
@@ -472,7 +558,11 @@ def lint(model, bones, mesh):
                 "%s %s attached to nothing — %s separated from every other "
                 "part of the model, so %s float%s free. Anything meant to sit "
                 "on the body has to reach it: grow it, move it, or place it "
-                "with on=<host part>"
+                "with on=<host part>. Contact is sampled vertex-against-face, "
+                "so two low-poly tubes that cross with no ring near the "
+                "crossing can read as separated when they genuinely "
+                "intersect — if this part visibly passes through another, add "
+                "a ring near where they meet rather than widening it"
                 % ("part" if len(group) == 1 else "parts", names,
                    "it is" if len(group) == 1 else "they are",
                    "it" if len(group) == 1 else "they",

@@ -772,6 +772,19 @@ def build_functions(env):
             return 0.0
         return max(_dist_to_surface(p, A, B, C) for p in outside)
 
+    def concavity(part):
+        """How far a part's cross-section bites into itself, 0..1.
+
+        The one property a `profile` adds that no superellipse has. Profiles
+        are normalised to span `w` and `d`, so every bounding-box measure is
+        identical by construction and nothing else can tell a crescent from a
+        circle — which left the feature most able to change a silhouette as
+        the one an author could not stop from regressing.
+        """
+        from .mesh import section_concavity
+        unit = (getattr(env.mesh, "sections", {}) or {}).get(_name_of(part))
+        return 0.0 if unit is None else section_concavity(unit)
+
     def asymmetry(ref=None):
         """Worst distance from a part to its own mirror image across X=0.
 
@@ -957,6 +970,7 @@ def build_functions(env):
         "verts": vert_count,
         # clearance and symmetry
         "gap": gap,
+        "concavity": concavity,
         "clip": clip,
         "covers": covers,
         "leak": leak,

@@ -38,6 +38,7 @@ class MeshOut:
         # part key -> degrees the `on=` press turned it off its authored aim
         self.pressed = {}
         self.rests = {}
+        self.sections = {}   # part -> most concave unit outline it used
         self.shade_group = []
 
     def material(self, name, rgb):
@@ -98,7 +99,12 @@ def _record_press(out, part, suffix, reflect, before, after):
     cos = float(np.clip((a @ b) / max(np.linalg.norm(a) * np.linalg.norm(b), 1e-12),
                         -1.0, 1.0))
     key = part["name"] + (".r" if reflect else suffix)
-    out.pressed[key] = math.degrees(math.acos(cos))
+    # Only worth reporting if the author actually stated an aim. A part with
+    # no `dir=` has nothing to be turned away *from*, so the surface deciding
+    # is the whole point — reporting it there fires on every eye ever placed
+    # and reads as a fault.
+    if part.get("dir"):
+        out.pressed[key] = math.degrees(math.acos(cos))
     return b
 
 
@@ -415,6 +421,45 @@ def profile_unit(pts, mirror, n_sides, span=None):
         a, b = loop[j], loop[j + 1]
         out.append((a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])))
     return out
+
+
+def section_concavity(unit):
+    """How far a unit outline departs from its own convex hull, 0..1.
+
+    A profile is normalised to span `w` and `d`, which is what lets it share
+    every ring key — and it also means the bounding box is identical whatever
+    the outline is, so no existing measure can tell a crescent from a circle.
+    The one thing a profile adds that a superellipse cannot express is
+    *concavity*, so that is what there has to be a number for: 0 for anything
+    convex, rising as the outline bites into itself.
+    """
+    pts = [(float(x), float(y)) for x, y in unit]
+    if len(pts) < 3:
+        return 0.0
+
+    def area(poly):
+        return abs(sum(poly[i][0] * poly[(i + 1) % len(poly)][1]
+                       - poly[(i + 1) % len(poly)][0] * poly[i][1]
+                       for i in range(len(poly)))) / 2.0
+
+    def hull(ps):
+        ps = sorted(set(ps))
+        if len(ps) < 3:
+            return ps
+
+        def half(seq):
+            out = []
+            for q in seq:
+                while len(out) >= 2 and \
+                        (out[-1][0] - out[-2][0]) * (q[1] - out[-2][1]) - \
+                        (out[-1][1] - out[-2][1]) * (q[0] - out[-2][0]) <= 0:
+                    out.pop()
+                out.append(q)
+            return out
+        return half(ps)[:-1] + half(ps[::-1])[:-1]
+
+    h = area(hull(pts))
+    return 0.0 if h < 1e-12 else max(0.0, 1.0 - area(pts) / h)
 
 
 def _respan_unit(unit, span, n_sides):
@@ -949,6 +994,9 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         sect = dict(w=w, d=d, exp=exp, roll=0.0, t=t, span=span)
         if unit is not None:
             sect["unit"] = unit
+            key = part["name"] + (".r" if reflect else suffix)
+            out.sections[key] = max(
+                [out.sections.get(key, unit), unit], key=section_concavity)
         sect["shape_name"] = r.get("shape") or part.get("shape")
         for key in ("wtop", "wbot", "dtop", "dbot"):
             if key in r:
@@ -1013,12 +1061,16 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         rmax = max(_section_extent(params[i]), _section_extent(params[i + 1])) / 2.0
         if rmax > reach:
             out.warnings.append(
-                "loft %r folds between rings %.2f and %.2f (path bends %.0f\u00b0 "
-                "while the ring radius %.3f exceeds the bend reach %.3f) — the "
-                "surface doubles back and looks like missing faces; split the "
-                "loft at the joint or shrink the rings"
+                "loft %r folds between rings %.2f and %.2f: the path bends "
+                "%.0f\u00b0 and those rings are only %.3f apart, which gives a "
+                "bend reach of %.3f against a ring radius of %.3f. **The "
+                "spacing is usually the problem, not the width** — a ring "
+                "sitting close to another (often one auto-inserted at a joint) "
+                "folds at any radius, and moving it toward the middle of the "
+                "bone fixes it while letting the section get wider, not "
+                "narrower."
                 % (part["name"], rings[i]["t"], rings[i + 1]["t"],
-                   math.degrees(theta), rmax, reach))
+                   math.degrees(theta), L, reach, rmax))
 
     _check_frame_ref(out, part, tangents, ref)
 
@@ -1540,6 +1592,74 @@ def _fix_winding(out, t0, t1):
                 out.tris[ti] = (i, k, j)
 
 
+def _thicken(out, key, thickness):
+    """Give an open surface a wall, so its cut edges read as plate.
+
+    An `arc=` or `opening` leaves a zero-thickness surface: correct as a
+    surface, and it reads as paper the moment you can see the cut. The shell
+    is duplicated inward along its own normals and every boundary edge is
+    bridged, which turns the cut into a rim.
+
+    Boundaries are found after welding by **position**, not by vertex index.
+    A lofted tube is unwrapped along a UV seam that duplicates a whole column,
+    and those duplicates look exactly like an open edge to an index-based
+    test — bridging them would build a wall straight through the middle of an
+    otherwise closed surface.
+    """
+    from .render import weld_groups
+    v0, v1 = out.part_ranges[key]
+    idx = [i for i, t in enumerate(out.tris)
+           if all(v0 <= c < v1 for c in t)]
+    if not idx:
+        return 0
+    P = np.array([out.verts[i] for i in range(v0, v1)], dtype=float)
+    T = np.array([[c - v0 for c in out.tris[i]] for i in idx], dtype=int)
+
+    inv = weld_groups(P)
+    a, b, c = P[T[:, 0]], P[T[:, 1]], P[T[:, 2]]
+    fn = np.cross(b - a, c - a)
+    acc = np.zeros((int(inv.max()) + 1, 3))
+    for k in range(3):
+        np.add.at(acc, inv[T[:, k]], fn)
+    n = acc / np.maximum(np.linalg.norm(acc, axis=1, keepdims=True), 1e-12)
+    N = n[inv]
+
+    edge = {}
+    for t in T:
+        for k in range(3):
+            u, w = inv[t[k]], inv[t[(k + 1) % 3]]
+            edge[(min(u, w), max(u, w))] = edge.get((min(u, w), max(u, w)), 0) + 1
+    border = {e for e, cnt in edge.items() if cnt == 1}
+    if not border:
+        return 0
+
+    inner = {}
+    for i in range(len(P)):
+        gi = v0 + i
+        inner[gi] = out.add_vert(P[i] - N[i] * thickness,
+                                 list(out.skin[gi]), uv=tuple(out.uvs[gi]))
+    for i in idx:
+        x, y, z = out.tris[i]
+        out.add_tri(inner[z], inner[y], inner[x], out.tri_mat[i])
+
+    made = 0
+    for i in idx:
+        t = out.tris[i]
+        for k in range(3):
+            g0, g1 = t[k], t[(k + 1) % 3]
+            u, w = inv[g0 - v0], inv[g1 - v0]
+            if (min(u, w), max(u, w)) not in border:
+                continue
+            # wound to oppose both neighbours: g1->g0 matches the outer
+            # face's g0->g1, and inner[g0]->inner[g1] matches the inner
+            # face's reversed inner[g1]->inner[g0]
+            out.add_tri(g1, g0, inner[g0], out.tri_mat[i])
+            out.add_tri(g1, inner[g0], inner[g1], out.tri_mat[i])
+            made += 1
+    out.part_ranges[key] = (v0, len(out.verts))
+    return made
+
+
 def _facet(out, key):
     """Give a part its own hard-edged shading by splitting its vertices.
 
@@ -1718,6 +1838,14 @@ def build(model, bones):
             fn(out, model, bones, part, suffix=suffix, reflect=reflect)
             if part["kind"] == "attach":
                 _fix_winding(out, t0, len(out.tris))
+            if part.get("kind") == "loft" and part.get("thickness"):
+                key = part["name"] + (".r" if reflect else suffix)
+                if not _thicken(out, key, float(part["thickness"])):
+                    out.warnings.append(
+                        "part %r has thickness= but no open edge to wall in — "
+                        "a closed surface has no cut to show, so it only "
+                        "doubled the triangles. Give it an arc= or an "
+                        "opening=, or drop the thickness" % key)
             if part.get("faceted", getattr(model, "shading", "smooth") == "faceted"):
                 _facet(out, part["name"] + (".r" if reflect else suffix))
             if part.get("rest"):

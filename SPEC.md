@@ -256,11 +256,33 @@ Two things worth knowing about how the outline becomes a ring:
 A `shape=` naming neither a built-in nor a declared profile is an error, not a
 silent fallback to `round`.
 
-`shape=` applies to `loft` and `sweep`. It is accepted but does nothing on
-`web` and `attach`, which have no ring of their own — and **that is not
-currently reported**, because every part kind shares one key vocabulary. The
-same gap lets `ring` sit on a sweep and `seg` on a loft without a word. If a
-cross-section key seems to do nothing, that is the first thing to suspect.
+**`concavity(part)` is how you keep one.** A profile is normalised to span `w`
+and `d`, so its bounding box is identical to a circle's by construction and
+no size measure can tell the two apart — which would leave the feature most
+able to change a silhouette as the one nothing stops from regressing.
+`concavity` reports how far the section bites into itself: 0 for `round`,
+`squarish`, `box` and any convex profile, 0.22 for the crescent above.
+
+```
+assert concavity(blade) > 0.15        # it is still a crescent, not an oval
+```
+
+`shape=` applies to `loft` and `sweep`. Each generator has its own key
+vocabulary, so a key belonging to a different one is reported rather than
+dropped:
+
+```
+WARN: line 9: loft does not understand 'thickness' — that is a web key,
+      not a loft one — it was ignored, so whatever you meant by it did
+      not happen
+WARN: line 15: web does not understand 'shape' — that is a loft/sweep key,
+      not a web one — ...
+```
+
+This is the more misleading half of the silently-dropped-key problem: the
+word is spelled correctly, so a did-you-mean suggestion has nothing to offer
+and there is no reason to doubt it. It is how `shape=` came to be accepted
+and ignored on sweeps for as long as it was.
 
 ## `skeleton`
 

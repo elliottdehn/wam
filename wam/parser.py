@@ -93,11 +93,25 @@ KNOWN_KEYS = {
              "bend",
              "side", "fwd", "up", "offset", "head", "tail"},
     "pin": {"at", "head", "tail"},
-    "part": {"material", "bones", "bone", "dir", "shape", "kind", "on", "press",
-             "frame", "refaxis", "skin", "material_arc", "anchor", "trailing",
-             "at", "len", "pitch", "yaw", "tilt", "size", "w", "d", "h",
-             "sides", "taper", "inset", "scallop", "thickness", "steps",
-             "usteps", "offset", "rest", "layer", "push", "arc"},
+    # Every generator used to share one key set, which meant a key valid on
+    # some other primitive was accepted and silently dropped — `shape=` on a
+    # web, `ring` on a sweep, `thickness=` on a loft. Those are not typos, so
+    # the did-you-mean warning never fired, and the only way to discover them
+    # was to compile and notice nothing had changed.
+    "part:loft": {"material", "bones", "bone", "dir", "shape", "on", "press",
+                  "frame", "refaxis", "skin", "material_arc", "at", "len",
+                  "pitch", "yaw", "tilt", "sides", "inset", "offset",
+                  "rest", "layer", "push", "arc", "thickness"},
+    "part:sweep": {"material", "bone", "bones", "dir", "shape", "on", "press",
+                   "frame", "refaxis", "skin", "material_arc", "at", "len",
+                   "pitch", "yaw", "tilt", "sides", "inset", "offset",
+                   "rest", "layer", "push"},
+    "part:web": {"material", "anchor", "trailing", "scallop", "steps",
+                 "usteps", "thickness", "skin", "material_arc", "offset",
+                 "rest", "layer", "push"},
+    "part:attach": {"material", "bone", "kind", "at", "size", "w", "d", "h",
+                    "taper", "dir", "pitch", "yaw", "tilt", "on", "press",
+                    "inset", "skin", "offset", "rest", "layer", "push"},
     "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot", "arc",
              "dtop", "dbot", "shape", "material", "material_arc", "follow",
              "skin"},
@@ -114,15 +128,27 @@ KNOWN_KEYS = {
 
 
 def _check_keys(model, kind, kv, line_no, line):
-    unknown = sorted(set(kv) - KNOWN_KEYS[kind])
+    allowed = KNOWN_KEYS[kind]
+    unknown = sorted(set(kv) - allowed)
     for k in unknown:
-        near = sorted(KNOWN_KEYS[kind], key=lambda c: _similar(k, c))[:1]
+        # A key that is valid on a *different* generator is the more
+        # misleading case: it is spelled correctly, so "did you mean" has
+        # nothing to offer, and the author has no reason to doubt it.
+        elsewhere = sorted(other.split(":", 1)[1]
+                           for other, keys in KNOWN_KEYS.items()
+                           if other.startswith("part:") and other != kind
+                           and k in keys)
+        if elsewhere:
+            hint = " — that is a %s key, not a %s one" % (
+                "/".join(elsewhere), kind.split(":", 1)[-1])
+        else:
+            near = sorted(allowed, key=lambda c: _similar(k, c))[:1]
+            hint = (", did you mean %r?" % near[0]) if near and \
+                _similar(k, near[0]) < max(3, len(k) // 2) else ""
         model.warnings.append(
             "line %d: %s does not understand %r%s — it was ignored, so "
             "whatever you meant by it did not happen"
-            % (line_no, kind, k,
-               (", did you mean %r?" % near[0]) if near and
-               _similar(k, near[0]) < max(3, len(k) // 2) else ""))
+            % (line_no, kind.split(":", 1)[-1], k, hint))
 
 
 def _similar(a, b):
@@ -321,7 +347,28 @@ def parse(text, path=None):
     cur_pose = None
     cur_anim = None
 
-    for line_no, raw in enumerate(text.splitlines(), 1):
+    # A trailing backslash joins the next line on. Part declarations get long
+    # once they carry a material, a frame, a rest= and an arc=, and SPEC has
+    # been showing them wrapped since before the parser could read them back —
+    # so every wrapped snippet in the docs failed to compile when copied.
+    joined, pending, pending_no = [], None, None
+    for raw_no, raw_line in enumerate(text.splitlines(), 1):
+        stripped = raw_line.rstrip()
+        if pending is not None:
+            stripped = pending + " " + stripped.lstrip()
+            pending = None
+        if stripped.endswith("\\"):
+            pending = stripped[:-1].rstrip()
+            if pending_no is None:
+                pending_no = raw_no
+            continue
+        joined.append((pending_no if pending_no is not None else raw_no,
+                       stripped))
+        pending_no = None
+    if pending is not None:                      # trailing backslash at EOF
+        joined.append((pending_no or len(text.splitlines()), pending))
+
+    for line_no, raw in joined:
         line = re.split(r"#(?![0-9a-fA-F]{6}\b)", raw, 1)[0].rstrip()
         if not line.strip():
             continue
@@ -608,7 +655,7 @@ def parse(text, path=None):
                 if len(tokens) < 2:
                     raise WamError("%s needs a name" % kw, line_no, line)
                 _, kv, flags = _split_kv(tokens[2:], line_no, line)
-                _check_keys(model, "part", kv, line_no, line)
+                _check_keys(model, "part:" + kw, kv, line_no, line)
                 p = dict(kind=kw, name=tokens[1], mirror=mirror, rings=[], segs=[],
                          ribs=[], cap_start="flat", cap_end="flat",
                          line_no=line_no)
