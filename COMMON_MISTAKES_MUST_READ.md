@@ -11,11 +11,74 @@ several of these are ambient lints today precisely because they cost hours.
 
 ---
 
-## 1. Judging by eye what a measurement would settle
+## 1. Adding detail before the silhouette is blocked out
 
-This is the mistake that produces all the others, and it is the one you will
-make. Every entry below was found by measuring something that had already
-been looked at and declared fine.
+**Symptom.** The model accumulates belts, cuffs, studs, trim and spikes, and
+still reads as a generic member of its archetype. Each addition feels like
+progress. None of it helps, and the reason is that the problem was never
+missing detail.
+
+**A WAM character reads through silhouette and colour blocking and almost
+nothing else.** At the size a player first sees it, small parts do not exist.
+Detail cannot rescue a shape that does not read, because detail is not in the
+channel the shape is read through.
+
+Measured on this repo's own hero. Its belt, cuffs, hair and eyes are **180
+triangles — 18% of the whole model** — and removing them changes the 24px
+silhouette by:
+
+| view | change |
+|---|---|
+| front | 11.5% |
+| three-quarter | 6.5% |
+| side | 4.5% |
+
+Under 12% of the outline for nearly a fifth of the budget. And the number that
+matters is the one that does not appear in that table: **with all of it
+present, the hero still reads at 24px as an anonymous humanoid**,
+indistinguishable from any other biped. The scorpion in the same repo is
+identifiable instantly from its raised tail and claws — and that comes
+entirely from its masses, not from anything added on top.
+
+The wing is the same failure in its purest form. Three separate rounds tuned
+digit lengths, sweep angles, spar colour and spar thickness — decoration —
+while the topology stayed a fan and the silhouette stayed a **Y**. The fix
+was structural: the span went from 1.46 body-lengths to 3.60. No amount of
+the first kind of work substitutes for the second.
+
+**Correct form.** Block the masses, look, fix the shape, and only then add
+anything:
+
+1. Skeleton, then the masses with a few rings per part. No detail at all.
+2. `python3 scripts/silhouette.py my.wam` and read the **smallest** thumbnail
+   row. Shading flatters a shape that does not read; this is the only view
+   that removes it.
+3. Say in one sentence what it reads as. If the sentence is "a humanoid" or
+   "a quadruped", the shape is the deliverable and nothing else matters yet.
+   Change proportions, mass distribution and outline until the sentence names
+   *this* creature.
+4. Colour blocking — palette and `material_arc`. Nearly free, and it does
+   more work at this scale than any small part.
+5. Only now, detail, and only where it changes the outline.
+
+The test before any part earns geometry: *would this change the shape at 32
+pixels?* If not, it belongs in the palette or the texture, or nowhere.
+
+**No detector for this one.** The compiler cannot tell a generic silhouette
+from a distinctive one — `silhouette()` in a `.wamset` compares two models
+against *each other*, which catches a roster whose units are
+indistinguishable, but says nothing about a single model. Reading the
+thumbnail row yourself is the whole check.
+
+---
+
+## 2. Judging by eye what a measurement would settle
+
+Entry 1 is the mistake you make first; this is the one you make everywhere
+else. Every entry below was found by measuring something that had already
+been looked at and declared fine — including entry 1's own numbers, which
+only became convincing once the silhouette was rasterised and differenced
+rather than squinted at.
 
 **The render is for noticing. It is not for concluding.** Eyes are good at
 generating hypotheses — "that looks short", "that seems detached" — and bad
@@ -57,7 +120,7 @@ Two corollaries that cost real time here:
 
 ---
 
-## 2. Held props are placed by guessing a transform
+## 3. Held props are placed by guessing a transform
 
 **Symptom.** The sword floats beside the fist instead of in it; the blade
 reverses into the chest; the blade presents its flat like a paddle instead of
@@ -142,7 +205,7 @@ paddle, and it is in the compile output before you render anything.
 
 ---
 
-## 3. Wings come out as webbed hands
+## 4. Wings come out as webbed hands
 
 **Symptom.** Weak 3–4 fingered wings. Spiky, small, splayed. Not big and swept.
 
@@ -227,7 +290,7 @@ WARN: web 'wing.l': the outline does not close — the first rib begins 0.34
 
 ---
 
-## 4. Capes and skirts pass straight through the body
+## 5. Capes and skirts pass straight through the body
 
 **Symptom.** Cloth intersects the torso or the legs. Renders hide it: the
 cloth is behind the body from the front and in front of it from the back.
@@ -357,7 +420,7 @@ Same measure for an open skirt, a closed cuirass, a cape and a pauldron.
 
 ---
 
-## 5. Armour authored as one lump, or welded into the body
+## 6. Armour authored as one lump, or welded into the body
 
 **Symptom.** A character file where 35% of the parts are an equipment layer —
 helmet, visor, chestplate, pauldrons, greaves, boots — fused into the body.
@@ -414,7 +477,7 @@ dragon's scales. If it cannot come off, it is the body.
 
 ---
 
-## 6. Chain animations fold the limb through itself
+## 7. Chain animations fold the limb through itself
 
 **Symptom.** A tail, tentacle or neck curls into a closed loop mid-animation
 and passes through the body.
@@ -443,7 +506,7 @@ WARN: anim 'strike' turns bone 'bulb' 163° away from rest (its own channels
 
 ---
 
-## 7. Typos are silently discarded
+## 8. Typos are silently discarded
 
 `materal_arc=` and `dpth=` used to be dropped without a word: the model
 compiled, looked plausible, and ignored what you asked. Every directive now
@@ -459,7 +522,7 @@ If a setting seems to do nothing, check the warnings before changing the value.
 
 ---
 
-## 8. Idle animations that read as a still frame
+## 9. Idle animations that read as a still frame
 
 **Symptom.** The idle strip looks like six copies of the rest pose. The
 character is technically animated and visibly dead.
