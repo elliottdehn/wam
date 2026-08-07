@@ -459,6 +459,64 @@ If a setting seems to do nothing, check the warnings before changing the value.
 
 ---
 
+## 8. Idle animations that read as a still frame
+
+**Symptom.** The idle strip looks like six copies of the rest pose. The
+character is technically animated and visibly dead.
+
+**Cause, and it is amplitude — not subtlety, not easing, not phase.** The
+instinct is that an idle is a *small* motion, so it gets authored at 2–4° and
+disappears. This is very hard to self-diagnose, because the numbers feel
+generous while you are typing them.
+
+How badly: three idles were built on the same body, deliberately, to compare a
+naive one against a better one. **The "better" one was indistinguishable from
+the naive one.** It was written specifically to be an improvement — eleven
+channels instead of three, hips and head and both arms, staggered keys — and
+side by side in a strip nobody could tell them apart.
+
+| idle | peak angles | displacement / height | reads as motion? |
+|---|---|---|---|
+| naive — spine/chest/neck | 2.5–3.5° | 0.0355 | no |
+| "improved" — 11 channels | 2.5–6° | 0.0402 | **no** |
+| readable | 9–16° | **0.1138** | yes |
+
+The step that mattered was roughly **3x the amplitude**, taking peaks into the
+9–16° range. Everything below that is noise around the rest pose.
+
+**Secondary cause: every channel peaking at the same instant.** The body
+swells and returns as one piece — the mechanical read. Stagger the peaks of
+hips, chest, head and arms against each other.
+
+But get the order right, because this is the trap: at low amplitude, phase is
+*undetectable*. The same clip with its phases collapsed measured **more**
+displacement than the staggered version (0.0437 against 0.0402) and looked
+identical. Phase only starts paying once the motion is already big enough to
+see. Raising it instead of raising amplitude is polishing something invisible.
+
+**A structural limit worth knowing before you try to fix this with a bob.**
+There is no root translation channel — `shift` exists on *poses* only, not on
+`ch` lines. The skeleton is rooted at the pelvis and the legs hang from it, so
+flexing the knees swings the **feet** rather than lowering the body. Measured
+on the readable idle above, vertical travel of the silhouette was **0.0009** of
+model height, i.e. nothing, despite 14° of knee flex. Every bit of life in an
+idle has to come out of rotation, which is precisely why the rotations have to
+be larger than they feel.
+
+**The compiler does not catch this.** It warns only when an animation resolves
+to *no* rotation at all (under 1° total):
+
+```
+WARN: anim 'idle' moves nothing — every channel resolves to no rotation,
+      so the clip plays as a still frame
+```
+
+Every idle in the table above compiles with zero warnings, including the two
+that read as dead. An ambient lint on phase alignment was attempted and
+reverted — it referenced mesh state not available at that point in `lint.py`.
+Until that exists, render the strip and compare frame 1 against frame 4: if
+you cannot tell them apart at a glance, neither can a player.
+
 ## The meta-lesson
 
 Every failure above shares a shape: **the compiler produced a valid result
