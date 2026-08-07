@@ -167,7 +167,10 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
         mname, rgb = mesh.materials[mi]
         textured = vert_colors is not None or tex_png is not None
         base = [1.0, 1.0, 1.0, 1.0] if textured else [rgb[0], rgb[1], rgb[2], 1.0]
-        pbr = dict(baseColorFactor=base, metallicFactor=0.0, roughnessFactor=0.9)
+        props = (getattr(model, "material_pbr", {}) or {}).get(mname, {})
+        pbr = dict(baseColorFactor=base,
+                   metallicFactor=float(props.get("metal", 0.0)),
+                   roughnessFactor=float(props.get("rough", 0.9)))
         if tex_png is not None:
             pbr["baseColorTexture"] = dict(index=0)
         material = dict(name=mname, pbrMetallicRoughness=pbr)

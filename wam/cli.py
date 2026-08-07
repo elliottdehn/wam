@@ -68,6 +68,9 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
     V, T, M = mesh.arrays()
     mat_colors = [rgb for _, rgb in mesh.materials]
+    props = getattr(model, "material_pbr", {}) or {}
+    mat_pbr = [((props[n]["metal"], props[n]["rough"]) if n in props else None)
+               for n, _ in mesh.materials]
     atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
     vcols = None
     if atlas is not None:
@@ -84,7 +87,8 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                                   width=width, height=height,
                                   center=center, dist=dist,
                                   vert_colors=vcols, uv=atlas_uv, tex=atlas,
-                                  shade_group=mesh.shade_group)
+                                  shade_group=mesh.shade_group,
+                                  mat_pbr=mat_pbr)
         imgs.append(img)
     if imgs:
         sheet = wrender.hstack_views(imgs)

@@ -160,12 +160,15 @@ const IDENT=[0,0,0,1];
 // ---- GL programs (model-independent) ----
 const VS = `
 attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol; attribute vec2 aUV;
+attribute vec2 aPBR;
 uniform mat4 uMVP; uniform mat3 uRot;
 varying vec3 vN; varying vec3 vC; varying vec2 vUV; varying float vW; varying vec3 vPos;
+varying vec2 vPBR;
 void main(){
   gl_Position = uMVP * vec4(aPos, 1.0);
   vN = aNrm;              // world-space; sun is fixed in the world
   vC = aCol;
+  vPBR = aPBR;
   vUV = aUV;
   vW = gl_Position.w;
   vPos = aPos;
@@ -173,6 +176,7 @@ void main(){
 const FS = `
 precision mediump float;
 varying vec3 vN; varying vec3 vC; varying vec2 vUV; varying float vW; varying vec3 vPos;
+varying vec2 vPBR;
 uniform sampler2D uTex;
 uniform sampler2D uDetail;
 uniform float uUseTex;
@@ -195,7 +199,24 @@ void main(){
     float d2 = texture2D(uDetail, vUV * uDetailScale * 0.27 + 0.37).r;
     base *= (0.82 + 0.36 * (0.55*d1 + 0.45*d2));
   }
+  // metal/rough, matching wam/render.py so the sheet and the viewer agree.
+  // vPBR.x < 0 marks "not declared" and leaves the flat look untouched.
   vec3 lit = base * min(sh, 1.15);
+  if(vPBR.x >= 0.0){
+    float metal = vPBR.x, rough = vPBR.y;
+    vec3 V = normalize(uEye - vPos);
+    // a metal has no diffuse; with one sharp light and nothing to reflect it
+    // renders black, so give it a hemisphere to pick up instead
+    vec3 R = reflect(-V, n);
+    float env = 0.45 + 0.55 * clamp(R.y * 0.5 + 0.5, 0.0, 1.0);
+    float shade = mix(min(sh, 1.15), env, metal);
+    vec3 H = normalize(L1 + V);
+    float power = 2.0 + 512.0 * pow(1.0 - rough, 3.0);
+    float gain = pow(1.0 - rough, 2.0) * (0.35 + 0.65 * metal);
+    float spec = pow(max(dot(n, H), 0.0), power) * gain;
+    vec3 tint = metal > 0.5 ? base : vec3(1.0);
+    lit = base * shade + tint * spec;
+  }
   float f = clamp((vW - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-5), 0.0, 1.0) * uFogColor.a;
   gl_FragColor = vec4(mix(lit, uFogColor.rgb, f), 1.0);
 }`;
@@ -221,7 +242,8 @@ function makeProg(vs, fs){
 }
 const prog=makeProg(VS,FS), lprog=makeProg(LVS,LFS);
 const aPos=gl.getAttribLocation(prog,'aPos'), aNrm=gl.getAttribLocation(prog,'aNrm'),
-      aCol=gl.getAttribLocation(prog,'aCol'), aUV=gl.getAttribLocation(prog,'aUV');
+      aCol=gl.getAttribLocation(prog,'aCol'), aUV=gl.getAttribLocation(prog,'aUV'),
+      aPBR=gl.getAttribLocation(prog,'aPBR');
 const uMVP=gl.getUniformLocation(prog,'uMVP'), uRot=gl.getUniformLocation(prog,'uRot');
 const uTex=gl.getUniformLocation(prog,'uTex'), uUseTex=gl.getUniformLocation(prog,'uUseTex');
 const uFogColor=gl.getUniformLocation(prog,'uFogColor'), uFogRange=gl.getUniformLocation(prog,'uFogRange');
@@ -232,7 +254,8 @@ const glDetail=gl.createTexture();
 const laPos=gl.getAttribLocation(lprog,'aPos');
 const luMVP=gl.getUniformLocation(lprog,'uMVP'), luColor=gl.getUniformLocation(lprog,'uColor');
 const bPos=gl.createBuffer(), bNrm=gl.createBuffer(), bCol=gl.createBuffer(),
-      bUV=gl.createBuffer(), bEdge=gl.createBuffer(), bSkel=gl.createBuffer();
+      bUV=gl.createBuffer(), bEdge=gl.createBuffer(), bSkel=gl.createBuffer(),
+      bPBR=gl.createBuffer();
 const glTex=gl.createTexture();
 gl.enable(gl.DEPTH_TEST);
 gl.depthFunc(gl.LEQUAL);
@@ -257,7 +280,8 @@ function loadModel(DATA){
   const radius=Math.hypot(bbMax[0]-bbMin[0],bbMax[1]-bbMin[1],bbMax[2]-bbMin[2])/2;
 
   const fpos=new Float32Array(NT*9), fnrm=new Float32Array(NT*9),
-        fcol=new Float32Array(NT*9), fuv=new Float32Array(NT*6);
+        fcol=new Float32Array(NT*9), fuv=new Float32Array(NT*6),
+        fpbr=new Float32Array(NT*6);
   for(let t=0;t<NT;t++){
     for(let k=0;k<3;k++){
       const vi=DATA.tris[t*3+k];
@@ -265,6 +289,9 @@ function loadModel(DATA){
       if(DATA.vcols){ r=DATA.vcols[vi*3]; g=DATA.vcols[vi*3+1]; bl=DATA.vcols[vi*3+2]; }
       else { const rgb=DATA.mats[DATA.triMat[t]].rgb; r=rgb[0]; g=rgb[1]; bl=rgb[2]; }
       fcol[t*9+k*3]=r; fcol[t*9+k*3+1]=g; fcol[t*9+k*3+2]=bl;
+      const mt=DATA.mats[DATA.triMat[t]];
+      fpbr[t*6+k*2]   = (mt && mt.metal!==undefined) ? mt.metal : -1.0;
+      fpbr[t*6+k*2+1] = (mt && mt.rough!==undefined) ? mt.rough : 0.9;
       if(DATA.uv){ fuv[t*6+k*2]=DATA.uv[vi*2]; fuv[t*6+k*2+1]=DATA.uv[vi*2+1]; }
     }
   }
@@ -278,6 +305,7 @@ function loadModel(DATA){
     }
   }
   gl.bindBuffer(gl.ARRAY_BUFFER,bCol); gl.bufferData(gl.ARRAY_BUFFER,fcol,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPBR); gl.bufferData(gl.ARRAY_BUFFER,fpbr,gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,bUV); gl.bufferData(gl.ARRAY_BUFFER,fuv,gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,bPos); gl.bufferData(gl.ARRAY_BUFFER,fpos,gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,bNrm); gl.bufferData(gl.ARRAY_BUFFER,fnrm,gl.DYNAMIC_DRAW);
@@ -486,6 +514,8 @@ function draw(){
   gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bCol);
   gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPBR);
+  gl.enableVertexAttribArray(aPBR); gl.vertexAttribPointer(aPBR,2,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bUV);
   gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
   gl.activeTexture(gl.TEXTURE0);
@@ -512,6 +542,7 @@ function draw(){
   gl.drawArrays(gl.TRIANGLES,0,NT*3);
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.disableVertexAttribArray(aNrm); gl.disableVertexAttribArray(aCol);
+  gl.disableVertexAttribArray(aPBR);
   gl.disableVertexAttribArray(aUV);
 
   if(wireBox.checked){

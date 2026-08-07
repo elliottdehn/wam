@@ -13,6 +13,20 @@ from . import render as wrender
 import base64
 
 
+def _mat_entry(model, name, rgb):
+    """One material for the viewer, carrying its PBR factors when declared.
+
+    Omitted rather than defaulted, so the viewer can keep its existing flat
+    look for every model that never asked for metal or roughness.
+    """
+    entry = dict(name=name, rgb=[round(c, 3) for c in rgb])
+    props = (getattr(model, "material_pbr", {}) or {}).get(name)
+    if props:
+        entry["metal"] = round(float(props.get("metal", 0.0)), 3)
+        entry["rough"] = round(float(props.get("rough", 0.9)), 3)
+    return entry
+
+
 def export(path, out_json, samples=24):
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
@@ -52,7 +66,7 @@ def export(path, out_json, samples=24):
         verts=[round(float(x), 4) for x in V.reshape(-1)],
         tris=[int(x) for x in T.reshape(-1)],
         triMat=[int(x) for x in M],
-        mats=[dict(name=n, rgb=[round(c, 3) for c in rgb]) for n, rgb in mesh.materials],
+        mats=[_mat_entry(model, n, rgb) for n, rgb in mesh.materials],
         skin=skin,
         bones=[dict(n=b.name, p=(bindex[b.parent.name] if b.parent else -1),
                     h=[round(float(x), 4) for x in b.head]) for b in bone_order],

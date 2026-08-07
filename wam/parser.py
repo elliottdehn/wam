@@ -68,6 +68,7 @@ class Model:
         self.girth = 1.0           # multiplies every cross-section
         self.reach = 1.0           # multiplies every length along a path
         self.palette = {}          # name -> (r,g,b) floats 0..1
+        self.material_pbr = {}     # name -> dict(metal, rough)
         self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
         self.pins = []             # list of dicts: bone -> absolute head/tail
@@ -454,9 +455,28 @@ def parse(text, path=None):
                 raise WamError("unknown model directive %r" % kw, line_no, line)
 
         elif section == "palette":
-            if len(tokens) != 2:
-                raise WamError("palette entry: <name> #rrggbb", line_no, line)
+            if len(tokens) < 2:
+                raise WamError("palette entry: <name> #rrggbb [metal=0..1] "
+                               "[rough=0..1]", line_no, line)
             model.palette[kw] = _hex_color(tokens[1], line_no, line)
+            _, kv, _ = _split_kv(tokens[2:], line_no, line)
+            unknown = sorted(set(kv) - {"metal", "rough"})
+            if unknown:
+                raise WamError(
+                    "palette %r does not understand %s — a colour takes "
+                    "metal= and rough=, both 0..1"
+                    % (kw, ", ".join(repr(u) for u in unknown)), line_no, line)
+            if kv:
+                pbr = dict(metal=0.0, rough=0.9)
+                for k in ("metal", "rough"):
+                    if k in kv:
+                        v = _num(kv[k], line_no, line)
+                        if not 0.0 <= v <= 1.0:
+                            raise WamError(
+                                "palette %r: %s=%g is outside 0..1" % (kw, k, v),
+                                line_no, line)
+                        pbr[k] = v
+                model.material_pbr[kw] = pbr
 
         elif section == "textures":
             if kw == "texture":

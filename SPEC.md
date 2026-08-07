@@ -114,6 +114,37 @@ palette
   horn #cbbfa4
 ```
 
+A colour may also carry the two PBR factors:
+
+```
+palette
+  steel #aeb6bf metal=1.0 rough=0.25     # polished metal
+  gold  #c8a24a metal=1.0 rough=0.15
+  wool  #7a2f2c rough=0.95               # matte cloth, not metal
+  skin  #c08b63                          # omitted: metal=0, rough=0.9
+```
+
+Both are 0..1 and both are optional; anything else on the line is an error
+rather than a silently dropped key. They export as `metallicFactor` and
+`roughnessFactor`, so the glTF carries real PBR into Blender and engines.
+
+The preview renderer honours them too, because a setting you cannot see in
+the sheet is a trap — but **only for colours that declare them**, so a model
+that never asked keeps exactly the render it had. Two things are worth
+knowing about how it fakes them:
+
+- **Metal is carried by a cheap hemisphere, not by the highlight.** A metal
+  has no diffuse, so with one sharp light and nothing to reflect it renders
+  *black* — physically defensible and useless. Metals therefore reflect a
+  bright-above/dim-below environment, which is what makes them read.
+- **The highlight is computed per pixel.** Interpolating it across a
+  triangle's corners loses it entirely on low-poly geometry: at `rough=0.1`
+  the exponent is around 375, no vertex ever lands on the lobe, and
+  roughness silently does nothing across its whole range. Measured after the
+  fix, dropping roughness from 0.95 to 0.10 takes the highlight from 303
+  pixels at delta 14 to 53 pixels at delta 69 — smaller and brighter, as it
+  should be.
+
 ## `skeleton`
 
 Bones are turtle-graphics: parent + world-space direction + length. Only the

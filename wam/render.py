@@ -151,7 +151,8 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 ground_y=None, margin=1.12, vert_colors=None,
                 uv=None, tex=None, sky=None, fog=None,
                 eye=None, look=None, detail=None, detail_scale=180.0,
-                dist=None, center=None, fit="extents", shade_group=None):
+                dist=None, center=None, fit="extents", shade_group=None,
+                mat_pbr=None):
     """Render one view: orbit camera by default, or first-person when
     eye=(x,y,z) and look=(x,y,z) are given.
 
@@ -205,6 +206,31 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
     lam1 = np.clip(N @ L1, 0, None)
     lam2 = np.clip(N @ L2, 0, None)
     shade = 0.34 + 0.60 * lam1 + 0.16 * lam2
+
+    # Specular is computed only for materials that actually declare metal or
+    # rough. A setting the author cannot see in the sheet is a trap, but so is
+    # silently restyling every model that never asked for it — so the default
+    # path is left bit-for-bit as it was.
+    ndh = None
+    if mat_pbr is not None and any(mp is not None for mp in mat_pbr):
+        if eye is not None:
+            cam = np.asarray(eye, dtype=float)
+        else:
+            cam = np.asarray(center, dtype=float) + np.array([0.0, 0.0, dist]) @ R
+        view = cam[None, :] - V
+        view /= np.maximum(np.linalg.norm(view, axis=1, keepdims=True), 1e-9)
+        H = L1[None, :] + view
+        H /= np.maximum(np.linalg.norm(H, axis=1, keepdims=True), 1e-9)
+        ndh = np.clip(np.einsum("ij,ij->i", N, H), 0.0, None)
+        Hv = H
+        # A metal has no diffuse, so with one sharp light and nothing to
+        # reflect it renders black — which is physically defensible and
+        # useless. Real engines make metal read through the environment, so
+        # stand in a cheap hemisphere: bright above, dim below, sampled along
+        # the reflected view. This is what carries the metal look; the
+        # highlight only adds the glint on top.
+        refl = view - 2.0 * np.einsum("ij,ij->i", view, N)[:, None] * N
+        env = 0.45 + 0.55 * np.clip(-refl[:, 1] * 0.5 + 0.5, 0.0, 1.0)
 
     img = np.ones((height, width, 3))
     if sky is not None:
@@ -281,8 +307,34 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
             ca, cb, cc = vert_colors[ia], vert_colors[ib], vert_colors[ic]
             px = (w0[..., None] * ca + w1[..., None] * cb + w2[..., None] * cc) * shi[..., None]
         else:
-            color = np.asarray(mat_colors[tri_mat[ti]])
-            px = color[None, None, :] * shi[..., None]
+            mi = tri_mat[ti]
+            color = np.asarray(mat_colors[mi])
+            props = mat_pbr[mi] if (mat_pbr is not None and mi < len(mat_pbr)) else None
+            if props is None or ndh is None:
+                px = color[None, None, :] * shi[..., None]
+            else:
+                metal, rough = props
+                power = 2.0 + 512.0 * (1.0 - rough) ** 3
+                gain = (1.0 - rough) ** 2 * (0.35 + 0.65 * metal)
+                # N·H must be raised to the power *per pixel*. Interpolating
+                # the lobe across a triangle's corners instead loses it
+                # entirely on low-poly geometry: at rough=0.1 the exponent is
+                # ~375, no vertex ever sits on the highlight, and roughness
+                # silently does nothing across its whole range.
+                nn = (w0[..., None] * N[ia] + w1[..., None] * N[ib]
+                      + w2[..., None] * N[ic])
+                nn /= np.maximum(np.linalg.norm(nn, axis=-1, keepdims=True), 1e-9)
+                hh = (w0[..., None] * Hv[ia] + w1[..., None] * Hv[ib]
+                      + w2[..., None] * Hv[ic])
+                hh /= np.maximum(np.linalg.norm(hh, axis=-1, keepdims=True), 1e-9)
+                sp = np.clip((nn * hh).sum(axis=-1), 0.0, None) ** power
+                ev = w0 * env[ia] + w1 * env[ib] + w2 * env[ic]
+                # dielectric keeps its diffuse and takes a white glint;
+                # metal trades diffuse for a tinted reflection of the sky
+                lit = shi * (1.0 - metal) + ev * metal
+                tint = color if metal > 0.5 else np.ones(3)
+                px = (color[None, None, :] * lit[..., None]
+                      + tint[None, None, :] * (gain * sp)[..., None])
         if fog is not None:
             f = np.clip((zi - fog["start"]) / max(fog["end"] - fog["start"], 1e-6),
                         0, 1) * fog.get("max", 0.85)
