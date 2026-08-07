@@ -65,7 +65,7 @@ def quiet_fp(fn):
 
 
 @quiet_fp
-def weld_groups(V):
+def weld_groups(V, groups=None):
     """Map each vertex to a representative index shared by coincident ones.
 
     Texture charts and material bands both split vertices that sit at the
@@ -73,23 +73,31 @@ def weld_groups(V):
     only the faces on its own side of the seam. Normals are accumulated over
     the welded set so a seam changes the color of a surface, never its
     shading.
+
+    `groups` opts a part out of that. Smoothing is the right default, and it
+    is also what makes the faceted look unaskable-for: every attempt to give
+    a face its own normal is welded straight back into the average. Vertices
+    carrying different group ids never weld, so a part split per-triangle
+    keeps its hard edges.
     """
     if not len(V):
         return np.zeros(0, dtype=np.int64)
-    _, inv = np.unique(np.round(np.asarray(V, dtype=float), 6) + 0.0,
-                       axis=0, return_inverse=True)
+    key = np.round(np.asarray(V, dtype=float), 6) + 0.0
+    if groups is not None and len(groups) == len(V):
+        key = np.column_stack([key, np.asarray(groups, dtype=float)])
+    _, inv = np.unique(key, axis=0, return_inverse=True)
     return inv.reshape(-1)
 
 
 @quiet_fp
-def vertex_normals(V, T, weld=True):
+def vertex_normals(V, T, weld=True, groups=None):
     N = np.zeros_like(V)
     if len(T) == 0:
         return N
     a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
     fn = np.cross(b - a, c - a)  # area-weighted
     if weld:
-        inv = weld_groups(V)
+        inv = weld_groups(V, groups)
         acc = np.zeros((int(inv.max()) + 1, 3))
         for i in range(3):
             np.add.at(acc, inv[T[:, i]], fn)
@@ -143,7 +151,7 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 ground_y=None, margin=1.12, vert_colors=None,
                 uv=None, tex=None, sky=None, fog=None,
                 eye=None, look=None, detail=None, detail_scale=180.0,
-                dist=None, center=None, fit="extents"):
+                dist=None, center=None, fit="extents", shade_group=None):
     """Render one view: orbit camera by default, or first-person when
     eye=(x,y,z) and look=(x,y,z) are given.
 
@@ -155,7 +163,7 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
     renders whose `margin` was hand-tuned against it.
     """
     V = np.asarray(V, dtype=np.float64)
-    N = vertex_normals(V, T)
+    N = vertex_normals(V, T, groups=shade_group)
 
     if eye is not None:
         eye = np.asarray(eye, dtype=float)

@@ -38,6 +38,7 @@ class MeshOut:
         # part key -> degrees the `on=` press turned it off its authored aim
         self.pressed = {}
         self.rests = {}
+        self.shade_group = []
 
     def material(self, name, rgb):
         if name not in self._mat_index:
@@ -49,6 +50,7 @@ class MeshOut:
         self.verts.append(np.asarray(p, dtype=float))
         self.skin.append(skin)
         self.uvs.append((float(uv[0]), float(uv[1])))
+        self.shade_group.append(0)      # 0 = weld with anything coincident
         return len(self.verts) - 1
 
     def add_tri(self, i, j, k, mat):
@@ -1324,6 +1326,35 @@ def _fix_winding(out, t0, t1):
                 out.tris[ti] = (i, k, j)
 
 
+def _facet(out, key):
+    """Give a part its own hard-edged shading by splitting its vertices.
+
+    Normals are accumulated over *coincident* vertices so that a texture seam
+    or a material band changes a surface's colour without creasing it. That is
+    the right default and it is exactly what makes a faceted look impossible
+    to ask for: every attempt to hand a face its own normal gets welded back
+    into the smooth average. So each triangle is given private copies of its
+    corners, tagged with a shading group of its own, and the welding pass is
+    told to keep them apart.
+    """
+    v0, v1 = out.part_ranges[key]
+    tris = [(i, t) for i, t in enumerate(out.tris)
+            if v0 <= t[0] < v1 and v0 <= t[1] < v1 and v0 <= t[2] < v1]
+    if not tris:
+        return
+    for ti, (a, b, c) in tris:
+        group = len(out.verts) + 1          # unique per triangle
+        new = []
+        for vi in (a, b, c):
+            new.append(len(out.verts))
+            out.verts.append(np.array(out.verts[vi], dtype=float))
+            out.skin.append(list(out.skin[vi]))
+            out.uvs.append(tuple(out.uvs[vi]))
+            out.shade_group.append(group)
+        out.tris[ti] = (new[0], new[1], new[2])
+    out.part_ranges[key] = (v0, len(out.verts))
+
+
 def _lay_against(out, part, key, suffix, reflect):
     """Slide a finished part until it rests on another one.
 
@@ -1473,6 +1504,8 @@ def build(model, bones):
             fn(out, model, bones, part, suffix=suffix, reflect=reflect)
             if part["kind"] == "attach":
                 _fix_winding(out, t0, len(out.tris))
+            if part.get("faceted", getattr(model, "shading", "smooth") == "faceted"):
+                _facet(out, part["name"] + (".r" if reflect else suffix))
             if part.get("rest"):
                 _lay_against(out, part,
                              part["name"] + (".r" if reflect else suffix),

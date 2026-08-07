@@ -75,7 +75,7 @@ class BufferBuilder:
         return len(self.accessors) - 1
 
 
-def _vertex_normals(vertices, triangles):
+def _vertex_normals(vertices, triangles, groups=None):
     """Area-weighted vertex normals from the final, corrected triangle order."""
     from .render import weld_groups
     N = np.zeros_like(vertices, dtype=np.float64)
@@ -89,7 +89,7 @@ def _vertex_normals(vertices, triangles):
         good_tris = triangles[good]
         # accumulate across texture/material seams, which duplicate vertices
         # at identical positions (see render.weld_groups)
-        inv = weld_groups(vertices)
+        inv = weld_groups(vertices, groups)
         acc = np.zeros((int(inv.max()) + 1, 3)) if len(inv) else np.zeros((0, 3))
         for i in range(3):
             np.add.at(acc, inv[good_tris[:, i]], fn)
@@ -129,7 +129,7 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
     # Mesh generation performs all reflection and winding repair before export.
     # Recompute normals here from that final triangle order so Godot receives
     # normals consistent with backface culling.
-    N = _vertex_normals(V, T)
+    N = _vertex_normals(V, T, getattr(mesh, "shade_group", None))
 
     pos_acc = bb.add(V.astype(np.float32), 34962, 5126, "VEC3")
     nrm_acc = bb.add(N, 34962, 5126, "VEC3")

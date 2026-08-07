@@ -83,7 +83,8 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
         img = wrender.render_view(V, T, M, mat_colors, yaw_deg=yaw,
                                   width=width, height=height,
                                   center=center, dist=dist,
-                                  vert_colors=vcols, uv=atlas_uv, tex=atlas)
+                                  vert_colors=vcols, uv=atlas_uv, tex=atlas,
+                                  shade_group=mesh.shade_group)
         imgs.append(img)
     if imgs:
         sheet = wrender.hstack_views(imgs)

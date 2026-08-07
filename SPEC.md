@@ -514,6 +514,35 @@ sideways, a horn deliberately swept back — turn it off:
 sweep rib bone=spine at=0.6 offset=(0.03,0,0.15) dir=side on=thorax press=off
 ```
 
+### `faceted` — hard edges instead of smooth shading
+
+Normals are averaged across coincident vertices, so a texture seam or a
+material band changes a surface's colour without creasing it. That is the
+right default, and it is also what makes the faceted look impossible to ask
+for by other means: any attempt to hand a face its own normal is welded
+straight back into the average.
+
+```
+loft gem bone=socket dir=up len=0.30 material=crystal sides=10 faceted
+```
+
+```
+model idol
+  shading faceted            # every part, unless it says otherwise
+...
+  loft cloak bones=c1..c2 material=wool smooth
+```
+
+`faceted` splits the part's vertices per triangle and tags each with its own
+shading group, so the welding pass keeps them apart. Model-level `shading
+faceted|smooth` sets the default (smooth if omitted) and the per-part
+`faceted` / `smooth` flags override it.
+
+**It costs vertices, not triangles.** Each triangle gets private corners, so
+a part's vertex count rises steeply — a 10-sided gem measured 35 vertices
+smooth and 215 faceted, the same 120 triangles either way. Spend it on gems,
+crystals, plate facets and cut stone, not on a whole body.
+
 ### `rest=` — sit on a surface instead of guessing a standoff
 
 The gap between a cape and a back, or a shield and a forearm, is not a number

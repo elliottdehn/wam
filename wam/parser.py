@@ -64,6 +64,7 @@ class Model:
         self.name = "model"
         self.height = 2.0
         self.style = "chunky"
+        self.shading = "smooth"   # or "faceted": per-part flags override
         self.girth = 1.0           # multiplies every cross-section
         self.reach = 1.0           # multiplies every length along a path
         self.palette = {}          # name -> (r,g,b) floats 0..1
@@ -444,6 +445,11 @@ def parse(text, path=None):
                 model.anchors[tokens[1]] = a
             elif kw == "style":
                 model.style = tokens[1]
+            elif kw == "shading":
+                if len(tokens) < 2 or tokens[1] not in ("smooth", "faceted"):
+                    raise WamError("shading must be 'smooth' or 'faceted'",
+                                   line_no, line)
+                model.shading = tokens[1]
             else:
                 raise WamError("unknown model directive %r" % kw, line_no, line)
 
@@ -552,6 +558,8 @@ def parse(text, path=None):
                         p["dir"] = f
                     if f == "double_sided":
                         p["double_sided"] = True
+                    if f in ("faceted", "smooth"):
+                        p["faceted"] = (f == "faceted")
                 if "bones" in kv:
                     m = re.match(r"^([\w.]+)\.\.([\w.]+)$", kv["bones"])
                     if not m:
