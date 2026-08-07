@@ -39,6 +39,7 @@ class MeshOut:
         self.pressed = {}
         self.rests = {}
         self.sections = {}   # part -> most concave unit outline it used
+        self.snapped = {}    # part -> (host key, snap point, surface normal)
         self.shade_group = []
 
     def material(self, name, rgb):
@@ -198,6 +199,7 @@ def snap_on(out, part, origin, suffix, default_inset=0.012, footprint=0.0):
     inset = part.get("inset", default_inset)
     if normal is None:
         return best, None
+    out.snapped[part["name"] + suffix] = (key, best, normal)
     return best - normal * inset, normal
 
 
@@ -942,6 +944,13 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
     if "chain" in part:
         chain = chain_bones(bones, part["chain"][0], part["chain"][1], suffix)
         pts = [chain[0].head] + [b.tail for b in chain]
+        # `offset=` used to apply only to the single-bone form, so on a chain
+        # it parsed, sat in the part's own key set, and moved nothing at all.
+        off = np.array(part.get("offset", (0.0, 0.0, 0.0)), dtype=float)
+        if reflect:
+            off = np.array([-off[0], off[1], off[2]])
+        if np.linalg.norm(off) > 0:
+            pts = [p + off for p in pts]
         sampler = PathSampler(pts)
         skin_for = lambda t: _chain_skin(sampler, chain, t)
         rings = _rings_at_joints(rings, sampler)
