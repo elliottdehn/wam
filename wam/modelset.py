@@ -37,6 +37,7 @@ import sys
 
 import numpy as np
 
+from . import animation as wanim
 from . import checks as wchecks
 from . import mesh as wmesh
 from . import parser as wparser
