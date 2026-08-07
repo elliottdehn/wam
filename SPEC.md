@@ -214,7 +214,8 @@ only ever sweep a **convex, four-quadrant-symmetric** tube. That is a hard
 ceiling on silhouette, and silhouette is what a low-poly character is read by:
 no crescent axe head, no hooked claw, no notched pauldron, no D-section haft.
 
-A `profile` is a named 2D outline usable anywhere `shape=` is:
+A `profile` is a named 2D outline, usable as `shape=` on a `loft` or a
+`sweep` — a D-section tusk or a flat blade-like horn, not just a cone:
 
 ```
 profile crescent
@@ -254,6 +255,12 @@ Two things worth knowing about how the outline becomes a ring:
 
 A `shape=` naming neither a built-in nor a declared profile is an error, not a
 silent fallback to `round`.
+
+`shape=` applies to `loft` and `sweep`. It is accepted but does nothing on
+`web` and `attach`, which have no ring of their own — and **that is not
+currently reported**, because every part kind shares one key vocabulary. The
+same gap lets `ring` sit on a sweep and `seg` on a loft without a word. If a
+cross-section key seems to do nothing, that is the first thing to suspect.
 
 ## `skeleton`
 

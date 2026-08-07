@@ -837,6 +837,32 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     return roles
 
 
+def _shape_resolver(model, part, n_sides):
+    """`shape=` -> (superellipse exponent, outline points or None).
+
+    Shared by every generator with a cross-section. Living inside one of them
+    is how `shape=` came to be honoured by `loft` and silently dropped by
+    `sweep`: the key parses on any part, so a profiled horn compiled without a
+    word and came out a plain cone.
+    """
+    profiles = getattr(model, "profiles", {}) or {}
+
+    def shape_of(name, fallback_exp=2.0, fallback_unit=None):
+        if not name:
+            return fallback_exp, fallback_unit
+        if name in SHAPE_EXP:
+            return SHAPE_EXP[name], None
+        if name in profiles:
+            pr = profiles[name]
+            return fallback_exp, profile_unit(pr["points"], pr["mirror"], n_sides)
+        raise WamError(
+            "part %r: shape=%r is neither a built-in (%s) nor a declared "
+            "profile (%s)"
+            % (part["name"], name, ", ".join(sorted(SHAPE_EXP)),
+               ", ".join(sorted(profiles)) or "none"))
+    return shape_of
+
+
 def build_loft(out, model, bones, part, suffix="", reflect=False):
     n_sides = int(part.get("sides", STYLE_SIDES.get(model.style, 8)))
     profiles = getattr(model, "profiles", {}) or {}
@@ -1017,6 +1043,7 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
 
 def build_sweep(out, model, bones, part, suffix="", reflect=False):
     n_sides = max(6, int(part.get("sides", STYLE_SIDES.get(model.style, 8)) - 2))
+    sweep_exp, sweep_unit = _shape_resolver(model, part, n_sides)(part.get("shape"))
     base_mat = part.get("material") or "default"
     mat = out.material(base_mat, mat_rgb(model, base_mat))
     if part.get("double_sided"):
@@ -1069,7 +1096,11 @@ def build_sweep(out, model, bones, part, suffix="", reflect=False):
         seg = seg or {}
         centers.append(c.copy())
         axes.append((side.copy(), other.copy(), tang.copy()))
-        params.append(dict(w=2 * r, d=2 * r, exp=2.0, t=acc_len[0] / total_len))
+        sect = dict(w=2 * r, d=2 * r, exp=sweep_exp,
+                    t=acc_len[0] / total_len)
+        if sweep_unit is not None:
+            sect["unit"] = sweep_unit
+        params.append(sect)
         if "material" in seg:
             if part.get("double_sided"):
                 out.double_sided_materials.add(seg["material"])
