@@ -285,6 +285,11 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         if not upd.any():
             continue
         shi = w0 * sh[0] + w1 * sh[1] + w2 * sh[2]
+        # Each branch produces the *unlit* base colour; shading is applied once
+        # afterwards. Folding the lighting into each branch instead is how
+        # metal and roughness came to work only on untextured models — the
+        # specular lived in the flat-colour arm and every textured or
+        # vertex-coloured model took an earlier one and never reached it.
         if uv is not None and tex is not None:
             uu = w0 * uv[ia, 0] + w1 * uv[ib, 0] + w2 * uv[ic, 0]
             vv = w0 * uv[ia, 1] + w1 * uv[ib, 1] + w2 * uv[ic, 1]
@@ -294,47 +299,48 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
             base_px = tex[tyi, txi]
             if detail is not None:
                 dh, dw = detail.shape[:2]
+
                 def dsamp(scale, phase):
                     du = np.abs(((uu * scale + phase) % 2.0) - 1.0)
                     dv = np.abs(((vv * scale + phase) % 2.0) - 1.0)
                     dxi = np.clip((du * (dw - 1)).astype(int), 0, dw - 1)
                     dyi = np.clip((dv * (dh - 1)).astype(int), 0, dh - 1)
                     return detail[dyi, dxi]
-                dmix = 0.55 * dsamp(detail_scale, 0.0) +                        0.45 * dsamp(detail_scale * 0.27, 0.37)
+                dmix = 0.55 * dsamp(detail_scale, 0.0) + \
+                    0.45 * dsamp(detail_scale * 0.27, 0.37)
                 base_px = base_px * (0.82 + 0.36 * dmix)
-            px = base_px * shi[..., None]
         elif vert_colors is not None:
             ca, cb, cc = vert_colors[ia], vert_colors[ib], vert_colors[ic]
-            px = (w0[..., None] * ca + w1[..., None] * cb + w2[..., None] * cc) * shi[..., None]
+            base_px = (w0[..., None] * ca + w1[..., None] * cb
+                       + w2[..., None] * cc)
         else:
-            mi = tri_mat[ti]
-            color = np.asarray(mat_colors[mi])
-            props = mat_pbr[mi] if (mat_pbr is not None and mi < len(mat_pbr)) else None
-            if props is None or ndh is None:
-                px = color[None, None, :] * shi[..., None]
-            else:
-                metal, rough = props
-                power = 2.0 + 512.0 * (1.0 - rough) ** 3
-                gain = (1.0 - rough) ** 2 * (0.35 + 0.65 * metal)
-                # N·H must be raised to the power *per pixel*. Interpolating
-                # the lobe across a triangle's corners instead loses it
-                # entirely on low-poly geometry: at rough=0.1 the exponent is
-                # ~375, no vertex ever sits on the highlight, and roughness
-                # silently does nothing across its whole range.
-                nn = (w0[..., None] * N[ia] + w1[..., None] * N[ib]
-                      + w2[..., None] * N[ic])
-                nn /= np.maximum(np.linalg.norm(nn, axis=-1, keepdims=True), 1e-9)
-                hh = (w0[..., None] * Hv[ia] + w1[..., None] * Hv[ib]
-                      + w2[..., None] * Hv[ic])
-                hh /= np.maximum(np.linalg.norm(hh, axis=-1, keepdims=True), 1e-9)
-                sp = np.clip((nn * hh).sum(axis=-1), 0.0, None) ** power
-                ev = w0 * env[ia] + w1 * env[ib] + w2 * env[ic]
-                # dielectric keeps its diffuse and takes a white glint;
-                # metal trades diffuse for a tinted reflection of the sky
-                lit = shi * (1.0 - metal) + ev * metal
-                tint = color if metal > 0.5 else np.ones(3)
-                px = (color[None, None, :] * lit[..., None]
-                      + tint[None, None, :] * (gain * sp)[..., None])
+            base_px = np.asarray(mat_colors[tri_mat[ti]])[None, None, :]
+
+        mi = tri_mat[ti]
+        props = mat_pbr[mi] if (mat_pbr is not None and mi < len(mat_pbr)) else None
+        if props is None or ndh is None:
+            px = base_px * shi[..., None]
+        else:
+            metal, rough = props
+            power = 2.0 + 512.0 * (1.0 - rough) ** 3
+            gain = (1.0 - rough) ** 2 * (0.35 + 0.65 * metal)
+            # N·H is raised to the power *per pixel*. Interpolating the lobe
+            # across a triangle's corners loses it entirely on low-poly
+            # geometry: at rough=0.1 the exponent is ~375, no vertex ever sits
+            # on the highlight, and roughness silently does nothing.
+            nn = (w0[..., None] * N[ia] + w1[..., None] * N[ib]
+                  + w2[..., None] * N[ic])
+            nn /= np.maximum(np.linalg.norm(nn, axis=-1, keepdims=True), 1e-9)
+            hh = (w0[..., None] * Hv[ia] + w1[..., None] * Hv[ib]
+                  + w2[..., None] * Hv[ic])
+            hh /= np.maximum(np.linalg.norm(hh, axis=-1, keepdims=True), 1e-9)
+            sp = np.clip((nn * hh).sum(axis=-1), 0.0, None) ** power
+            ev = w0 * env[ia] + w1 * env[ib] + w2 * env[ic]
+            # dielectric keeps its diffuse and takes a white glint; metal
+            # trades diffuse for a tinted reflection of the sky
+            lit = shi * (1.0 - metal) + ev * metal
+            tint = base_px if metal > 0.5 else np.ones(3)[None, None, :]
+            px = base_px * lit[..., None] + tint * (gain * sp)[..., None]
         if fog is not None:
             f = np.clip((zi - fog["start"]) / max(fog["end"] - fog["start"], 1e-6),
                         0, 1) * fog.get("max", 0.85)
