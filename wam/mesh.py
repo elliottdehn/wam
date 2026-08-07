@@ -317,15 +317,128 @@ def _arc_material(arcs, base, deg):
     return base
 
 
-def _superellipse(n_sides, exp):
-    """Unit cross-section points (cos-like, sin-like) for a superellipse."""
+def _superellipse(n_sides, exp, span=None):
+    """Unit cross-section points (cos-like, sin-like) for a superellipse.
+
+    `span=(lo, hi)` as fractions of the way around opens the section into a
+    strip: it yields `n_sides + 1` points with distinct ends rather than
+    `n_sides` points that wrap, which is what turns a closed tube into an
+    open shell.
+    """
     pts = []
-    for i in range(n_sides):
-        phi = 2 * math.pi * (i + 0.5) / n_sides
+    count = n_sides if span is None else n_sides + 1
+    for i in range(count):
+        f = (i + 0.5) / n_sides if span is None else \
+            span[0] + (span[1] - span[0]) * i / n_sides
+        phi = 2 * math.pi * f
         c, s = math.cos(phi), math.sin(phi)
         pts.append((math.copysign(abs(c) ** (2.0 / exp), c),
                     math.copysign(abs(s) ** (2.0 / exp), s)))
     return pts
+
+
+def profile_unit(pts, mirror, n_sides, span=None):
+    """A named outline as `n_sides` unit points, matching `_superellipse`.
+
+    Two things have to line up with the built-in sections or profiles cannot
+    share the ring vocabulary: the points span [-1, 1] on both axes (so `w`
+    and `d` keep meaning full width and depth), and they run counter-clockwise
+    so caps and winding come out the same way.
+
+    Resampling is by **arc length**, not by casting rays from the centre. A
+    radial parameterisation would phase-match the superellipse exactly and is
+    tempting for that reason, but it cannot represent any outline where a ray
+    crosses the boundary twice — which is precisely the crescents and hooks
+    that profiles exist to make possible.
+    """
+    pts = [(float(x), float(y)) for x, y in pts]
+    if mirror:
+        # author the +x half; the other half is its reflection, walked back
+        # so the closed loop stays a single non-self-crossing outline
+        pts = pts + [(-x, y) for x, y in reversed(pts)
+                     if abs(x) > 1e-9]
+    if len(pts) < 3:
+        raise WamError("profile needs at least 3 points")
+
+    xs = [q[0] for q in pts]
+    ys = [q[1] for q in pts]
+    cx, cy = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+    sx = max((max(xs) - min(xs)) / 2.0, 1e-9)
+    sy = max((max(ys) - min(ys)) / 2.0, 1e-9)
+    pts = [((x - cx) / sx, (y - cy) / sy) for x, y in pts]
+
+    area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1]
+               - pts[(i + 1) % len(pts)][0] * pts[i][1]
+               for i in range(len(pts)))
+    if area < 0:
+        pts = pts[::-1]                      # force counter-clockwise
+
+    # start at the point nearest +x, so two profiles blend corner-to-corner
+    start = max(range(len(pts)), key=lambda i: pts[i][0] - abs(pts[i][1]) * 1e-6)
+    pts = pts[start:] + pts[:start]
+
+    loop = pts + [pts[0]]
+    seg = [math.hypot(loop[i + 1][0] - loop[i][0], loop[i + 1][1] - loop[i][1])
+           for i in range(len(pts))]
+    total = sum(seg) or 1.0
+    # arc position of each authored vertex, for corner snapping below
+    corner_at, run = [], 0.0
+    for i in range(len(pts)):
+        corner_at.append(run)
+        run += seg[i]
+
+    if span is None:
+        targets = [total * (i + 0.5) / n_sides for i in range(n_sides)]
+    else:
+        targets = [total * (span[0] + (span[1] - span[0]) * i / n_sides)
+                   for i in range(n_sides + 1)]
+    # An evenly spaced walk lands on a corner only by luck, and a profile's
+    # corners are the whole reason it was drawn — a notched blade resampled
+    # off its notch is just a lumpy oval. Each authored vertex therefore
+    # claims its nearest sample, provided no two fight over the same one.
+    if len(pts) <= n_sides and span is None:
+        taken = {}
+        for ci, ca in enumerate(corner_at):
+            best = min(range(n_sides), key=lambda i: abs(targets[i] - ca))
+            if best not in taken:
+                taken[best] = ca
+        for i, ca in taken.items():
+            targets[i] = ca
+
+    out, j, run = [], 0, 0.0
+    for target in targets:
+        j, run = 0, 0.0
+        while j < len(seg) - 1 and run + seg[j] < target:
+            run += seg[j]
+            j += 1
+        f = (target - run) / max(seg[j], 1e-12)
+        a, b = loop[j], loop[j + 1]
+        out.append((a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])))
+    return out
+
+
+def _respan_unit(unit, span, n_sides):
+    """Take an already-sampled outline and re-cut it to an open span.
+
+    Profiles are resampled by arc length, so an arc of one is the same walk
+    restricted to part of the perimeter — done here rather than at parse time
+    because `span` may differ per ring while the profile is shared.
+    """
+    loop = list(unit) + [unit[0]]
+    seg = [math.hypot(loop[i + 1][0] - loop[i][0], loop[i + 1][1] - loop[i][1])
+           for i in range(len(unit))]
+    total = sum(seg) or 1.0
+    out = []
+    for i in range(n_sides + 1):
+        target = total * (span[0] + (span[1] - span[0]) * i / n_sides)
+        run, j = 0.0, 0
+        while j < len(seg) - 1 and run + seg[j] < target:
+            run += seg[j]
+            j += 1
+        f = (target - run) / max(seg[j], 1e-12)
+        a, b = loop[j], loop[j + 1]
+        out.append((a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])))
+    return out
 
 
 def _lerp_rings(rings, t):
@@ -338,6 +451,14 @@ def _lerp_rings(rings, t):
         if a["t"] <= t <= b["t"]:
             f = (t - a["t"]) / max(b["t"] - a["t"], 1e-9)
             out = dict(a)
+            out["span"] = a.get("span")
+            ua, ub = a.get("unit"), b.get("unit")
+            if ua is not None or ub is not None:
+                ua = ua if ua is not None else ub
+                ub = ub if ub is not None else ua
+                out["unit"] = [(pa[0] * (1 - f) + pb[0] * f,
+                                pa[1] * (1 - f) + pb[1] * f)
+                               for pa, pb in zip(ua, ub)]
             for k in ("w", "d", "fwd", "side", "up", "roll",
                       "wtop", "wbot", "dtop", "dbot"):
                 va, vb = a.get(k), b.get(k)
@@ -549,7 +670,7 @@ def _orient_tube_components(out, t0, t1, roles, centers, axes, part_name):
 
 
 def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               cap_start, cap_end, arcs=None):
+               cap_start, cap_end, arcs=None, openings=None):
     """Build a tube from per-ring data.
 
     centers: list of (3,), axes: list of (side, other, tangent),
@@ -564,6 +685,7 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     """
     nrings = len(centers)
     arcs = arcs or [None] * nrings
+    openings = openings or []
 
     def ring_geometry(ri):
         """(points around the ring, collapsed?, v coordinate)."""
@@ -586,8 +708,14 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         d_lo = p.get("dbot", p["d"]) / 2.0
         if max(w_hi, w_lo, d_hi, d_lo) < 1e-6:
             return [c], True, vcoord
+        span = p.get("span")
+        unit = p.get("unit")
+        if span is not None and unit is not None:
+            unit = _respan_unit(unit, span, n_sides)
+        elif unit is None:
+            unit = _superellipse(n_sides, exp, span)
         pts = []
-        for (cx, sy) in _superellipse(n_sides, exp):
+        for (cx, sy) in unit:
             wh, dh = (w_hi, d_hi) if sy >= 0 else (w_lo, d_lo)
             pts.append(c + side * (cx * wh) + other * (sy * dh))
         return pts, False, vcoord
@@ -609,7 +737,8 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         key = (ri, -1 if collapsed else k, mat)
         if key in cache:
             return cache[key]
-        pt = pts[0] if collapsed else pts[k % n_sides]
+        pt = pts[0] if collapsed else pts[k if len(pts) > n_sides
+                                          else k % n_sides]
         sk = skins[ri]
         sk = sk(pt) if callable(sk) else sk
         uv = (0.5, vcoord) if collapsed else (k / n_sides, vcoord)
@@ -626,12 +755,36 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         """Material of the quad between side index k and k+1 of band ri."""
         return _arc_material(arcs[ri], mats[ri], 360.0 * (k + 1) / n_sides)
 
+    def in_opening(ri, k):
+        """Is the quad at band `ri`, column `k` inside a declared window?"""
+        if not openings:
+            return False
+        ta = params[ri].get("t", ri / max(nrings - 1, 1))
+        tb = params[ri + 1].get("t", (ri + 1) / max(nrings - 1, 1))
+        tm = 0.5 * (ta + tb)
+        # the quad spans ring points k..k+1, so its angle is the same one
+        # `band_material` uses — a half-column offset here puts every window
+        # off-centre by 360/(2*sides) degrees
+        am = 360.0 * (k + 1) / n_sides
+        for o in openings:
+            if not (o["t"][0] <= tm <= o["t"][1]):
+                continue
+            lo, hi = o["arc"]
+            a = am
+            while a < lo:
+                a += 360.0
+            if lo <= a <= hi:
+                return True
+        return False
+
     for ri in range(nrings - 1):
         lo_flat = geom[ri][1]
         hi_flat = geom[ri + 1][1]
         if lo_flat and hi_flat:
             continue
         for k in range(n_sides):
+            if in_opening(ri, k):
+                continue
             k2 = k + 1          # unwrapped: the last column is the seam copy
             mat = band_material(ri, k)
             a, b = vert(ri, k, mat), vert(ri, k2, mat)
@@ -686,7 +839,30 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
 
 def build_loft(out, model, bones, part, suffix="", reflect=False):
     n_sides = int(part.get("sides", STYLE_SIDES.get(model.style, 8)))
-    default_exp = SHAPE_EXP.get(part.get("shape", "round"), 2.0)
+    profiles = getattr(model, "profiles", {}) or {}
+
+    def shape_of(name, fallback_exp, fallback_unit):
+        """Resolve a `shape=` to either a superellipse exponent or an outline."""
+        if not name:
+            return fallback_exp, fallback_unit
+        if name in SHAPE_EXP:
+            return SHAPE_EXP[name], None
+        if name in profiles:
+            pr = profiles[name]
+            return fallback_exp, profile_unit(pr["points"], pr["mirror"], n_sides)
+        raise WamError(
+            "part %r: shape=%r is neither a built-in (%s) nor a declared "
+            "profile (%s)"
+            % (part["name"], name, ", ".join(sorted(SHAPE_EXP)),
+               ", ".join(sorted(profiles)) or "none"))
+
+    default_span = part.get("arc")
+
+    def span_of(r):
+        sp = r.get("arc", default_span)
+        return None if sp is None else (sp[0] / 360.0, sp[1] / 360.0)
+
+    default_exp, default_unit = shape_of(part.get("shape"), 2.0, None)
     base_mat = part.get("material") or "default"
     rings = sorted(part["rings"], key=lambda r: r["t"])
     if len(rings) < 2:
@@ -740,15 +916,21 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         c = c + other * r.get("fwd", 0.0) + side * r.get("side", 0.0)
         if "up" in r:
             c = c + np.array([0.0, r["up"], 0.0])
-        exp = SHAPE_EXP.get(r.get("shape", ""), default_exp)
+        exp, unit = shape_of(r.get("shape"), default_exp, default_unit)
+        span = span_of(r)
         w = r["w"]
         d = r.get("d", w)
-        sect = dict(w=w, d=d, exp=exp, roll=0.0, t=t)
+        sect = dict(w=w, d=d, exp=exp, roll=0.0, t=t, span=span)
+        if unit is not None:
+            sect["unit"] = unit
+        sect["shape_name"] = r.get("shape") or part.get("shape")
         for key in ("wtop", "wbot", "dtop", "dbot"):
             if key in r:
                 sect[key] = r[key]
         if r.get("tip"):
-            sect = dict(w=0.0, d=0.0, exp=exp, roll=0.0, t=t)
+            sect = dict(w=0.0, d=0.0, exp=exp, roll=0.0, t=t, span=span)
+            if unit is not None:
+                sect["unit"] = unit
         centers.append(c)
         axes.append((side, other, tang))
         params.append(sect)
@@ -818,7 +1000,8 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
     t0 = len(out.tris)
     roles = _emit_tube(out, centers, axes, params, mats, skins, n_sides,
                        part.get("cap_start", "flat"),
-                       part.get("cap_end", "flat"), arcs=arcs)
+                       part.get("cap_end", "flat"), arcs=arcs,
+                       openings=part.get("openings"))
     if reflect:
         _reflect_range(out, v0, suffix)
         refl = np.array([-1.0, 1.0, 1.0])

@@ -145,6 +145,116 @@ knowing about how it fakes them:
   pixels at delta 14 to 53 pixels at delta 69 — smaller and brighter, as it
   should be.
 
+### `arc=` — open shells instead of closed tubes
+
+A ring is a closed loop, so every loft is a sealed tube. `arc=<lo>-<hi>` in
+degrees restricts the section to a span, and the loft becomes an **open
+shell** — the one thing in the ring language that changes topology rather
+than shape.
+
+```
+loft cap bones=head..head material=steel sides=16 arc=130-410
+  ring 0.00 w=0.30 d=0.32
+  ring 0.55 w=0.32 d=0.34
+  ring 1.00 w=0.20 d=0.22
+  cap start=none end=dome
+```
+
+That is a helmet with a face opening. The same construct gives a shield with
+a notch cut out, an open-fronted cloak, a collar, a jaw.
+
+Angles use the same convention as `material_arc`: 0 degrees is the +side axis
+(the one `w` spans), 90 degrees the +depth axis. The span is what the surface
+*covers*, so the opening is everything outside it — `arc=130-410` covers 280
+degrees and leaves an 80-degree gap facing forward. `arc=` is available per
+ring or on the part as a default, and a span that runs backwards or covers a
+full turn is an error rather than a silently closed tube.
+
+Caps still work: an end cap over an arc fans into a pie slice rather than a
+full disc.
+
+**`arc=` opens a section for the whole length of the loft**, which makes a
+C-section — a collar, an open-fronted cloak, a bracer. It does *not* make a
+helmet: a face opening has a brow above it and a chin below, and an arc has
+neither. For a window bounded on all four sides, use `opening`:
+
+```
+loft cap bones=head..head material=steel sides=20 double_sided
+  ring 0.00 w=0.30 d=0.32
+  ring 0.45 w=0.33 d=0.35
+  ring 1.00 w=0.16 d=0.17
+  opening t=0.10..0.55 arc=55-125     # a hole, not a slit
+  cap start=flat end=dome
+```
+
+`opening` removes the quads inside a `t` range *and* an angular range, so the
+surface stays closed all around it. Several are allowed per loft — a visor
+slot and two ear holes. The hole's edge follows ring and column boundaries,
+so it is as coarse as `sides=` and the ring spacing; add rings where you want
+a cleaner edge.
+
+**Angles are ring-local, and ring 0 degrees is not a world axis.** It is the
+section's `side` axis, whose world direction comes from the bone: for a bone
+pointing up, 0 degrees is -X and 90 degrees is +Z. Check where a window
+landed rather than assuming — and note that counting boundary edges will also
+count the UV seam, which duplicates a column and reads as an opening when it
+is not one.
+
+**There is no wall thickness.** An open shell is a zero-thickness surface, so
+its inside is a backface and culls away — which is usually what you want for
+a helmet seen from outside, and wrong the moment the opening faces the
+camera. Add `double_sided` to light the interior. Real plate with a visible
+rim is not expressible yet; that needs an inner surface and a rim, and is not
+what `arc=` does today.
+
+## `profile` — cross-sections beyond the superellipse
+
+Every built-in section is a superellipse, so `shape=round|squarish|box` can
+only ever sweep a **convex, four-quadrant-symmetric** tube. That is a hard
+ceiling on silhouette, and silhouette is what a low-poly character is read by:
+no crescent axe head, no hooked claw, no notched pauldron, no D-section haft.
+
+A `profile` is a named 2D outline usable anywhere `shape=` is:
+
+```
+profile crescent
+  1.00,0.00  0.72,0.62  0.20,0.92  -0.30,0.80  -0.05,0.42
+  0.28,0.10  -0.05,-0.28  -0.30,-0.66  0.20,-0.82  0.72,-0.58
+
+profile leaf mirror              # author the +x half; -x is reflected
+  0.00,1.00  0.42,0.30  0.34,-0.35  0.00,-1.00
+
+loft blade bones=haft..haft material=steel sides=16 shape=crescent
+  ring 0.00 w=0.06 d=0.06
+  ring 1.00 w=0.34 d=0.34
+```
+
+`x` runs along the ring's width axis and `y` along its depth axis. The outline
+is centred and scaled so it spans the full `w` and `d`, exactly as a
+superellipse does, so `girth`, `wtop/wbot` and every other ring key keep
+working. Winding is forced counter-clockwise, so caps and normals come out
+right whichever way the points were written. `mirror` reflects the authored
+half across the width axis — terser, and it enforces the symmetry most
+sections want; omit it for genuinely asymmetric shapes, which is the point.
+
+**Sections blend.** `shape=` is a per-*ring* key, so a round haft can become a
+leaf blade along one loft; both sections are resampled to `sides=` and the
+points interpolate pairwise.
+
+Two things worth knowing about how the outline becomes a ring:
+
+- **Resampling is by arc length, not by rays from the centre.** A radial
+  parameterisation would phase-match the superellipse exactly, and it cannot
+  represent any outline a ray crosses twice — which is precisely the crescents
+  and hooks profiles exist for.
+- **Authored corners are preserved.** An evenly spaced walk lands on a corner
+  only by luck, and a notched blade resampled off its notch is a lumpy oval,
+  so each authored vertex claims its nearest sample. A square profile keeps
+  all four corners at `sides=8`, `12` and `16`.
+
+A `shape=` naming neither a built-in nor a declared profile is an error, not a
+silent fallback to `round`.
+
 ## `skeleton`
 
 Bones are turtle-graphics: parent + world-space direction + length. Only the

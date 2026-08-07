@@ -68,6 +68,7 @@ class Model:
         self.girth = 1.0           # multiplies every cross-section
         self.reach = 1.0           # multiplies every length along a path
         self.palette = {}          # name -> (r,g,b) floats 0..1
+        self.profiles = {}         # name -> dict(points, mirror)
         self.material_pbr = {}     # name -> dict(metal, rough)
         self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
@@ -96,8 +97,8 @@ KNOWN_KEYS = {
              "frame", "refaxis", "skin", "material_arc", "anchor", "trailing",
              "at", "len", "pitch", "yaw", "tilt", "size", "w", "d", "h",
              "sides", "taper", "inset", "scallop", "thickness", "steps",
-             "usteps", "offset", "rest", "layer", "push"},
-    "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot",
+             "usteps", "offset", "rest", "layer", "push", "arc"},
+    "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot", "arc",
              "dtop", "dbot", "shape", "material", "material_arc", "follow",
              "skin"},
     "seg": {"len", "r", "up", "down", "fwd", "back", "curl", "roll",
@@ -168,6 +169,23 @@ def _skin_spec(tok, line_no, line):
     if total <= 0:
         raise WamError("skin= weights must sum above zero", line_no, line)
     return [(n, w / total) for n, w in entries]
+
+
+def _span_spec(tok, line_no, line):
+    """`arc=<lo>-<hi>` in degrees -> (lo, hi), the open span of a ring."""
+    m = re.match(r"^(-?[\d.]+)-(-?[\d.]+)$", tok.strip())
+    if not m:
+        raise WamError("arc= must be <lo>-<hi> in degrees, got %r" % tok,
+                       line_no, line)
+    lo, hi = _num(m.group(1), line_no, line), _num(m.group(2), line_no, line)
+    if hi <= lo:
+        raise WamError("arc=%s runs backwards; give the span the surface "
+                       "covers, so an opening at the front is something like "
+                       "arc=40-320" % tok, line_no, line)
+    if hi - lo >= 360.0:
+        raise WamError("arc=%s covers the whole ring — leave arc= off for a "
+                       "closed section" % tok, line_no, line)
+    return (lo, hi)
 
 
 def _arc_spec(tok, line_no, line):
@@ -297,6 +315,7 @@ def parse(text, path=None):
     section = None
     mirror = False
     cur_group = None
+    cur_profile = None
     cur_part = None
     cur_tex = None
     cur_pose = None
@@ -308,6 +327,20 @@ def parse(text, path=None):
             continue
         tokens = line.split()
         kw = tokens[0]
+
+        if kw == "profile":
+            # A named 2D outline usable wherever `shape=` is. Every built-in
+            # section is a superellipse, so the whole language could only ever
+            # sweep *convex* tubes — no crescent axe head, no hooked claw, no
+            # notched pauldron. Concavity is most of what separates a
+            # distinctive silhouette from a generic one.
+            if len(tokens) < 2:
+                raise WamError("profile needs a name", line_no, line)
+            section = "profile"
+            cur_profile = tokens[1]
+            model.profiles[cur_profile] = dict(
+                points=[], mirror="mirror" in tokens[2:])
+            continue
 
         if kw in ("model", "palette", "skeleton", "parts", "textures",
                   "animations", "checks"):
@@ -453,6 +486,15 @@ def parse(text, path=None):
                 model.shading = tokens[1]
             else:
                 raise WamError("unknown model directive %r" % kw, line_no, line)
+
+        elif section == "profile":
+            for tok in tokens:
+                if "," not in tok:
+                    raise WamError("profile point must be x,y — got %r" % tok,
+                                   line_no, line)
+                xs, _, ys = tok.partition(",")
+                model.profiles[cur_profile]["points"].append(
+                    (_num(xs, line_no, line), _num(ys, line_no, line)))
 
         elif section == "palette":
             if len(tokens) < 2:
@@ -625,6 +667,8 @@ def parse(text, path=None):
                 for k in ("rest", "push"):
                     if k in kv:
                         p[k] = kv[k]
+                if "arc" in kv:
+                    p["arc"] = _span_spec(kv["arc"], line_no, line)
                 if "layer" in kv:
                     p["layer"] = _num(kv["layer"], line_no, line)
                 for k in ("at", "len", "pitch", "yaw", "tilt", "size", "w", "d",
@@ -638,6 +682,33 @@ def parse(text, path=None):
                     p["group"] = cur_group
                 model.parts.append(p)
                 cur_part = p
+            elif kw == "opening":
+                # `arc=` opens a section for the whole length of a loft, which
+                # is a C-section and not a helmet: a face opening has a brow
+                # above it and a chin below. A window is bounded on all four
+                # sides, so it needs a t range as well as an angular one.
+                if cur_part is None or cur_part["kind"] != "loft":
+                    raise WamError("opening outside a loft", line_no, line)
+                _, kv, _ = _split_kv(tokens[1:], line_no, line)
+                unknown = sorted(set(kv) - {"t", "arc"})
+                if unknown:
+                    raise WamError("opening does not understand %s — it takes "
+                                   "t=<lo>..<hi> and arc=<lo>-<hi>"
+                                   % ", ".join(repr(u) for u in unknown),
+                                   line_no, line)
+                if "t" not in kv or "arc" not in kv:
+                    raise WamError("opening needs t=<lo>..<hi> and "
+                                   "arc=<lo>-<hi>", line_no, line)
+                tlo, _, thi = kv["t"].partition("..")
+                if not thi:
+                    raise WamError("opening t= must be <lo>..<hi>", line_no, line)
+                tlo = _num(tlo, line_no, line)
+                thi = _num(thi, line_no, line)
+                if thi <= tlo:
+                    raise WamError("opening t=%s runs backwards" % kv["t"],
+                                   line_no, line)
+                cur_part.setdefault("openings", []).append(
+                    dict(t=(tlo, thi), arc=_span_spec(kv["arc"], line_no, line)))
             elif kw == "ring":
                 if cur_part is None or cur_part["kind"] != "loft":
                     raise WamError("ring outside a loft", line_no, line)
@@ -656,6 +727,8 @@ def parse(text, path=None):
                         r[k] = _num(kv[k], line_no, line)
                 if "shape" in kv:
                     r["shape"] = kv["shape"]
+                if "arc" in kv:
+                    r["arc"] = _span_spec(kv["arc"], line_no, line)
                 if "material" in kv:
                     r["material"] = kv["material"]
                 if "material_arc" in kv:
