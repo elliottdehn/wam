@@ -68,6 +68,62 @@ def _buried_parts(V, T, ranges, samples=24):
     return found
 
 
+def _islands(V, T, ranges, touch):
+    """Group parts into clumps of geometry that actually touch each other.
+
+    A part attached to nothing is one of the few errors that survives every
+    other check: it is skinned to a real bone, it moves with the animation,
+    it never intersects anything, and it renders perfectly — floating an inch
+    off the shoulder it was meant to sit on. Proximity to a *bone* cannot see
+    it either, because the bone runs right through where the part is hovering.
+
+    Surfaces are compared face-to-face rather than vertex-to-vertex: a
+    low-poly plate resting flat on an arm has no vertex anywhere near it and
+    would otherwise read as detached.
+    """
+    from . import checks as wchecks
+    keys = [k for k in ranges if ranges[k][1] > ranges[k][0]]
+    if len(keys) < 2:
+        return []
+    tris = np.asarray(T, dtype=int)
+
+    def surf(k):
+        v0, v1 = ranges[k]
+        sel = tris[((tris >= v0) & (tris < v1)).all(axis=1)] - v0 \
+            if len(tris) else np.zeros((0, 3), dtype=int)
+        return V[v0:v1], sel
+
+    box = {k: (V[slice(*ranges[k])].min(axis=0), V[slice(*ranges[k])].max(axis=0))
+           for k in keys}
+    parent = {k: k for k in keys}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i, a in enumerate(keys):
+        alo, ahi = box[a]
+        for b in keys[i + 1:]:
+            if find(a) == find(b):
+                continue
+            blo, bhi = box[b]
+            # cheap reject first: the full surface test is far too costly to
+            # run on every pair in a 40-part model
+            if np.any(blo - ahi > touch) or np.any(alo - bhi > touch):
+                continue
+            av, at = surf(a)
+            bv, bt = surf(b)
+            if wchecks.surface_distance(av, at, bv, bt) <= touch:
+                parent[find(a)] = find(b)
+
+    groups = {}
+    for k in keys:
+        groups.setdefault(find(k), []).append(k)
+    return list(groups.values())
+
+
 def lint(model, bones, mesh):
     warnings = list(getattr(model, "warnings", []))
     warnings += list(getattr(mesh, "warnings", []))
@@ -379,6 +435,48 @@ def lint(model, bones, mesh):
                 "anim %r moves nothing — every channel resolves to no "
                 "rotation, so the clip plays as a still frame"
                 % anim["name"])
+
+    # 6a2. geometry that touches nothing else
+    islands = _islands(V, T, mesh.part_ranges, touch=0.01 * max(height, 1e-6))
+    if len(islands) > 1:
+        # Which clump is "the model" is decided by the root bone, not by size.
+        # Sorting by vertex count picks whichever clump happens to be densest,
+        # and two floating motes out-vertex a plain torso — at which point the
+        # lint accuses the body of floating away from the decoration.
+        depth = {}
+        for name, bn in bones.items():
+            d, cur = 0, bn
+            while cur.parent is not None:
+                d += 1
+                cur = cur.parent
+            depth[name] = d
+        shallowest = {}
+        for k, (v0, v1) in mesh.part_ranges.items():
+            ds = [depth[nm] for i in range(v0, v1)
+                  for nm, w in mesh.skin[i] if nm in depth and w > 0.0]
+            shallowest[k] = min(ds) if ds else 99
+
+        def anchored(g):
+            # nearest-to-the-root wins, then size. Depth rather than root
+            # weight because a root bone frequently carries no geometry of its
+            # own, and rather than size because two floating motes out-vertex
+            # a plain torso — which had this lint accusing the body of
+            # floating away from the decoration.
+            return (-min(shallowest[k] for k in g),
+                    sum(mesh.part_ranges[k][1] - mesh.part_ranges[k][0] for k in g))
+        islands.sort(key=anchored, reverse=True)
+        for group in islands[1:]:
+            names = ", ".join(repr(k) for k in sorted(group)[:4]) + \
+                (" (+%d more)" % (len(group) - 4) if len(group) > 4 else "")
+            warnings.append(
+                "%s %s attached to nothing — %s separated from every other "
+                "part of the model, so %s float%s free. Anything meant to sit "
+                "on the body has to reach it: grow it, move it, or place it "
+                "with on=<host part>"
+                % ("part" if len(group) == 1 else "parts", names,
+                   "it is" if len(group) == 1 else "they are",
+                   "it" if len(group) == 1 else "they",
+                   "s" if len(group) == 1 else ""))
 
     # 6b. parts swallowed whole by another part
     for a, b in _buried_parts(V, T, mesh.part_ranges):
