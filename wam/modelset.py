@@ -1201,7 +1201,12 @@ def build_functions(models):
 
 def render_composition(c, out_prefix, views=("front", "threequarter", "side"),
                        width=420, height=560):
-    """Sheet + glTF for a composition, exactly as for a single model."""
+    """Sheet, glTF and viewer page for a composition.
+
+    A composed character — body plus its gear — is the thing anyone actually
+    wants to turn around, and it is the one output that has no `.wam` file to
+    re-parse, so it used to be the only kind of model with no viewer at all.
+    """
     from . import render as wrender
     from . import gltf as wgltf
     from . import animation as wanim
@@ -1215,6 +1220,12 @@ def render_composition(c, out_prefix, views=("front", "threequarter", "side"),
             for y in yaws]
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
     wrender.write_png(out_prefix + "_sheet.png", wrender.hstack_views(imgs))
+    from . import viewer_export as wviewer
+    from scripts.build_viewer import build as build_viewer_page
+    wviewer.export_built(c.model, c.bones, list(c.bones.values()), c.mesh,
+                         out_prefix + "_viewer.json")
+    build_viewer_page(out_prefix + "_viewer.json", out_prefix + ".html",
+                      title=getattr(c, "alias", None) or c.model.name)
     order = list(c.bones.values())
     tracks = wanim.gltf_tracks(c.model, c.bones, order)
     wgltf.export(out_prefix + ".gltf", c.model, c.bones, order, c.mesh,

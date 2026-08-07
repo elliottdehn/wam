@@ -28,9 +28,20 @@ def _mat_entry(model, name, rgb):
 
 
 def export(path, out_json, samples=24):
+    """Compile a .wam file and write its viewer blob."""
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
     mesh = wmesh.build(model, bones)
+    return export_built(model, bones, bone_order, mesh, out_json, samples)
+
+
+def export_built(model, bones, bone_order, mesh, out_json, samples=24):
+    """Same, for geometry that is already built.
+
+    A composition has no `.wam` file to re-parse — it only exists as the
+    result of grafting several together — and a composed character is exactly
+    what someone wants to turn around in the viewer.
+    """
     V, T, M = mesh.arrays()
 
     bindex = {b.name: i for i, b in enumerate(bone_order)}

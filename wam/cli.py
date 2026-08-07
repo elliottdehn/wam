@@ -57,7 +57,7 @@ def shared_framing(V, yaws, width, height, fov=28.0, pitch=10.0, margin=1.12):
 
 def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                   bones_overlay=False, do_gltf=True, quiet=False,
-                  width=480, height=600, anim_views=None):
+                  width=480, height=600, anim_views=None, do_viewer=True):
     anim_views = anim_views or views
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
@@ -146,14 +146,26 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
         wgltf.export(out_prefix + ".gltf", model, bones, bone_order, mesh,
                      tracks, scale=model.height, vert_colors=vcols,
                      uv=atlas_uv, tex_png=tex_png)
+
+    # The viewer page is the deliverable — a turnaround sheet is how the
+    # author checks their own work. It used to be gated behind `do_gltf` and
+    # baked by a separate script, which meant `--no-gltf` (the flag you reach
+    # for while iterating, because it is faster) silently produced nothing
+    # anyone could open, and finishing was a step you had to remember. Both
+    # are the compiler's job, so it does them.
+    if do_viewer:
         from . import viewer_export as wviewer
         wviewer.export(path, out_prefix + "_viewer.json")
+        from scripts.build_viewer import build as build_viewer_page
+        build_viewer_page(out_prefix + "_viewer.json", out_prefix + ".html")
 
     if not quiet:
         for w in warnings:
             print("WARN: %s" % w)
         for i in infos:
             print("info: %s" % i)
+        if do_viewer:
+            print("open: %s.html" % out_prefix)
     return model, bones, mesh, warnings
 
 
@@ -173,6 +185,9 @@ def main(argv=None):
     ap.add_argument("--frames", type=int, default=6)
     ap.add_argument("--bones", action="store_true")
     ap.add_argument("--no-gltf", action="store_true")
+    ap.add_argument("--no-viewer", action="store_true",
+                    help="skip the standalone viewer page (it is the "
+                         "deliverable, so this is rarely what you want)")
     ap.add_argument("--width", type=int, default=480,
                     help="panel width in pixels (default 480)")
     ap.add_argument("--height", type=int, default=600,
@@ -188,6 +203,7 @@ def main(argv=None):
         compile_model(args.input, out, args.views.split(","),
                       anim_name=args.anim, frames=args.frames,
                       bones_overlay=args.bones, do_gltf=not args.no_gltf,
+                      do_viewer=not args.no_viewer,
                       width=args.width, height=args.height,
                       anim_views=(args.anim_views.split(",")
                                   if args.anim_views else None))

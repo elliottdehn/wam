@@ -143,6 +143,10 @@ few rings per part, compile and **look**, and only then add detail.
    something floating, folded, or reading as the wrong object — and then
    settle each one with a number rather than a second look.
 6. Fix by editing angles and ratios. Never by adding coordinate math.
+7. **Hand over the viewer page**, which every compile writes as
+   `out/<name>.html` and prints as `open: …`. It is self-contained — no
+   server, no build step. The turnaround sheet is how *you* checked your
+   work; the page is what was asked for.
 
 Render animation strips for every gait and action you author — reversed gaits
 and non-moving cloth are invisible in static views.

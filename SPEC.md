@@ -1725,8 +1725,12 @@ invisible at sheet scale and obvious at 3x.
   at matched scale (`--grid` to survey, `--box`/`--box2` to compare)
 - `scripts/silhouette.py` — flat binary silhouette sheet plus thumbnail rows,
   for judging shape with shading removed (see **Reading the silhouette**)
-- `viewer/template.html` — standalone WebGL viewer (open directly, drop any
-  `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
-  preloaded
-- `out/` — per model: `.gltf`, `_sheet.png`, `_anim_*.png`, `_tex.png`
-  (atlas), `_viewer.json`
+- `viewer/template.html` — the WebGL viewer. Every compile bakes a
+  self-contained copy with the model already in it as `out/<name>.html` and
+  prints `open: …`; that page is the deliverable, and the turnaround sheet is
+  how the author checks their own work. `--no-viewer` opts out. The bare
+  template still works standalone if you want to drop a `*_viewer.json` onto
+  it, and `scripts/build_viewer.py` bakes one by hand.
+- `out/` — per model: `.html` (the viewer page), `.gltf`, `_sheet.png`,
+  `_anim_*.png`, `_tex.png` (atlas), `_viewer.json`. Compositions get the
+  same set, named for the composition.
