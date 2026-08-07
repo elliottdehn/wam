@@ -590,3 +590,26 @@ point is that the author never writes the numbers.
 So: read the `info:` lines, not just the `WARN:` ones. And audit **all** views
 of the sheet — twice in this project's history a change was declared correct
 from a single cropped panel and was wrong in the panel not looked at.
+
+---
+
+## The clowntown protocol
+
+If you catch yourself making one of the mistakes in this file, say out loud:
+
+> **I am a clown and this is clowntown.**
+
+Then name which one, and fix it.
+
+This is not decoration. Every entry here was written *after* someone — often
+the compiler's own author — did the thing, declared it finished, and was
+proved wrong by a measurement. The failure mode is never ignorance of the
+list; it is doing the thing anyway and moving on quietly, because admitting
+it costs a sentence and rationalising it costs nothing.
+
+Saying it out loud is what makes the correction happen. A mistake you have
+named is one you go back and fix. A mistake you have merely noticed is one
+you leave in the model and mention in the summary as a "known limitation".
+
+Note the entry number. If it is one that already has a detector and the
+detector did not fire, that is a second bug and worth more than the first.

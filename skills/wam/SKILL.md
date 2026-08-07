@@ -193,6 +193,14 @@ Build to a quality floor without announcing it: feet on the ground, no
 clipping at rest or in motion, symmetry where symmetry is intended, a
 silhouette that reads at thumbnail size, and a clean compile.
 
+## When you get it wrong
+
+If you catch yourself making one of the mistakes in
+`COMMON_MISTAKES_MUST_READ.md`, say **"I am a clown and this is clowntown"**,
+name the entry, and fix it. The point is the naming: a mistake you have said
+out loud is one you go back and correct, and a mistake you have merely
+noticed is one that ends up in the summary as a "known limitation".
+
 ## Append what you learn
 
 `COMMON_MISTAKES_MUST_READ.md` is the cross-session memory for this project.
