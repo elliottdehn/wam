@@ -1425,6 +1425,37 @@ centerline is claiming to be symmetric, while a one-sided part or a rigid
 `group` prop is the author's business. A sword-and-shield loadout no longer
 has to be tuned against itself to reach zero warnings.
 
+## Reading the silhouette
+
+```bash
+python3 scripts/silhouette.py my.wam                 # sheet + thumbnail rows
+python3 scripts/silhouette.py my.wam --thumbs 24,32,48,64
+python3 scripts/silhouette.py my.wam --anim walk --frames 6
+python3 scripts/silhouette.py long.wam --width 620 --height 420
+```
+
+Writes `_sil.png` (flat black on white, one panel per view) and
+`_sil_thumbs.png` (the same sheet reduced to 24/32/48px tall and blown back
+up, smallest row first).
+
+Shading hides shape. A lit render hands you colour, occlusion and a gradient
+running down every limb, and the eye accepts all of it as detail — so a limb
+with no taper looks tapered and a generic silhouette reads as fine. The panels
+are thresholded to a true binary mask rather than merely drawn in one dark
+colour, because the renderer still lights a single-material model and that
+shading leaks the shape information the test is meant to withhold.
+
+**The thumbnail rows are the point, and the smallest is the one to read.** At
+full panel size everything looks resolved. Measured on this repo's own models:
+the hero reads at 24px as an anonymous humanoid — nothing distinguishes it
+from any other biped — while the scorpion is identifiable immediately from its
+raised tail and claws. That difference is invisible in the shaded sheet and
+obvious here, and it is the question the design pass asks: *what shape does
+this read as, at the size a player first sees it?*
+
+It also shows which views carry the character and which do not. The scorpion
+is unmistakable in side and rear, and an ambiguous "Y" from the front.
+
 ## Comparing against a reference image
 
 Never judge a model by laying the whole reference next to the whole render
@@ -1461,6 +1492,8 @@ invisible at sheet scale and obvious at 3x.
   (renders + merged viewer JSON with a packed mega-atlas)
 - `scripts/crop.py` — region crops of a reference image and a render, paired
   at matched scale (`--grid` to survey, `--box`/`--box2` to compare)
+- `scripts/silhouette.py` — flat binary silhouette sheet plus thumbnail rows,
+  for judging shape with shading removed (see **Reading the silhouette**)
 - `viewer/template.html` — standalone WebGL viewer (open directly, drop any
   `*_viewer.json`); `scripts/build_viewer.py` bakes a page with a model
   preloaded

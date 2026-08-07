@@ -105,7 +105,9 @@ Work in two passes. First write a compact plan — four things, no bones yet:
 - **Proportion**: head-heights, limb-to-trunk ratios, where the mass sits.
   These are the numbers eyes are worst at judging and best at noticing.
 - **Silhouette**: what shape this reads as at 32px, in one sentence. If that
-  sentence is "a humanoid," go back.
+  sentence is "a humanoid," go back. Do not guess this — once there is
+  geometry, `python3 scripts/silhouette.py my.wam` renders it flat and at
+  thumbnail size, and the smallest row settles the question.
 - **Signature**: the one feature this creature is remembered by.
 
 Then critique the plan before writing any WAM. For each of the four, ask
@@ -131,7 +133,9 @@ few rings per part, compile and **look**, and only then add detail.
    *decided* — "graft 'sword' aims down-fwd, with 'edge' toward up-fwd". Edge
    toward **left** is a paddle, and it is in the output before you render.
 4. **View the rendered sheet** — front, three-quarter, side, three-quarter
-   rear, rear.
+   rear, rear. Then run `scripts/silhouette.py` and read the smallest
+   thumbnail row: shading flatters a shape that does not read, and this is
+   the only view that removes it.
 5. **Audit every panel, then measure what you found.** Twice in this
    project's history a change was declared correct from a single cropped view
    and was wrong in the panel not looked at. Use the sheet to find suspects —
