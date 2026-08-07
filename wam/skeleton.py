@@ -116,6 +116,52 @@ def resolve_dir(spec, pitch=0.0, yaw=0.0, tilt=0.0):
     return v / np.linalg.norm(v)
 
 
+CHANNELS = ("pitch", "yaw", "roll", "tilt")
+
+
+def parse_bend(spec, who):
+    """`bend=` into {channel: {allowed signs}}.
+
+    A joint is not merely "an axis it turns about" — a knee turns about one
+    axis and only one way along it, and a knee bent the other way is the
+    single most recognisable broken-rig silhouette there is. So each entry is
+    optionally signed: `-pitch` permits negative pitch only, bare `pitch`
+    permits both. Channels left out entirely are forbidden.
+    """
+    allowed = {}
+    for tok in str(spec).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        signs = {1, -1}
+        if tok[0] in "+-":
+            signs = {1 if tok[0] == "+" else -1}
+            tok = tok[1:].strip()
+        if tok not in CHANNELS:
+            raise WamError(
+                "bone %r: bend=%r — %r is not a channel (%s), optionally "
+                "prefixed with + or - to allow one direction only"
+                % (who, spec, tok, ", ".join(CHANNELS)))
+        allowed.setdefault(tok, set()).update(signs)
+    if not allowed:
+        raise WamError("bone %r: bend= is empty; omit it to leave the joint "
+                       "free, or name the channels it may turn about" % who)
+    return allowed
+
+
+def mirror_bend(allowed):
+    """The same joint on the other side.
+
+    Animation mirrors by flipping yaw, roll and tilt (pitch is preserved), so
+    a constraint written once for the authored side has to flip with it or the
+    `.r` limb is silently limited backwards.
+    """
+    out = {}
+    for chan, signs in allowed.items():
+        out[chan] = signs if chan == "pitch" else {-s for s in signs}
+    return out
+
+
 def reach_len(spec, origin, d, bones, suffix, who):
     """Length that carries a bone from `origin` along `d` to a landmark.
 
@@ -246,6 +292,9 @@ def solve(model):
             roll = b.get("roll", 0.0)
             bone = Bone(name, parent, origin, d, blen,
                         roll=-roll if mirrored else roll)
+            if b.get("bend") is not None:
+                lim = parse_bend(b["bend"], name)
+                bone.bend = mirror_bend(lim) if mirrored else lim
             parent.children.append(bone)
         bones[name] = bone
         order.append(bone)

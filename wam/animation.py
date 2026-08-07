@@ -52,6 +52,69 @@ def resolve_pose(model, bones, pose_name):
     return out
 
 
+def _describe(allowed):
+    if not allowed:
+        return "nothing"
+    out = []
+    for chan in ("pitch", "yaw", "roll", "tilt"):
+        if chan not in allowed:
+            continue
+        signs = allowed[chan]
+        out.append(chan if len(signs) == 2
+                   else ("+" if 1 in signs else "-") + chan)
+    return ", ".join(out)
+
+
+def validate_bends(model, bones):
+    """Reject rotations a joint is not built to make.
+
+    A knee that yaws, or that bends the way it is not hinged, is the most
+    recognisable broken-rig silhouette there is — and nothing else catches it,
+    because the clip is valid, the bone exists, and the pose merely looks
+    wrong. `bend=` on the bone states what the joint can do once; every anim
+    channel and pose key is then held to it.
+    """
+    def check(bone_pat, chan, value, where):
+        if abs(value) < 1e-9:
+            return
+        for name, b in bones.items():
+            allowed = getattr(b, "bend", None)
+            if allowed is None or not _match_one(name, bone_pat):
+                continue
+            sign = 1 if value > 0 else -1
+            if chan not in allowed:
+                raise WamError(
+                    "%s turns %r about %s, but that joint is declared "
+                    "bend=%s — it does not turn that way at all"
+                    % (where, name, chan, _describe(allowed)))
+            if sign not in allowed[chan]:
+                raise WamError(
+                    "%s bends %r by %s %+g, but that joint is declared "
+                    "bend=%s — it only bends the other way, and a joint bent "
+                    "backwards through itself is the classic broken rig"
+                    % (where, name, chan, value, _describe(allowed)))
+
+    for anim in getattr(model, "anims", ()):
+        for ch in anim["channels"]:
+            for _, v in ch["keys"]:
+                check(ch["bone"], ch["chan"], v,
+                      "anim %r" % anim["name"])
+    for pname, pose in (getattr(model, "poses", {}) or {}).items():
+        for bone_pat, rot in pose["bones"].items():
+            for chan, v in rot.items():
+                if chan in ("pitch", "yaw", "roll", "tilt"):
+                    check(bone_pat, chan, v, "pose %r" % pname)
+
+
+def _match_one(name, pat):
+    if pat == name:
+        return True
+    if pat.endswith("*"):
+        return name.startswith(pat[:-1])
+    # a channel written against the authored name drives both mirrored copies
+    return name.startswith(pat + ".")
+
+
 def rot_matrix_for(bone, rot):
     R = np.eye(3)
     if rot.get("roll"):

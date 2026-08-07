@@ -1229,6 +1229,7 @@ def compile_set(path, quiet=False, out_dir=None):
             raise wparser.WamError("duplicate model alias %r" % alias)
         model = wparser.parse_file(mpath)
         bones, _ = wskel.solve(model)
+        wanim.validate_bends(model, bones)
         mesh = wmesh.build(model, bones)
         models[alias] = Compiled(alias, model, bones, mesh)
 

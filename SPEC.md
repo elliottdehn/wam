@@ -136,6 +136,38 @@ skeleton
 - Inside `mirror`, `parent=` references resolve to the same-side bone first
   (`clavicle` → `clavicle.l`), falling back to central bones.
 
+**`bend=` — say which way a joint actually turns.** A knee that yaws, or that
+bends the way it is not hinged, is the most recognisable broken rig there is,
+and nothing else catches it: the clip is valid, the bone exists, and the pose
+merely *looks* wrong.
+
+```
+bone shin    parent=thigh    dir=down len=0.228 bend=-pitch   # knee: one way
+bone forearm parent=upperarm dir=down len=0.148 bend=+pitch   # elbow: the other
+bone neck    parent=chest    dir=up   len=0.040 bend=pitch,yaw
+bone thigh   parent=pelvis   dir=down len=0.238 bend=+yaw     # swings out only
+```
+
+Each entry is a channel (`pitch`, `yaw`, `roll`, `tilt`), optionally prefixed
+with `+` or `-` to permit one direction only; a bare channel permits both, and
+a channel left out is forbidden entirely. A bone with no `bend=` is
+unconstrained. Any anim channel or pose key that violates it is a **hard
+error**, naming the joint and the offending value:
+
+```
+ERROR: anim 'walk' bends 'shin.l' by pitch +20, but that joint is declared
+       bend=-pitch — it only bends the other way, and a joint bent backwards
+       through itself is the classic broken rig
+ERROR: anim 'walk' turns 'shin.l' about yaw, but that joint is declared
+       bend=-pitch — it does not turn that way at all
+```
+
+**Signs mirror with the limb.** Animation mirrors by flipping yaw, roll and
+tilt while preserving pitch, so a constraint written once against the authored
+name flips for the `.r` copy along with it: `bend=+yaw` on a thigh permits the
+same physical outward swing on both sides — `+yaw` on the left, `-yaw` on the
+right — and rejects the inward one on both.
+
 **`to=` — reach a landmark instead of guessing a length.** A hem, a fringe, a
 trailing strut: these end at a *place* on the body, not at a number. Written
 as `len=0.22` that place is correct only for the body it was tuned on, and

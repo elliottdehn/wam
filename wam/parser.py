@@ -86,6 +86,7 @@ class Model:
 # the model compiles, looks plausible, and quietly ignores what you asked for.
 KNOWN_KEYS = {
     "bone": {"parent", "dir", "pitch", "yaw", "roll", "tilt", "len", "at", "to",
+             "bend",
              "side", "fwd", "up", "offset", "head", "tail"},
     "pin": {"at", "head", "tail"},
     "part": {"material", "bones", "bone", "dir", "shape", "kind", "on", "press",
@@ -497,6 +498,8 @@ def parse(text, path=None):
                         b[k] = _num(kv[k], line_no, line)
                 if "to" in kv:
                     b["to"] = kv["to"]
+                if "bend" in kv:
+                    b["bend"] = kv["bend"]
                 if "offset" in kv:
                     b["offset"] = _vec(kv["offset"], line_no, line)
                 for k in ("head", "tail"):

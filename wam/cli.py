@@ -62,6 +62,7 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
     mesh = wmesh.build(model, bones)
+    wanim.validate_bends(model, bones)
     warnings, infos = wlint.lint(model, bones, mesh)
 
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
