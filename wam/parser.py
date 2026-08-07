@@ -4,6 +4,7 @@
 Line-oriented format. Sections: model, palette, skeleton, parts, animations.
 See SPEC.md for the full grammar.
 """
+import math
 import re
 
 
@@ -751,7 +752,58 @@ def parse(text, path=None):
             model.checks.append(
                 parse_check(kw, line, tokens, line_no))
 
+    validate_hold(model)
     return apply_proportions(model)
+
+
+def validate_hold(model):
+    """The grip's declared axis must agree with where the business end is.
+
+    This is the reversal that survives everything else. `anchor grip dir=up`
+    is a claim about which way the model extends from the hand, and `point=`
+    is where the business end actually sits; when the two disagree, every
+    composition faithfully aims the declared axis and the blade comes out
+    backwards. Nothing downstream can catch it — the grip lands in the fist,
+    the aim resolves, no geometry intersects, and the "points into the
+    wielder" test passes because a blade reversed *away* from the body is
+    still farther from it than the grip is.
+
+    It is also purely a property of the weapon, so it is answerable here,
+    before any character has picked the thing up.
+    """
+    hold = getattr(model, "hold", None)
+    if not hold:
+        return
+    from .skeleton import resolve_dir            # deferred: skeleton imports us
+    a = model.anchors.get(hold["anchor"])
+    p = model.markers.get(hold["point"])
+    if a is None or p is None:
+        return                                   # reported elsewhere
+    import numpy as np
+    d = resolve_dir(a.get("dir", "up"), a.get("pitch", 0.0),
+                    a.get("yaw", 0.0), a.get("tilt", 0.0))
+    v = np.asarray(p, dtype=float) - np.asarray(a.get("pos", (0, 0, 0)), float)
+    n = float(np.linalg.norm(v))
+    if n < 1e-9:
+        raise WamError(
+            "model %r: hold point=%r sits exactly on the grip, so nothing "
+            "says which way round the model goes" % (model.name, hold["point"]))
+    cos = float(np.dot(d, v / n))
+    deg = math.degrees(math.acos(max(-1.0, min(1.0, cos))))
+    if deg > 90.0:
+        raise WamError(
+            "model %r: anchor %r points %.0f degrees away from %r. The anchor "
+            "declares which way this model extends from the hand and %r is "
+            "its business end, so as written every graft will carry it "
+            "backwards — the blade will point behind the wielder. Flip the "
+            "anchor's dir=, or move the anchor to the other end."
+            % (model.name, hold["anchor"], deg, hold["point"], hold["point"]))
+    if deg > 40.0:
+        model.warnings.append(
+            "anchor %r points %.0f degrees off %r — the grip axis and the "
+            "business end disagree enough that the carry angle will be that "
+            "far out on every character holding it"
+            % (hold["anchor"], deg, hold["point"]))
 
 
 def apply_proportions(model):
