@@ -50,12 +50,13 @@ From another project: `PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m wam.cli …`
 ## Ground it in the creature
 
 **If you were given a reference image, stop and read
-`README_IF_GIVEN_IMAGE.md`.** The short version: you will compress the image
-into a gist and model the gist, losing exactly the details that make the
-character recognizable — a numeral on a badge, one chipped horn, a count of
-three studs, a pauldron on one shoulder only. Enumerate the specifics into a
-checklist before modelling, and verify them one at a time against crops
-afterwards. A whole-image comparison cannot see any of it.
+`README_IF_GIVEN_IMAGE.md`.** The short version: read the image exhaustively,
+build from it selectively. You will first compress it to a gist and lose what
+made the character recognizable; corrected, you will then try to model every
+specific and bury the silhouette under micro-parts that all fail anyway. A
+WAM character reads through silhouette and colour blocking and almost nothing
+else, so beyond the body only about five to eight features earn geometry.
+Everything else is palette, texture, or dropped out loud.
 
 If the brief does not pin down what this thing *is*, pin it yourself before
 modelling: name the creature, what it does, and the single thing a player
