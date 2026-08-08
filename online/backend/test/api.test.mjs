@@ -26,7 +26,11 @@ const call = async (method, path, { secret, body } = {}) => {
   let j; try { j = JSON.parse(text) } catch { j = { raw: text } }
   return { status: r.status, j, text, headers: r.headers }
 }
-const src = (n) => `model demo${n}\n  height 2.0\n  style chunky\n\nskeleton\n  root pelvis at 0.5\n  bone spine parent=pelvis dir=up len=0.2\n\nparts\n  loft body bones=spine..spine material=hide\n    ring 0.00 w=0.2 d=0.2\n    ring 1.00 w=0.1 d=0.1\n    cap start=dome end=dome\n`
+// Ids are content hashes, so fixtures must be unique per run or the second run
+// trips first-write-wins on its own leftovers from the first.
+const RUN = crypto.randomUUID().slice(0, 8)
+const src = (n) => `# run ${RUN}
+model demo${n}\n  height 2.0\n  style chunky\n\nskeleton\n  root pelvis at 0.5\n  bone spine parent=pelvis dir=up len=0.2\n\nparts\n  loft body bones=spine..spine material=hide\n    ring 0.00 w=0.2 d=0.2\n    ring 1.00 w=0.1 d=0.1\n    cap start=dome end=dome\n`
 
 // ---- 1. first upload mints a secret ----------------------------------------
 const a = await call('POST', '/models', { body: { source: src(1), title: 'First' } })
