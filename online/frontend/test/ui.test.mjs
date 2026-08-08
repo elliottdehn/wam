@@ -59,7 +59,18 @@ await go(`/m/${mid}`)
 ok('model page loads and compiles the stored source', await until(async()=>await ev("document.querySelectorAll('canvas').length >= 1")))
 ok('it shows as private', /private/.test(await ev("document.querySelector('.mp-badge').textContent") ?? ''))
 ok('owner controls appear for your own model', await until(async()=>!!await ev("document.querySelector('.mp-owner')?1:0")))
-ok('source viewer offers the download', !!await ev("document.querySelector('.wam-source-actions .primary')?1:0"))
+ok('source viewer offers both downloads',
+   /Download \.wam/.test(await ev("[...document.querySelectorAll('.wam-source-actions button')].map(b=>b.textContent).join('|')") ?? '') &&
+   /glTF/.test(await ev("[...document.querySelectorAll('.wam-source-actions button')].map(b=>b.textContent).join('|')") ?? ''),
+   await ev("[...document.querySelectorAll('.wam-source-actions button')].map(b=>b.textContent).join('|')"))
+
+// glTF is produced by the same compiler on demand, so this exercises a second
+// pass through Pyodide rather than reading anything cached.
+await ev("[...document.querySelectorAll('.wam-source-actions button')].find(b=>/glTF/.test(b.textContent)).click()")
+ok('glTF export completes',
+   await until(async()=>{const l=await ev("[...document.querySelectorAll('.wam-source-actions button')].map(b=>b.textContent).join('|')")
+                         return /Download glTF/.test(l) && !/failed/.test(l)}, 180000),
+   await ev("[...document.querySelectorAll('.wam-source-actions button')].map(b=>b.textContent).join('|')"))
 
 // publish
 await ev("[...document.querySelectorAll('.mp-actions button')].find(b=>/Publish/.test(b.textContent)).click()")

@@ -8,6 +8,7 @@
  * the thing you can actually change six numbers in.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { exportGltf } from '../wam/compile'
 import { modelName, tokenizeWam, type Token } from '../wam/highlight'
 import './WamSource.css'
 
@@ -36,25 +37,52 @@ function TokenSpan({ token }: { token: Token }) {
 export function WamSource({ text, filename, maxLines, className }: WamSourceProps) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [gltf, setGltf] = useState<'idle' | 'busy' | 'failed'>('idle')
   const timer = useRef<number | undefined>(undefined)
 
   const lines = useMemo(() => tokenizeWam(text), [text])
   const name = filename ?? `${modelName(text) ?? 'model'}.wam`
+  // Titles are free text and end up as filenames. A slash or a colon makes an
+  // unsaveable one, so the stem is reduced to something every OS accepts.
+  const stem =
+    name
+      .replace(/\.wam$/i, '')
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'model'
   const clipped = maxLines != null && !expanded && lines.length > maxLines
   const shown = clipped ? lines.slice(0, maxLines) : lines
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const download = () => {
-    // A Blob URL rather than a data: URI — a large model would otherwise be a
-    // very long href, and some browsers refuse to navigate to one.
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+  const save = (data: BlobPart, filename: string, type: string) => {
+    const url = URL.createObjectURL(new Blob([data], { type }))
     const a = document.createElement('a')
     a.href = url
-    a.download = name
+    a.download = filename
     a.click()
-    // Revoking immediately can cancel the download in some browsers.
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+
+  /**
+   * glTF is produced by the same compiler, on demand. It costs a recompile, so
+   * it is not done on page load: nobody wants it until they click.
+   */
+  const downloadGltf = async () => {
+    setGltf('busy')
+    try {
+      save(await exportGltf(text), `${stem}.gltf`, 'model/gltf+json')
+      setGltf('idle')
+    } catch {
+      setGltf('failed')
+      window.setTimeout(() => setGltf('idle'), 3000)
+    }
+  }
+
+  const download = () => {
+    // A Blob URL rather than a data: URI: a large model would otherwise be a
+    // very long href, and some browsers refuse to navigate to one.
+    save(text, `${stem}.wam`, 'text/plain')
   }
 
   const copy = async () => {
@@ -82,6 +110,15 @@ export function WamSource({ text, filename, maxLines, className }: WamSourceProp
           </button>
           <button type="button" className="primary" onClick={download}>
             Download <code>.wam</code>
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={gltf === 'busy'}
+            onClick={downloadGltf}
+            title="Skinned mesh, skeleton and animations, exported by the same compiler"
+          >
+            {gltf === 'busy' ? 'Exporting…' : gltf === 'failed' ? 'Export failed' : 'Download glTF'}
           </button>
         </div>
       </div>

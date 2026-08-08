@@ -19,16 +19,37 @@ const BASE = '/pyodide/'
 const GLUE = `
 import json, sys, traceback
 
-def _compile(text):
+def _build(text):
     with open('/tmp/model.wam', 'w') as f:
         f.write(text)
     from wam import parser as wparser, skeleton as wskel, mesh as wmesh
-    from wam import viewer_export as wve
     model = wparser.parse_file('/tmp/model.wam')
     bones, order = wskel.solve(model)
-    built = wmesh.build(model, bones)
+    return model, bones, order, wmesh.build(model, bones)
+
+def _compile(text):
+    from wam import viewer_export as wve
+    model, bones, order, built = _build(text)
     wve.export_built(model, bones, order, built, '/tmp/viewer.json')
     with open('/tmp/viewer.json') as f:
+        return f.read()
+
+# The same glTF the CLI writes, produced in the browser. Skinned mesh,
+# skeleton, animation tracks, and the baked atlas when the model has one, so
+# what comes out is the whole asset rather than bare geometry.
+def _gltf(text):
+    from wam import animation as wanim, gltf as wgltf, render as wrender
+    from wam import texture as wtexture
+    model, bones, order, built = _build(text)
+    V, T, M = built.arrays()
+    atlas, atlas_uv = wtexture.bake_atlas(model, built, V, T, M)
+    vcols = None if atlas is not None else wtexture.bake_vertex_colors(model, built, V, T, M)
+    tracks = wanim.gltf_tracks(model, bones, order)
+    tex_png = wrender.png_bytes(atlas) if atlas is not None else None
+    wgltf.export('/tmp/out.gltf', model, bones, order, built, tracks,
+                 scale=model.height, vert_colors=vcols, uv=atlas_uv,
+                 tex_png=tex_png)
+    with open('/tmp/out.gltf') as f:
         return f.read()
 `
 
@@ -66,6 +87,8 @@ async function boot(): Promise<PyodideApi> {
 interface Request {
   id: number
   text: string
+  /** `viewer` is the render blob; `gltf` is the exportable asset. */
+  want?: 'viewer' | 'gltf'
 }
 
 type Outbound =
@@ -78,12 +101,12 @@ function post(msg: Outbound | { type: 'status'; stage: string }) {
 }
 
 self.onmessage = async (ev: MessageEvent<Request>) => {
-  const { id, text } = ev.data
+  const { id, text, want = 'viewer' } = ev.data
   try {
     ready ??= boot()
     const py = await ready
     const started = performance.now()
-    const json = py.globals.get('_compile')(text)
+    const json = py.globals.get(want === 'gltf' ? '_gltf' : '_compile')(text)
     post({ type: 'ok', id, json, ms: Math.round(performance.now() - started) })
   } catch (err) {
     // A WamError carries the line and the fix; surfacing the raw message is

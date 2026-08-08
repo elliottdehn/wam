@@ -102,6 +102,24 @@ export interface CompileOptions {
   signal?: AbortSignal
 }
 
+/**
+ * Export the same glTF the CLI writes, from the browser.
+ *
+ * Not cached and not part of the compile path: it costs a second recompile and
+ * is only ever wanted when somebody clicks download, so paying for it on every
+ * page view would be silly.
+ */
+export async function exportGltf(text: string, onStage?: (s: CompileStage) => void): Promise<string> {
+  onStage = onStage ?? undefined
+  const w = ensureWorker()
+  const id = nextId++
+  return new Promise<string>((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+    onStage?.('compiling')
+    w.postMessage({ id, text, want: 'gltf' })
+  })
+}
+
 export async function compileWam(
   text: string,
   opts: CompileOptions = {},
@@ -123,7 +141,7 @@ export async function compileWam(
       if (pending.delete(id)) reject(new DOMException('aborted', 'AbortError'))
     })
     opts.onStage?.('compiling')
-    w.postMessage({ id, text })
+    w.postMessage({ id, text, want: 'viewer' })
   })
 
   const model = JSON.parse(json) as WamModel
