@@ -30,6 +30,8 @@ export interface WamTurntableProps extends TurntableOptions {
   className?: string
   /** Shown under the canvas. Defaults to the model's own name. */
   label?: string
+  /** Fires when a model is compiled or dropped, with the source behind it. */
+  onLoaded?: (model: WamModel, source: string) => void
 }
 
 export function WamTurntable({
@@ -37,6 +39,7 @@ export function WamTurntable({
   model,
   className,
   label,
+  onLoaded,
   ...view
 }: WamTurntableProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -51,11 +54,17 @@ export function WamTurntable({
   const [stage, setStage] = useState<CompileStage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  // Held in a ref so a parent re-rendering its callback does not re-run the
+  // compile effect.
+  const onLoadedRef = useRef(onLoaded)
+  onLoadedRef.current = onLoaded
 
   const busy = stage !== null && !loaded
 
   // ---- compile whatever we were handed -------------------------------------
+  const sourceRef = useRef<string | null>(source ?? null)
   const ingest = useCallback((text: string, signal?: AbortSignal) => {
+    sourceRef.current = text
     setError(null)
     setStage('compiling')
     compileWam(text, { onStage: setStage, signal })
@@ -63,6 +72,7 @@ export function WamTurntable({
         if (signal?.aborted) return
         setLoaded(m)
         setStage(null)
+        onLoadedRef.current?.(m, text)
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return

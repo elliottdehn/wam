@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "prepare:pyodide": "node scripts/prepare-pyodide.mjs",
-    "prebuild": "node scripts/prepare-pyodide.mjs"
+    "prebuild": "node scripts/prepare-pyodide.mjs",
+    "test:ui": "node test/ui.test.mjs"
   },
   "dependencies": {
     "pyodide": "^314.0.3",

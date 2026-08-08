@@ -1,0 +1,56 @@
+.share-panel {
+  margin-top: 1rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--hide-raised);
+}
+.share-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.share-panel button {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.share-panel button:hover { color: var(--horn); border-color: var(--horn); }
+.share-panel .primary {
+  color: var(--hide);
+  background: var(--ember);
+  border-color: var(--ember);
+  font-weight: 600;
+}
+.share-panel button:disabled { opacity: 0.55; cursor: default; }
+.share-note, .share-hint { margin: 0.85rem 0 0; font-size: 0.8125rem; color: var(--muted); }
+.share-error, .share-warn { margin: 0.85rem 0 0; font-size: 0.8125rem; color: #e8a08a; }
+.share-open { font-size: 0.8125rem; color: var(--ember); text-decoration: none; white-space: nowrap; }
+
+.share-secret {
+  margin: 0 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--ember);
+  border-radius: 8px;
+  background: rgba(226, 83, 27, 0.07);
+}
+.share-secret h3 { margin: 0 0 0.4rem; font-size: 0.9375rem; color: var(--ember); }
+.share-secret p { margin: 0 0 0.75rem; font-size: 0.8125rem; color: var(--muted); }
+.share-secret code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--text);
+  background: rgba(0,0,0,0.3);
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
+}
