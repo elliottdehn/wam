@@ -372,15 +372,13 @@ front page somebody's afternoon.
 
 ## Storage: R2 + SQLite Durable Objects
 
-**R2 holds the immutable bytes. A SQLite Durable Object holds the graph.**
-That split falls straight out of the design: everything content-addressed is a
-blob, everything relational is a row.
+**R2 holds inputs. A SQLite Durable Object holds the graph. Nothing derived is
+stored anywhere durable.**
 
 ```
 R2
-  src/<sourceHash>                     the .wam, written once, never updated
-  render/<sourceHash>/<compilerVer>    compiled viewer blob
-  atlas/<sourceHash>/<compilerVer>     texture atlas PNG, when the model has one
+  src/<sourceHash>        the .wam, written once, never updated
+  compiler/<version>.zip  the packed compiler that produced a given render
 
 DO (SQLite)
   nodes    id, sourceHash, title, description, visibility, bucketId,
@@ -389,15 +387,39 @@ DO (SQLite)
   buckets  bucketId, secretHash, createdAt
 ```
 
-**Keying renders by compiler version is what makes "immutable input, evolving
-output" safe.** A recompile writes a *new* key rather than overwriting a good
-one, so the last-good render is still sitting there when a compiler upgrade
-breaks an old model. Serving prefers the newest verified render and falls back
-to the newest that exists — which is the "a permanent link must never 500"
-rule, implemented as a key layout rather than as a special case.
+**Compiled output does not go in R2.** It is a function of source and compiler
+version, so storing it means owning an invalidation problem forever: which
+render is current, which are stale, what happens to them when the compiler
+moves. The source is the only thing that cannot be regenerated, so it is the
+only thing that gets kept.
+
+Renders live in an **ephemeral cache** — Cache API, keyed by
+`sourceHash + compilerVersion`. A cache that is allowed to be cold is a cache;
+a bucket full of old renders is a liability.
 
 Store `secretHash`, never the secret. It is a bearer credential for a whole
 bucket; a database that leaks should not hand over delete rights.
+
+### The compiler bundle is an input, not an artifact
+
+Dropping stored renders removes the fallback that kept a permanent link alive
+through a compiler change, and that problem does not go away by ignoring it —
+a construct can be deliberately changed or removed, and then an old model
+simply stops compiling.
+
+The fix keeps R2 pure, because **the compiler is an input too**. We already
+build exactly the right artifact: `wam.zip`, the packed pure-Python compiler,
+about 120 KB. Keep every version.
+
+- `nodes.compilerVer` records what a model was first compiled with.
+- Serving compiles with the **current** compiler, so improvements still reach
+  every model retroactively — the property that made a floating compiler
+  attractive in the first place.
+- If the current compiler errors, fall back to the **pinned** version from
+  `compiler/<version>.zip` and flag the node as needing attention.
+
+Nothing derived is stored, every link stays alive, and the whole cost is 120 KB
+per compiler release.
 
 ### One Durable Object, to start
 
