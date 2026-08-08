@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "cf-typegen": "wrangler types",
-    "test": "node test/api.test.mjs"
+    "test": "node test/api.test.mjs",
+    "corpus-check": "node scripts/corpus-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

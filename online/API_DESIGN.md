@@ -454,9 +454,18 @@ count the failures, and look at them before shipping. That converts a silent
 risk into a number you see beforehand. Pinning would have hidden the same
 breakage behind old bundles and let the language quietly fragment.
 
-`lastOkAt` and `brokenSince` on a node are the operational half — they make
-"which models stopped compiling, and when" a query rather than an
-investigation.
+So the deploy gate is `backend/scripts/corpus-check.mjs`: point it at a corpus
+dump, it compiles every source with the current compiler, and it exits
+non-zero listing what would break. Run it before shipping a compiler change.
+
+`lastOkAt` and `brokenSince` exist on `nodes` for the same purpose and are
+**not written by anything yet** — the gate reports rather than recording. They
+are reserved, not live, and this note is here so the schema does not read as a
+promise.
+
+There is deliberately no endpoint that enumerates the corpus. Private models
+are unlisted, and a list-everything route would undo that; getting a dump is
+an ops task against R2, not an API.
 
 ### One Durable Object, to start
 
