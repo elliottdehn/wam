@@ -58,7 +58,9 @@ export function SharePanel({ source, model, parents }: SharePanelProps) {
   }
 
   if (result) {
-    const link = new URL(`/m/${result.id}`, window.location.origin).toString()
+    // The server knows the canonical origin; the browser only knows the host
+    // it happens to be on.
+    const link = result.url || new URL(`/m/${result.id}`, window.location.origin).toString()
     return (
       <div className="share-panel done">
         {savedSecret && (

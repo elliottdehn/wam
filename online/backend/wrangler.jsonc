@@ -62,6 +62,22 @@
 			"bucket_name": "wamshare-sources"
 		}
 	],
+	// The canonical public origin. Links returned by the API use this rather
+	// than the request host, so a call to the workers.dev name still hands back
+	// a shareable wamshare.com link.
+	"vars": {
+		"PUBLIC_ORIGIN": "https://wamshare.com"
+	},
+	"routes": [
+		{
+			"pattern": "wamshare.com",
+			"custom_domain": true
+		},
+		{
+			"pattern": "www.wamshare.com",
+			"custom_domain": true
+		}
+	],
 	"observability": {
 		"enabled": true
 	},

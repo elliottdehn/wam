@@ -32,8 +32,20 @@ function publicNode(n: Record<string, unknown>) {
   return out
 }
 
-function linkFor(req: Request, id: string) {
-  return new URL(`/m/${id}`, req.url).toString()
+/**
+ * Links are canonical, not whatever host the caller happened to use.
+ *
+ * An agent that POSTs to the workers.dev hostname should still hand its user a
+ * wamshare.com link, because that link gets shared and outlives the request
+ * that made it.
+ *
+ * Note for local work: `wrangler dev` adopts the configured route's hostname,
+ * so the request already looks like wamshare.com on a laptop and links come
+ * out production-shaped either way. Put `PUBLIC_ORIGIN=http://localhost:8787`
+ * in `.dev.vars` if you need local ones.
+ */
+function linkFor(req: Request, env: Env, id: string) {
+  return new URL(`/m/${id}`, env.PUBLIC_ORIGIN || req.url).toString()
 }
 
 export default {
@@ -60,7 +72,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   // ---- POST /api/models ----------------------------------------------------
   if (seg[0] === 'models' && seg.length === 1 && method === 'POST') {
-    return upload(request, reg, secret)
+    return upload(request, env, reg, secret)
   }
 
   // ---- /api/models/:id[...] ------------------------------------------------
@@ -71,7 +83,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (seg.length === 2 && method === 'GET') {
       if (!node) return notFound()
       return ok(
-        { model: publicNode(node), parents: await reg.parentsOf(id), url: linkFor(request, id) },
+        { model: publicNode(node), parents: await reg.parentsOf(id), url: linkFor(request, env, id) },
         node.tombstoned
           ? {
               hint: 'This model was deleted. The link still resolves and its place in the lineage is intact, but the source is gone.',
@@ -126,7 +138,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       if (res === 'already') {
         return ok({ id, alreadyPublic: true }, { hint: 'That model was already public. Nothing changed.' })
       }
-      return ok({ id, visibility: 'public', url: linkFor(request, id) }, {
+      return ok({ id, visibility: 'public', url: linkFor(request, env, id) }, {
         hint: 'Published under CC0 1.0 and listed in the gallery. This cannot be undone — the dedication holds for copies already made, even if the model is deleted later.',
       })
     }
@@ -223,7 +235,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
 // ---- upload ----------------------------------------------------------------
 
-async function upload(request: Request, reg: DurableObjectStub<Registry>, secret: string | null) {
+async function upload(request: Request, env: Env, reg: DurableObjectStub<Registry>, secret: string | null) {
   let body: Record<string, unknown>
   try {
     body = (await request.json()) as Record<string, unknown>
@@ -295,7 +307,7 @@ async function upload(request: Request, reg: DurableObjectStub<Registry>, secret
     return ok(
       {
         id: n.id,
-        url: linkFor(request, n.id),
+        url: linkFor(request, env, n.id),
         bucketId: n.bucketId,
         existing: true,
         owned: result.owned,
@@ -315,7 +327,7 @@ async function upload(request: Request, reg: DurableObjectStub<Registry>, secret
   return ok(
     {
       id: n.id,
-      url: linkFor(request, n.id),
+      url: linkFor(request, env, n.id),
       bucketId: n.bucketId,
       existing: false,
       owned: true,
