@@ -1,11 +1,10 @@
 # Terms of Service — wamshare
 
 > **Draft. Not reviewed by a lawyer.** It was written by the same people who
-> wrote the service, which is exactly the wrong qualification. Three things in
-> particular need a real read before this goes live: the CC0 rights
-> representation, the takedown process (US safe-harbour rules require a
-> designated agent, which is a filing, not a paragraph), and the governing-law
-> clause, which is currently a blank.
+> wrote the service, which is exactly the wrong qualification. Two things need
+> a real read before this goes live: the takedown process (US safe-harbour
+> rules require a designated agent, which is a filing, not a paragraph) and the
+> governing-law clause, which is currently a blank.
 
 Last updated: *(unpublished)*
 
@@ -59,9 +58,19 @@ By uploading you confirm that you own the source or otherwise have the right to
 upload it, and that doing so breaks no law and infringes nobody's rights.
 
 By publishing you additionally confirm that **you hold the rights you are
-giving away**. A CC0 dedication is only effective if the person making it
-actually owns the thing. We have no way to check this. If you dedicate
-something that is not yours, that is on you.
+giving away**. A CC0 dedication only works if the person making it actually
+owns the thing, so this promise is doing real work.
+
+**What the secret does and does not establish.** Your secret shows that an
+upload came from you. It does not show that you owned what you uploaded, and
+we make no such check — we do not know who you are and we never see the work
+before you send it. The promise in this section is yours, and holding the
+secret is what attaches it to you rather than to nobody. If you dedicate
+something that was not yours to dedicate, the dedication is ineffective, the
+real owner's rights are unaffected, and the consequences are yours.
+
+Where we conclude that content infringes, our remedies are to remove it and to
+disable the secret it was uploaded with.
 
 Do not upload anything unlawful, anything that infringes someone else's rights,
 or anything designed to harm the people who open it.
