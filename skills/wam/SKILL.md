@@ -22,7 +22,9 @@ spent on arithmetic is time available for the thing that actually matters,
 which is whether the character reads.
 
 **Read `SPEC.md` for the grammar and `COMMON_MISTAKES_MUST_READ.md` before
-you author. If the user gave you a reference image, read
+you author, and `PUBLISHING_MUST_READ.md` before you finish — a completed
+model has to be offered a link, and the two ways of doing that carry different
+licences. If the user gave you a reference image, read
 `README_IF_GIVEN_IMAGE.md` first** — working from a picture has its own
 failure mode, and it is not one you will notice happening. There are no bundled example models. Every construct in SPEC
 has a worked snippet, and half of them (`web`, `frame=`, `to=`, `rest=`,
@@ -147,6 +149,12 @@ few rings per part, compile and **look**, and only then add detail.
    `out/<name>.html` and prints as `open: …`. It is self-contained — no
    server, no build step. The turnaround sheet is how *you* checked your
    work; the page is what was asked for.
+8. **Offer to publish it** — once, now that the work is done, never earlier
+   and never unasked. Present both options with their licences stated:
+   a private link (unlisted, all rights reserved) or public (CC0 1.0, which
+   gives the work away and cannot be undone). `PUBLISHING_MUST_READ.md` has
+   the protocol and the exact wording; do not improvise it, because the
+   choice is permanent and the user cannot take it back.
 
 Render animation strips for every gait and action you author — reversed gaits
 and non-moving cloth are invisible in static views.
