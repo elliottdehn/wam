@@ -21,11 +21,10 @@ now, and it is a better one than it looks: the failure mode is not malice, it
 is enthusiastic compliance. An agent told to "share when done" will share the
 draft where the wings ate the silhouette, because it believed it was done.
 
-**Source in, render out.** Uploads carry the `.wam` and nothing else; the
-server compiles. Under a PR flow a human reads the diff — under an API nobody
-does, so the server must be the only thing that produces markup. Accepting
-pre-rendered HTML would mean hosting stranger-generated markup on our own
-origin, unreviewed.
+**The server never compiles.** It stores a `.wam` and serves it back; the
+compiler runs in the visitor's browser under Pyodide. That is why no
+pre-rendered HTML is ever accepted or stored — the only thing crossing the
+wire is source text and the only thing rendering it is a WebGL canvas.
 
 **Every response explains itself.** The client is a language model, so the
 body carries prose telling it what happened and what it could do next — on
@@ -386,21 +385,23 @@ DO (SQLite)
   buckets  bucketId, secretHash, createdAt
 ```
 
-**Compiled output is not stored.** It is a function of source and compiler, so
-keeping it means owning an invalidation problem forever. Renders live in an
-**ephemeral cache** — Cache API, keyed by `sourceHash + deployId` so a new
-compiler deploy retires every old entry without anyone having to sweep.
+**Compiled output is not stored, anywhere, by us.** Compilation is client
+side, so the render is produced in the visitor's browser and cached there — the
+existing viewer already keys an IndexedDB entry on a hash of the source, which
+is why a second view costs 0.1 s against 1.5 s for the first.
 
 The source is the only thing that cannot be regenerated, so it is the only
-thing kept.
+thing kept. There is no server-side render cache to invalidate because there is
+no server-side render.
 
 Store `secretHash`, never the secret. It is a bearer credential for a whole
 bucket; a database that leaks should not hand over delete rights.
 
 ### Everything compiles with the latest compiler
 
-No pinning, no versioned bundles, no per-node compiler. One compiler, the
-deployed one, for every model in the store.
+No pinning, no versioned bundles, no per-node compiler. The `wam.zip` shipped
+with the site is the one compiler, for every model, and a deploy moves everyone
+at once.
 
 The obvious objection is that a language change can then break an old model and
 kill a permanent link. That is real, and the answer is not a fallback — it is
@@ -440,48 +441,36 @@ need to be atomic and a single DO makes them so for free:
 If throughput ever matters, shard buckets across per-bucket DOs and keep one
 index DO for the DAG. Not now; noted so the schema does not paint us in.
 
-### Where does the compile actually run? — OPEN
+## Untrusted input, and who it can hurt
 
-The unresolved piece. Workers cannot run CPython, so "server compiles" needs a
-runtime we do not yet have. Three candidates:
+Client-side compilation moves this problem somewhere much better. A hostile
+`.wam` — `sides=512` across forty lofts, a thousand-bone chain, `steps=9999` on
+a web — cannot exhaust a worker we pay for, because we never run it. It runs in
+the browser of whoever opened the link.
 
-1. **A Python Worker** (Pyodide at the edge). Closest to the stated principle.
-   Needs verifying: numpy availability, and whether per-isolate Pyodide boot is
-   viable — it costs about a second and 8.6 MB even warm on a laptop.
-2. **Containers**, running the real CPython toolchain. No boot problem, more
-   infrastructure.
-3. **Client-supplied render, server-verified.** The browser compiler already
-   exists and works — the agent uploads source *and* the compiled blob, and the
-   server treats the blob as an optimistic cache it may replace after
-   recompiling out of band.
+That is not nothing, and it is the right place to defend:
 
-Option 3 is the pragmatic one and it bends the *source in, render out* rule
-without breaking it: **the source stays the truth and the render is only ever a
-cache.** What it concedes is that an unverified blob may be served briefly, and
-that blob is untrusted data feeding our renderer — far weaker than untrusted
-HTML, but not nothing. If we take it, recompilation is not optional and a
-source/render mismatch has to be a visible flag rather than a silent
-replacement.
+- The compile already happens in a **Web Worker**, so a runaway parse cannot
+  freeze the page, only that worker.
+- The viewer should **time out** and offer to stop rather than spin forever.
+- Nothing in the pipeline touches `innerHTML`. Source text is rendered as text
+  and compiled output drives a canvas, so a malicious model is a
+  denial-of-service against one tab, not a script injection.
 
-## Compiling untrusted input
-
-`.wam` is declarative data rather than code, so compiling a stranger's upload
-is far safer than running their code. It is still hostile parser input reaching
-numpy. `sides=512` across forty lofts, a thousand-bone chain, `steps=9999` on a
-web: none of it looks malicious and all of it eats a worker. Caps and a
-timeout, decided once, plus the job-id escape hatch for anything slow.
-
-For scale: the sentinel compiles in **341 ms** and the runtime boots in about a
-second, so synchronous is fine for ordinary models.
+**Consequence for the API: compile stats are claims, not facts.** `meta` —
+triangle count, bone count, the model's own checks and their measured values —
+is asserted by the uploading client and we have no compiler with which to
+verify it. Treat it exactly like a declared parent: store it, show it, and do
+not let anything important depend on it being true. The one thing the server
+*can* verify without a compiler is textual similarity between a child and its
+declared parents, which needs nothing but the two sources.
 
 ## Open questions
 
-- The entire presentation layer: index, lineage display, whether a bucket is
-  ever surfaced publicly.
-- Where compilation runs (options above; 3 is the pragmatic one).
-- Whether a private model may be declared as someone else's parent.
-- Terms text: publishing has to grant the right to display *and* carry a
-  representation that the uploader holds the rights they are dedicating. One
-  paragraph now, a mess to retrofit once there are contributors to re-ask.
-  This is the one item here worth a real lawyer's eye rather than mine.
-- Rate limiting: none for now, by decision, not by oversight.
+**The presentation layer, and that is the only one left.** The index, how
+lineage is surfaced, whether a bucket is ever shown publicly. Internally it is
+an append-only DAG; nothing above prejudges what a page does with it.
+
+Terms of service are drafted in `TERMS.md`. They are unreviewed and say so.
+
+Rate limiting: none, by decision rather than by oversight.
