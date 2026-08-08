@@ -41,29 +41,56 @@ separate axis:
 | | **private** | **public** |
 |---|---|---|
 | Discovery | unlisted; link only | listed in the gallery |
-| Licence | all rights reserved | Creative Commons |
+| Licence | all rights reserved | CC0 1.0 |
 | Default | **yes** | deliberate second choice |
 
 Private is the default because it needs no moderation at all and covers the
 common case: you made a thing, you want to show one person. Public is a choice
 someone makes on purpose.
 
-### Which Creative Commons — OPEN
+### Public means CC0, and that is forced rather than chosen
 
-Recommendation: **CC BY 4.0**. Reasons, in order of weight:
+**All six Creative Commons licences carry the BY condition** — BY, BY-SA,
+BY-NC, BY-ND, BY-NC-SA, BY-NC-ND. Attribution is not one option among several,
+it is in every one of them. The only CC instrument without it is **CC0 1.0**,
+a public-domain dedication rather than a licence.
 
-- **`NC` is a trap for game art.** The main use is people making games, some
-  of them commercially. A non-commercial clause makes the gallery useless for
-  the audience it is aimed at, and nobody reads far enough to discover that
-  before they are annoyed.
-- **The lineage graph is already an attribution mechanism.** Parent links give
-  you the credit chain for free, which makes `BY` nearly zero-friction here in
-  a way it is not elsewhere.
-- **`SA` is defensible but viral.** It would keep derivatives open, which is
-  good for the corpus and bad for anyone shipping a game. If the corpus matters
-  more than adoption, pick `BY-SA`; otherwise `BY`.
-- **`CC0` is the other honest answer** if the goal is purely to build a
-  training/reference corpus and attribution is noise.
+So the identity decision already made this choice. There is no account, no
+name, and `bucketId` is a hash of a secret — attribute to *what*? A licence
+whose central obligation cannot be satisfied is worse than no licence, because
+it leaves a downstream user wondering whether shipping the model in their game
+requires crediting a hex string.
+
+That leaves a clean binary, which is the right shape for a service with no
+identity:
+
+| | keep everything | give up everything |
+|---|---|---|
+| private | all rights reserved | — |
+| public | — | CC0 1.0 |
+
+Everything in between needs to know who the licensor is. We deliberately do
+not.
+
+Two things worth knowing about CC0 specifically:
+
+- **It has a fallback.** Where a public-domain dedication is not effective in
+  some jurisdiction, CC0 grants a broad permissive licence instead, so it
+  degrades sensibly rather than failing open or shut.
+- **It is a dedication by someone who must actually hold the rights**, and an
+  anonymous service cannot verify that. That is a Terms problem, not a licence
+  problem: publishing has to carry a representation that the uploader has the
+  right to do so. Same exposure under any licence — CC0 just makes it visible.
+
+The lineage graph still supplies credit; it simply supplies it as a *social*
+convention rather than a legal obligation. Parent links show where a model came
+from whether or not anyone is required to say so, which is arguably the better
+arrangement for a remix corpus.
+
+Rejected: an optional, unverified display name to make BY coherent. It
+reintroduces the identity we removed on purpose, and an unverified name field
+is an impersonation vector the first time someone types a studio's name into
+it.
 
 ### Licence changes are one-way
 
@@ -236,11 +263,12 @@ second, so synchronous is fine for ordinary models.
 
 ## Open questions
 
-- Which CC variant (recommendation above: `BY`).
 - Whether metadata is mutable behind the secret.
 - Whether a bucket is ever surfaced publicly, or stays an internal grouping
   used for rate limiting and delete.
 - Whether a private model may be declared as someone else's parent.
-- Terms text: uploading has to grant the right to display. One paragraph now,
-  a mess to retrofit once there are contributors to re-ask.
+- Terms text: publishing has to grant the right to display *and* carry a
+  representation that the uploader holds the rights they are dedicating. One
+  paragraph now, a mess to retrofit once there are contributors to re-ask.
+  This is the one item here worth a real lawyer's eye rather than mine.
 - Rate limiting: none for now, by decision, not by oversight.
