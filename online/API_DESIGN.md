@@ -339,7 +339,7 @@ in logs, referrers and screenshots, and this one is the keys to the corpus.
 POST /api/models
   header X-Wam-Secret: <secret>          # omit on a first upload
   body   { source, title?, description?, visibility: "private"|"public",
-           parents?: [id], compilerVersion?, meta? }
+           parents?: [id], meta? }
   200    { id, url, bucketId,
            existing: bool,               # this source was already uploaded
            owned: bool,                  # ...and whether by this secret
@@ -372,54 +372,51 @@ front page somebody's afternoon.
 
 ## Storage: R2 + SQLite Durable Objects
 
-**R2 holds inputs. A SQLite Durable Object holds the graph. Nothing derived is
-stored anywhere durable.**
+**R2 holds the source. A SQLite Durable Object holds the graph. Nothing else
+is stored durably.**
 
 ```
 R2
-  src/<sourceHash>        the .wam, written once, never updated
-  compiler/<version>.zip  the packed compiler that produced a given render
+  src/<sourceHash>   the .wam, written once, never updated
 
 DO (SQLite)
   nodes    id, sourceHash, title, description, visibility, bucketId,
-           compilerVer, tombstoned, createdAt
+           tombstoned, createdAt, lastOkAt, brokenSince
   edges    childId, parentId, similarity
   buckets  bucketId, secretHash, createdAt
 ```
 
-**Compiled output does not go in R2.** It is a function of source and compiler
-version, so storing it means owning an invalidation problem forever: which
-render is current, which are stale, what happens to them when the compiler
-moves. The source is the only thing that cannot be regenerated, so it is the
-only thing that gets kept.
+**Compiled output is not stored.** It is a function of source and compiler, so
+keeping it means owning an invalidation problem forever. Renders live in an
+**ephemeral cache** — Cache API, keyed by `sourceHash + deployId` so a new
+compiler deploy retires every old entry without anyone having to sweep.
 
-Renders live in an **ephemeral cache** — Cache API, keyed by
-`sourceHash + compilerVersion`. A cache that is allowed to be cold is a cache;
-a bucket full of old renders is a liability.
+The source is the only thing that cannot be regenerated, so it is the only
+thing kept.
 
 Store `secretHash`, never the secret. It is a bearer credential for a whole
 bucket; a database that leaks should not hand over delete rights.
 
-### The compiler bundle is an input, not an artifact
+### Everything compiles with the latest compiler
 
-Dropping stored renders removes the fallback that kept a permanent link alive
-through a compiler change, and that problem does not go away by ignoring it —
-a construct can be deliberately changed or removed, and then an old model
-simply stops compiling.
+No pinning, no versioned bundles, no per-node compiler. One compiler, the
+deployed one, for every model in the store.
 
-The fix keeps R2 pure, because **the compiler is an input too**. We already
-build exactly the right artifact: `wam.zip`, the packed pure-Python compiler,
-about 120 KB. Keep every version.
+The obvious objection is that a language change can then break an old model and
+kill a permanent link. That is real, and the answer is not a fallback — it is
+to **treat the stored corpus as the compatibility suite.** Every uploaded
+source is a test case that a candidate compiler has to keep passing, and unlike
+a hand-written suite it grows for free and covers exactly what people actually
+write.
 
-- `nodes.compilerVer` records what a model was first compiled with.
-- Serving compiles with the **current** compiler, so improvements still reach
-  every model retroactively — the property that made a floating compiler
-  attractive in the first place.
-- If the current compiler errors, fall back to the **pinned** version from
-  `compiler/<version>.zip` and flag the node as needing attention.
+So the deploy check is: compile every stored source against the candidate,
+count the failures, and look at them before shipping. That converts a silent
+risk into a number you see beforehand. Pinning would have hidden the same
+breakage behind old bundles and let the language quietly fragment.
 
-Nothing derived is stored, every link stays alive, and the whole cost is 120 KB
-per compiler release.
+`lastOkAt` and `brokenSince` on a node are the operational half — they make
+"which models stopped compiling, and when" a query rather than an
+investigation.
 
 ### One Durable Object, to start
 
