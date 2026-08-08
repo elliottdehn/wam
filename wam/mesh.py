@@ -40,6 +40,8 @@ class MeshOut:
         self.rests = {}
         self.sections = {}   # part -> most concave unit outline it used
         self.snapped = {}    # part -> (host key, snap point, surface normal)
+        self.end_rings = {}  # part -> [vertex id per column] at its last ring
+        self.continues = {}  # part -> the part it grows out of
         self.shade_group = []
 
     def material(self, name, rgb):
@@ -107,6 +109,63 @@ def _record_press(out, part, suffix, reflect, before, after):
     if part.get("dir"):
         out.pressed[key] = math.degrees(math.acos(cos))
     return b
+
+
+def around_origin(part, host, at, out, suffix, reflect):
+    """Start point for `around=<deg>`: polar placement on a host surface.
+
+    Detail belongs *somewhere on a surface* — an eye on the side of a skull,
+    a horn above the brow, a spine along a back — and the only way to say that
+    was an offset in bone space, which is a guess. Guessing put the dragon's
+    eyes inside its head and a spine inside a neck. This names the angle
+    around the bone instead and lets `on=` find the surface from outside.
+    """
+    ang = math.radians(float(part["around"]))
+    side, other = _frame(np.asarray(host.dir, dtype=float))
+    if reflect:
+        ang = -ang
+    radial = side * math.cos(ang) + other * math.sin(ang)
+    ref = part.get("on")
+    reach = 1.0
+    if ref:
+        for cand in (ref + suffix, ref):
+            if cand in out.part_ranges:
+                v0, v1 = out.part_ranges[cand]
+                pts = np.array(out.verts[v0:v1], dtype=float)
+                reach = float(np.linalg.norm(pts - host.point_at(at), axis=1).max())
+                break
+    return host.point_at(at) + radial * reach * 1.05
+
+
+def part_dir_on_bone(part, host, reflect=False):
+    """A part's aim, allowed to be stated relative to the bone it sits on.
+
+    `dir=` on a sub-part is a *world* axis, and a detail placed partway along
+    an angled bone therefore does not follow it: a jaw written `dir=fwd` on a
+    head that points forward-and-down runs off at an angle to its own skull,
+    and the mouth diverges from the face. Composition already solves this for
+    grafted models with `along` / `across=` / `aim=`; this is the same
+    vocabulary one level down.
+    """
+    spec = {}
+    for k in ("along", "against"):
+        if part.get(k):
+            spec[k] = True
+    for k in ("across", "aim"):
+        if part.get(k) is not None:
+            spec[k] = part[k]
+    if spec:
+        d = bone_relative_dir(host, spec, what="dir")
+        if reflect:
+            d = np.array([-d[0], d[1], d[2]])
+        # world pitch/yaw/tilt stay available as deviations from that
+        for axis, key in (((1.0, 0, 0), "pitch"), ((0, 1.0, 0), "yaw"),
+                          ((0, 0, 1.0), "tilt")):
+            if part.get(key):
+                d = rot_axis(np.array(axis), float(part[key])) @ d
+        return d / max(np.linalg.norm(d), 1e-12)
+    return resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
+                       part.get("yaw", 0.0), part.get("tilt", 0.0))
 
 
 def _pressed_dir(part, normal):
@@ -717,7 +776,8 @@ def _orient_tube_components(out, t0, t1, roles, centers, axes, part_name):
 
 
 def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-               cap_start, cap_end, arcs=None, openings=None):
+               cap_start, cap_end, arcs=None, openings=None, seam=None,
+               part_key=None):
     """Build a tube from per-ring data.
 
     centers: list of (3,), axes: list of (side, other, tangent),
@@ -773,6 +833,12 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     def vert(ri, k, mat):
         """Vertex at ring `ri`, column `k` in 0..n_sides, for one material.
 
+        When `seam` is given, ring 0 does not create vertices at all — it
+        returns the ones another part already placed. Two lofts that merely
+        *touch* leave a rim in one plane (which z-fights) or a hairline gap
+        (which you can see through); sharing the vertices makes them one
+        surface, so there is no junction left to go wrong.
+
         Column n_sides is column 0 again in space but u=1 in the chart. A
         closed loop cannot be unwrapped without a seam: sharing that column
         would make the wrap quad run backwards across the entire chart, and
@@ -780,6 +846,8 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         every band rasterized before it, or taking the cell if it is the
         band.
         """
+        if seam is not None and ri == 0:
+            return seam[k % len(seam)]
         pts, collapsed, vcoord = geom[ri]
         key = (ri, -1 if collapsed else k, mat)
         if key in cache:
@@ -846,6 +914,16 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
                 tri(a, b, c, mat, "side")
                 tri(a, c, d, mat, "side")
 
+    def record_end_ring(key):
+        """Remember the last ring's vertices so a part can continue from it."""
+        if nrings < 2:
+            return
+        ri = nrings - 1
+        if geom[ri][1]:
+            return                      # collapsed to a point: nothing to join
+        out.end_rings[key] = [vert(ri, k, band_material(ri - 1, k % n_sides))
+                              for k in range(n_sides)]
+
     def cap(ri, center, outward, style, role):
         # A cap takes its own ring's material (the documented per-ring cap
         # override), not the material of the band leading into it.
@@ -881,6 +959,8 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
     e_tang = np.asarray(axes[-1][2], dtype=float)
     cap(0, centers[0], -s_tang, cap_start, "start_cap")
     cap(nrings - 1, centers[-1], e_tang, cap_end, "end_cap")
+    if part_key is not None:
+        record_end_ring(part_key)
     return roles
 
 
@@ -957,14 +1037,16 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
     elif "bone" in part:
         host = resolve_bone_ref(bones, part["bone"], suffix)
         at = part.get("at", 1.0)
-        origin = host.point_at(at)
+        if part.get("around") is not None:
+            origin = around_origin(part, host, at, out, suffix, reflect)
+        else:
+            origin = host.point_at(at)
         origin = origin + np.array(part.get("offset", (0, 0, 0)), dtype=float)
         first_w = part["rings"][0].get("w", 0.05) if part["rings"] else 0.05
         origin, normal = snap_on(out, part, origin, suffix,
                                  default_inset=max(0.012, first_w * 0.25),
                                  footprint=first_w * 0.6)
-        d = resolve_dir(part.get("dir", "up"), part.get("pitch", 0.0),
-                        part.get("yaw", 0.0), part.get("tilt", 0.0))
+        d = part_dir_on_bone(part, host, reflect)
         if normal is not None and part.get("press", True):
             d = _record_press(out, part, suffix, reflect, d,
                               _pressed_dir(part, normal))
@@ -1085,10 +1167,33 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
 
     v0 = len(out.verts)
     t0 = len(out.tris)
+    key_self = part["name"] + (".r" if reflect else suffix)
+    seam = None
+    if part.get("continues"):
+        ref = part["continues"]
+        src = None
+        for cand in (ref + (".r" if reflect else suffix), ref):
+            if cand in out.end_rings:
+                src = cand
+                break
+        if src is None:
+            raise WamError(
+                "loft %r: continues=%r — no part by that name has been built "
+                "yet with an open end to grow from (it must appear earlier in "
+                "the file, and must not be capped at that end)"
+                % (key_self, ref))
+        out.continues[key_self] = src
+        seam = out.end_rings[src]
+        if len(seam) != n_sides:
+            raise WamError(
+                "loft %r: continues=%r, but that part has %d sides and this "
+                "one has %d — a shared ring needs the same count on both"
+                % (key_self, src, len(seam), n_sides))
     roles = _emit_tube(out, centers, axes, params, mats, skins, n_sides,
-                       part.get("cap_start", "flat"),
+                       "none" if seam is not None else part.get("cap_start", "flat"),
                        part.get("cap_end", "flat"), arcs=arcs,
-                       openings=part.get("openings"))
+                       openings=part.get("openings"), seam=seam,
+                       part_key=key_self)
     if reflect:
         _reflect_range(out, v0, suffix)
         refl = np.array([-1.0, 1.0, 1.0])
@@ -1499,7 +1604,11 @@ def build_attach(out, model, bones, part, suffix="", reflect=False):
         out.double_sided_materials.add(base_mat)
     host = resolve_bone_ref(bones, part.get("bone"), suffix)
     at = part.get("at", 0.0)
-    origin = host.point_at(at) + np.array(part.get("offset", (0, 0, 0)), dtype=float)
+    if part.get("around") is not None:
+        origin = around_origin(part, host, at, out, suffix, reflect)
+    else:
+        origin = host.point_at(at)
+    origin = origin + np.array(part.get("offset", (0, 0, 0)), dtype=float)
     size = part.get("size", 0.05)
     origin, normal = snap_on(
         out, part, origin, suffix,

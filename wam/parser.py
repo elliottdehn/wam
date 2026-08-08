@@ -101,7 +101,8 @@ KNOWN_KEYS = {
     "part:loft": {"material", "bones", "bone", "dir", "shape", "on", "press",
                   "frame", "refaxis", "skin", "material_arc", "at", "len",
                   "pitch", "yaw", "tilt", "sides", "inset", "offset",
-                  "rest", "layer", "push", "arc", "thickness"},
+                  "rest", "layer", "push", "arc", "thickness",
+                  "across", "aim", "around", "continues"},
     "part:sweep": {"material", "bone", "bones", "dir", "shape", "on", "press",
                    "frame", "refaxis", "skin", "material_arc", "at", "len",
                    "pitch", "yaw", "tilt", "sides", "inset", "offset",
@@ -111,7 +112,8 @@ KNOWN_KEYS = {
                  "rest", "layer", "push"},
     "part:attach": {"material", "bone", "kind", "at", "size", "w", "d", "h",
                     "taper", "dir", "pitch", "yaw", "tilt", "on", "press",
-                    "inset", "skin", "offset", "rest", "layer", "push"},
+                    "inset", "skin", "offset", "rest", "layer", "push",
+                    "around", "across", "aim"},
     "ring": {"t", "w", "d", "fwd", "side", "up", "roll", "wtop", "wbot", "arc",
              "dtop", "dbot", "shape", "material", "material_arc", "follow",
              "skin"},
@@ -340,6 +342,8 @@ def parse(text, path=None):
     model.source_path = path
     section = None
     mirror = False
+    mirror_line = None
+    mirror_items = []
     cur_group = None
     cur_profile = None
     cur_part = None
@@ -405,7 +409,12 @@ def parse(text, path=None):
             raise WamError("directive before any section", line_no, line)
 
         if kw == "mirror" and section in ("skeleton", "parts"):
+            if mirror:
+                raise WamError("mirror block opened at line %d is not closed "
+                               "yet" % mirror_line, line_no, line)
             mirror = True
+            mirror_line = line_no
+            mirror_items.append([line_no, []])
             continue
         if kw == "group" and section == "parts":
             if mirror:
@@ -442,7 +451,11 @@ def parse(text, path=None):
                 cur_group = None
             else:
                 mirror = False
+                mirror_line = None
             continue
+        if mirror and kw in ("bone", "loft", "sweep", "web", "attach") \
+                and mirror_items:
+            mirror_items[-1][1].append(tokens[1] if len(tokens) > 1 else kw)
 
         if section == "model":
             if kw == "height":
@@ -719,13 +732,18 @@ def parse(text, path=None):
                     p["trailing"] = kv["trailing"]
                 if "at" in kv and kv["at"].startswith("("):
                     p["gpos"] = _vec(kv.pop("at"), line_no, line)
-                for k in ("rest", "push"):
+                for k in ("rest", "push", "across", "aim", "continues"):
                     if k in kv:
                         p[k] = kv[k]
+                for f in flags:
+                    if f in ("along", "against"):
+                        p[f] = True
                 if "arc" in kv:
                     p["arc"] = _span_spec(kv["arc"], line_no, line)
                 if "layer" in kv:
                     p["layer"] = _num(kv["layer"], line_no, line)
+                if "around" in kv:
+                    p["around"] = _num(kv["around"], line_no, line)
                 for k in ("at", "len", "pitch", "yaw", "tilt", "size", "w", "d",
                           "h", "sides", "taper", "inset", "scallop",
                           "thickness", "steps", "usteps"):
@@ -908,6 +926,17 @@ def parse(text, path=None):
             model.checks.append(
                 parse_check(kw, line, tokens, line_no))
 
+    # Running to the end of a section without `end` is idiomatic and fine, so
+    # this is not an error — but a block that quietly swept up one more thing
+    # than intended is invisible, and a tail written once then appearing twice
+    # costs a long time to spot. Say what each block covered.
+    for ln, names in mirror_items:
+        if names:
+            model.warnings.append(
+                "line %d: mirror covers %s%s — each of those is built twice, "
+                "once per side"
+                % (ln, ", ".join(repr(n) for n in names[:6]),
+                   " (+%d more)" % (len(names) - 6) if len(names) > 6 else ""))
     validate_hold(model)
     return apply_proportions(model)
 

@@ -145,6 +145,36 @@ knowing about how it fakes them:
   pixels at delta 14 to 53 pixels at delta 69 — smaller and brighter, as it
   should be.
 
+### Aiming and placing detail on a bone
+
+A part hosted on a bone (`bone=X at=<t>`) aims with `dir=`, which is a *world*
+axis — so a jaw written `dir=fwd` on a head that points forward-and-down runs
+off at an angle to its own skull. State it relative to the bone instead, with
+the same words composition uses:
+
+```
+loft jaw bone=head at=0.26 along len=0.14 offset=(0,-0.05,0)
+loft fin bone=spine at=0.50 aim=60:up len=0.20
+```
+
+`along` / `against` run with or counter to the bone, `across=<hint>` is
+perpendicular to it, and `aim=<deg>:<hint>` is the general form. `pitch`,
+`yaw` and `tilt` still apply on top as deviations.
+
+**`around=<deg>` places detail around a surface** instead of by a guessed
+offset. Combined with `on=`, it walks the host's surface: `at=` picks the
+position along the bone, `around=` the angle about it, and `on=` finds the
+surface from outside.
+
+```
+attach eye bone=head kind=eye at=0.45 around=35  on=skull size=0.05
+attach eye bone=head kind=eye at=0.45 around=-35 on=skull size=0.05
+```
+
+Zero degrees is the section's `side` axis, ninety its depth axis — the same
+convention `material_arc` and `arc=` use. Offsets in bone space are how eyes
+end up inside a skull and a back spine ends up inside a neck.
+
 ### `arc=` — open shells instead of closed tubes
 
 A ring is a closed loop, so every loft is a sealed tube. `arc=<lo>-<hi>` in
@@ -305,6 +335,25 @@ skeleton
 - Head offsets from that point: `side= up= fwd=` scalars or `offset=(x,y,z)`.
 - Inside `mirror`, `parent=` references resolve to the same-side bone first
   (`clavicle` → `clavicle.l`), falling back to central bones.
+
+**`curl=` / `swing=` — bend relative to the parent, not the world.** `dir=`
+plus `pitch`/`yaw` are *world* angles, so a chain does not accumulate: a neck
+written `pitch=-52, -24, +34` aims each bone at the horizon independently and
+comes out flat, with the head no higher than the shoulders. `curl` bends away
+from the parent's direction and `swing` turns across it, so equal values
+compound into an arc.
+
+```
+bone neck1 parent=chest curl=48 len=0.21     # rises out of the shoulders
+bone neck2 parent=neck1 curl=22 len=0.19
+bone neck3 parent=neck2 curl=-30 len=0.17    # and levels off into the head
+bone head  parent=neck3 curl=-22 len=0.22
+```
+
+`curl` bends in the vertical plane the parent lies in — deliberately not in
+the parent's own frame, whose handedness flips as a chain sweeps and would
+reverse the arc partway along. A bone takes `dir=` or `curl=`/`swing=`, never
+both.
 
 **`bend=` — say which way a joint actually turns.** A knee that yaws, or that
 bends the way it is not hinged, is the most recognisable broken rig there is,
@@ -712,6 +761,34 @@ faceted|smooth` sets the default (smooth if omitted) and the per-part
 a part's vertex count rises steeply — a 10-sided gem measured 35 vertices
 smooth and 215 faceted, the same 120 triangles either way. Spend it on gems,
 crystals, plate facets and cut stone, not on a whole body.
+
+### `continues=` — grow one loft out of another
+
+Two lofts that merely meet leave a junction, and a junction has three ways to
+go wrong and no good ones: rims butted in the same plane (which z-fights), a
+hairline gap (which you can see through), or one part sunk inside the other.
+Tuning ring widths trades one for another forever.
+
+```
+loft neck bones=neck1..neck3 material=hide
+  ring 0.00 w=0.22 d=0.22
+  ring 1.00 w=0.15 d=0.15
+  cap start=dome end=none          # left open for the next part
+
+loft skull bones=head..head material=hide continues=neck
+  ring 0.00 w=0.15 d=0.15          # this ring is not built — it *is* the
+  ring 0.35 w=0.22 d=0.20          # neck's last ring, shared
+  ring 1.00 w=0.09 d=0.08
+  cap end=flat
+```
+
+The continuing loft does not create its first ring: it reuses the referenced
+part's final ring vertices, so the two are one surface with no seam to fight
+or crack. The start cap is forced to `none` — there is nothing to cap.
+
+Both parts need the same `sides=`, the source must appear earlier in the
+file, and its end must be open (`cap end=none`). All three are errors rather
+than silent misbehaviour.
 
 ### `rest=` — sit on a surface instead of guessing a standoff
 

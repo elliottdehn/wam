@@ -436,6 +436,18 @@ def axis_hint(bone, hint, what="aim"):
     return np.asarray(hint, dtype=float)
 
 
+def _similar(a, b):
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
 def resolve_bone_ref(bones, ref, suffix=""):
     """Resolve a bone reference, preferring the suffixed (mirrored) variant."""
     if suffix:
@@ -444,7 +456,16 @@ def resolve_bone_ref(bones, ref, suffix=""):
             return bones[cand]
     if ref in bones:
         return bones[ref]
-    raise WamError("unknown bone %r" % ref)
+    if ref + ".l" in bones or ref + ".r" in bones:
+        raise WamError(
+            "unknown bone %r, but %r and %r exist — that bone was declared "
+            "inside a `mirror` block, so it was built once per side and the "
+            "unsuffixed name is gone. Either close the mirror block with "
+            "`end` before declaring it, or refer to %r"
+            % (ref, ref + ".l", ref + ".r", ref + ".l"))
+    near = sorted(bones, key=lambda c: _similar(ref, c))[:1]
+    raise WamError("unknown bone %r%s" % (
+        ref, (", did you mean %r?" % near[0]) if near else ""))
 
 
 def chain_bones(bones, first_ref, last_ref, suffix=""):

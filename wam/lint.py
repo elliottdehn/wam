@@ -75,6 +75,29 @@ def _edges_of(T):
     return np.unique(np.sort(e, axis=1), axis=0)
 
 
+def _same_facing(Va, Ta, Vb, Tb, samples=40):
+    """Do the two surfaces lie on top of each other facing the same way?
+
+    Proximity alone is not the problem. Two limbs a hair apart face *each
+    other* and render as a narrow gap, which is fine. What a renderer cannot
+    resolve is two surfaces in nearly the same place pointing nearly the same
+    way — a sleeve exactly on an arm, or two rims butted in one plane — so
+    the normals have to agree before this is worth reporting.
+    """
+    from . import render as wrender
+    if not len(Ta) or not len(Tb):
+        return False
+    Na = wrender.vertex_normals(Va, Ta)
+    Nb = wrender.vertex_normals(Vb, Tb)
+    step = max(1, len(Va) // samples)
+    tot, n = 0.0, 0
+    for i in range(0, len(Va), step):
+        j = int(np.argmin(np.linalg.norm(Vb - Va[i], axis=1)))
+        tot += float(Na[i] @ Nb[j])
+        n += 1
+    return n > 0 and tot / n > 0.45
+
+
 def _surfaces_cross(Va, Ta, Vb, Tb):
     """Do two surfaces actually pass through each other?
 
@@ -94,7 +117,7 @@ def _surfaces_cross(Va, Ta, Vb, Tb):
     return False
 
 
-def _islands(V, T, ranges, touch):
+def _islands(V, T, ranges, touch, joins=None):
     """Group parts into clumps of geometry that actually touch each other.
 
     A part attached to nothing is one of the few errors that survives every
@@ -133,6 +156,13 @@ def _islands(V, T, ranges, touch):
             parent[a] = parent[parent[a]]
             a = parent[a]
         return a
+
+    # A part joined with `continues=` shares its neighbour's ring, and those
+    # shared vertices belong to the *other* part's range — so by distance the
+    # two look separated even though they are literally one surface.
+    for child, src in (joins or {}).items():
+        if child in parent and src in parent:
+            parent[find(child)] = find(src)
 
     for i, a in enumerate(keys):
         alo, ahi = box[a]
@@ -522,8 +552,57 @@ def lint(model, bones, mesh):
                          % (anim["name"], ground_key, shown,
                             ", ..." if len(moved) > 5 else ""))
 
+    # 6a1. surfaces that neither meet nor clear: the band that renders badly.
+    # Two parts are fine overlapping decisively (a limb into a torso) and fine
+    # well apart. What renders as a flickering seam, a dark wedge, or a hairline
+    # crack is the middle: rims butted in the same plane, or a gap too small to
+    # read as a gap but big enough to see through. Nothing else looks for it,
+    # which is why a 0.006 slot between a skull and a jaw took four wrong
+    # hypotheses to find.
+    # Tight on purpose. A sleeve 0.002 outside an arm has a consistent
+    # depth order and renders fine; what breaks is surfaces so close the
+    # renderer cannot order them at all.
+    graze_hi = 0.0012 * max(height, 1e-6)
+    tris_all = np.asarray(T, dtype=int)
+
+    def _surf(key):
+        v0, v1 = mesh.part_ranges[key]
+        sel = tris_all[((tris_all >= v0) & (tris_all < v1)).all(axis=1)] - v0 \
+            if len(tris_all) else np.zeros((0, 3), dtype=int)
+        return V[v0:v1], sel
+
+    keys = [k for k in mesh.part_ranges
+            if mesh.part_ranges[k][1] > mesh.part_ranges[k][0]]
+    boxes = {k: (V[slice(*mesh.part_ranges[k])].min(axis=0),
+                 V[slice(*mesh.part_ranges[k])].max(axis=0)) for k in keys}
+    grazes = []
+    for i, a in enumerate(keys):
+        alo, ahi = boxes[a]
+        for b in keys[i + 1:]:
+            blo, bhi = boxes[b]
+            if np.any(blo - ahi > graze_hi) or np.any(alo - bhi > graze_hi):
+                continue
+            av, at = _surf(a)
+            bv, bt = _surf(b)
+            d = wchecks.surface_distance(av, at, bv, bt)
+            if d > graze_hi:
+                continue
+            if _surfaces_cross(av, at, bv, bt):
+                continue          # decisive overlap: renders fine
+            if not _same_facing(av, at, bv, bt):
+                continue          # facing each other is a visible gap, not a fight
+            grazes.append((d, a, b))
+    for d, a, b in sorted(grazes)[:6]:
+        warnings.append(
+            "parts %r and %r come within %.4f without meeting — too close to "
+            "read as separate and not overlapping enough to be one surface. "
+            "That is what shows up as a flickering seam, a dark wedge, or a "
+            "crack you can see through. Push them apart, or make them "
+            "overlap properly" % (a, b, d))
+
     # 6a2. geometry that touches nothing else
-    islands = _islands(V, T, mesh.part_ranges, touch=0.01 * max(height, 1e-6))
+    islands = _islands(V, T, mesh.part_ranges, touch=0.01 * max(height, 1e-6),
+                       joins=getattr(mesh, 'continues', None))
     if len(islands) > 1:
         # Which clump is "the model" is decided by the root bone, not by size.
         # Sorting by vertex count picks whichever clump happens to be densest,
