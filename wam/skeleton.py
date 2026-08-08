@@ -268,7 +268,37 @@ def solve(model):
             off[0] += b.get("side", 0.0)
             off[1] += b.get("up", 0.0)
             off[2] += b.get("fwd", 0.0)
-            d = resolve_dir(b.get("dir") or "up", b.get("pitch", 0.0), b.get("yaw", 0.0), b.get("tilt", 0.0))
+            if b.get("curl") is not None or b.get("swing") is not None:
+                # Chain-relative aiming. `dir=` + pitch/yaw are *world*
+                # angles, so a neck built that way is not "bend a bit more
+                # each segment" — every bone is aimed at the horizon
+                # independently, and an arc built from -52, -24, +34 comes
+                # out flat because the numbers never compound. `curl`/`swing`
+                # bend away from the parent, which is how a neck, a tail or
+                # a finger is actually described.
+                pd = np.asarray(parent.dir, dtype=float)
+                pd = pd / max(np.linalg.norm(pd), 1e-12)
+                # Deliberately *not* the parent's own side/up: that frame is
+                # rebuilt per bone and its handedness flips as the direction
+                # sweeps, so a chain of equal curls reverses partway along and
+                # the arc folds back on itself. Curl is a bend in the vertical
+                # plane the parent lies in, which is what a neck or a tail
+                # means by it, and that axis is stable.
+                world_up = np.array([0.0, 1.0, 0.0])
+                side = np.cross(world_up, pd)
+                if np.linalg.norm(side) < 1e-6:
+                    side = np.array([1.0, 0.0, 0.0])
+                side = side / np.linalg.norm(side)
+                up = world_up
+                d = pd
+                if b.get("curl"):
+                    d = rot_axis(side, -float(b["curl"])) @ d
+                if b.get("swing"):
+                    sw = float(b["swing"])
+                    d = rot_axis(up, -sw if mirrored else sw) @ d
+                d = d / max(np.linalg.norm(d), 1e-12)
+            else:
+                d = resolve_dir(b.get("dir") or "up", b.get("pitch", 0.0), b.get("yaw", 0.0), b.get("tilt", 0.0))
             if mirrored:
                 off = flip(off)
                 d = flip(d)

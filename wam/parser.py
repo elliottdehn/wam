@@ -90,7 +90,7 @@ class Model:
 # the model compiles, looks plausible, and quietly ignores what you asked for.
 KNOWN_KEYS = {
     "bone": {"parent", "dir", "pitch", "yaw", "roll", "tilt", "len", "at", "to",
-             "bend",
+             "bend", "curl", "swing",
              "side", "fwd", "up", "offset", "head", "tail"},
     "pin": {"at", "head", "tail"},
     # Every generator used to share one key set, which meant a key valid on
@@ -609,7 +609,8 @@ def parse(text, path=None):
                 for f in flags:
                     if f in DIR_WORDS:
                         b["dir"] = f
-                for k in ("pitch", "yaw", "roll", "tilt", "len", "at", "side", "fwd", "up"):
+                for k in ("pitch", "yaw", "roll", "tilt", "len", "at", "side",
+                          "fwd", "up", "curl", "swing"):
                     if k in kv:
                         b[k] = _num(kv[k], line_no, line)
                 if "to" in kv:
@@ -623,6 +624,13 @@ def parse(text, path=None):
                         b["pin_" + k] = _vec(kv[k], line_no, line)
                 if b["parent"] is None:
                     raise WamError("bone %r needs parent=" % b["name"], line_no, line)
+                if (b.get("curl") is not None or b.get("swing") is not None) \
+                        and b.get("dir"):
+                    raise WamError(
+                        "bone %r has both dir= and curl=/swing= — dir= aims "
+                        "at a world axis and curl= bends away from the "
+                        "parent, so only one of them can decide where this "
+                        "bone points" % b["name"], line_no, line)
                 if b.get("to") is None and ("len" not in b or b.get("len") is None):
                     raise WamError(
                         "bone %r needs len= or to=<landmark>" % b["name"],
