@@ -47,7 +47,7 @@ be published later, and the reverse is impossible.
 
 ## Publishing it
 
-Base URL: `https://wamshare.dehnbostele.workers.dev`
+Base URL: `https://wamshare.com`
 
 ### 1. Find or create the secret
 
@@ -62,7 +62,7 @@ upload and the server mints one.
 ### 2. Upload
 
 ```bash
-curl -sX POST https://wamshare.dehnbostele.workers.dev/api/models \
+curl -sX POST https://wamshare.com/api/models \
   -H 'content-type: application/json' \
   -H "X-Wam-Secret: $(cat ~/.wamshare/secret 2>/dev/null)" \
   -d @payload.json

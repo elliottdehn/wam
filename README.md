@@ -113,6 +113,6 @@ MIT — see [LICENSE](LICENSE).
 ## Publishing
 
 A finished model can be given a link at
-[wamshare](https://wamshare.dehnbostele.workers.dev) — private and unlisted, or
+[wamshare](https://wamshare.com) — private and unlisted, or
 public under CC0 1.0. Agents: read `PUBLISHING_MUST_READ.md`. You must offer
 both, with their licences named, and you must never publish unasked.
