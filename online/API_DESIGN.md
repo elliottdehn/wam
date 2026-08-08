@@ -370,6 +370,80 @@ tuning iterations into a chain rather than eleven strangers, which is better —
 but only if the index does something with that. Listing every node makes the
 front page somebody's afternoon.
 
+## Storage: R2 + SQLite Durable Objects
+
+**R2 holds the immutable bytes. A SQLite Durable Object holds the graph.**
+That split falls straight out of the design: everything content-addressed is a
+blob, everything relational is a row.
+
+```
+R2
+  src/<sourceHash>                     the .wam, written once, never updated
+  render/<sourceHash>/<compilerVer>    compiled viewer blob
+  atlas/<sourceHash>/<compilerVer>     texture atlas PNG, when the model has one
+
+DO (SQLite)
+  nodes    id, sourceHash, title, description, visibility, bucketId,
+           compilerVer, tombstoned, createdAt
+  edges    childId, parentId, similarity
+  buckets  bucketId, secretHash, createdAt
+```
+
+**Keying renders by compiler version is what makes "immutable input, evolving
+output" safe.** A recompile writes a *new* key rather than overwriting a good
+one, so the last-good render is still sitting there when a compiler upgrade
+breaks an old model. Serving prefers the newest verified render and falls back
+to the newest that exists — which is the "a permanent link must never 500"
+rule, implemented as a key layout rather than as a special case.
+
+Store `secretHash`, never the secret. It is a bearer credential for a whole
+bucket; a database that leaks should not hand over delete rights.
+
+### One Durable Object, to start
+
+Measured against the published limits, a single DO is nowhere near the edge:
+
+| | limit | what we would use |
+|---|---|---|
+| SQLite per DO | 10 GB | rows only — the blobs are in R2 |
+| Throughput | ~1K req/s (soft) | orders of magnitude above a Reddit spike |
+| Memory | 128 MB | metadata, not models |
+| CPU per request | 30 s default, 300 s max | see below |
+
+The real argument is not headroom, it is **serialisability**. Two decisions
+need to be atomic and a single DO makes them so for free:
+
+- *First to upload wins* — two simultaneous uploads of the same source must
+  produce one node, not two.
+- *Parents must be public* — checking that a parent exists and is public, then
+  writing the edge, is a read-then-write race everywhere except inside one DO.
+
+If throughput ever matters, shard buckets across per-bucket DOs and keep one
+index DO for the DAG. Not now; noted so the schema does not paint us in.
+
+### Where does the compile actually run? — OPEN
+
+The unresolved piece. Workers cannot run CPython, so "server compiles" needs a
+runtime we do not yet have. Three candidates:
+
+1. **A Python Worker** (Pyodide at the edge). Closest to the stated principle.
+   Needs verifying: numpy availability, and whether per-isolate Pyodide boot is
+   viable — it costs about a second and 8.6 MB even warm on a laptop.
+2. **Containers**, running the real CPython toolchain. No boot problem, more
+   infrastructure.
+3. **Client-supplied render, server-verified.** The browser compiler already
+   exists and works — the agent uploads source *and* the compiled blob, and the
+   server treats the blob as an optimistic cache it may replace after
+   recompiling out of band.
+
+Option 3 is the pragmatic one and it bends the *source in, render out* rule
+without breaking it: **the source stays the truth and the render is only ever a
+cache.** What it concedes is that an unverified blob may be served briefly, and
+that blob is untrusted data feeding our renderer — far weaker than untrusted
+HTML, but not nothing. If we take it, recompilation is not optional and a
+source/render mismatch has to be a visible flag rather than a silent
+replacement.
+
 ## Compiling untrusted input
 
 `.wam` is declarative data rather than code, so compiling a stranger's upload
@@ -385,6 +459,7 @@ second, so synchronous is fine for ordinary models.
 
 - The entire presentation layer: index, lineage display, whether a bucket is
   ever surfaced publicly.
+- Where compilation runs (options above; 3 is the pragmatic one).
 - Whether a private model may be declared as someone else's parent.
 - Terms text: publishing has to grant the right to display *and* carry a
   representation that the uploader holds the rights they are dedicating. One
