@@ -1,23 +1,7 @@
-const SAMPLE = `model king_black_dragon
-  height 4.6
-  style chunky
-
-palette
-  hide  #232b2c rough=0.72
-  ember #e2531b rough=0.30
-
-skeleton
-  bone neck1 parent=chest  curl=26 len=0.28
-  bone head  parent=neck3  curl=-8 len=0.27
-
-parts
-  loft skull bones=head..head continues=neck
-    ring 0.20 w=0.26 dtop=0.20 dbot=0.15
-    ring 1.00 w=0.085 dtop=0.085 dbot=0.06
-
-checks
-  assert dist(sskull.l, sskull.r) > 1.10
-  assert tris < 9000`
+import { PromptStrip } from './components/PromptStrip'
+import { WamSource } from './components/WamSource'
+import { WamTurntable } from './components/WamTurntable'
+import { DEMO_WAM } from './wam/demo'
 
 const FEATURES = [
   {
@@ -59,21 +43,26 @@ export default function App() {
             palette colours. The compiler makes every vertex, weight, normal and
             winding. Then you put it here and send someone the link.
           </p>
+
+          <PromptStrip />
         </section>
 
-        <section className="sample" aria-label="Example WAM source">
-          <div className="sample-chrome">
-            <span className="dot" />
-            <span className="dot" />
-            <span className="dot" />
-            <span className="sample-name">king_black_dragon.wam</span>
-          </div>
-          <pre>
-            <code>{SAMPLE}</code>
-          </pre>
-          <p className="sample-caption">
-            2,218 triangles. Three heads, and a check that keeps them apart.
+        <section className="showcase" aria-label="A model and the source that made it">
+          <WamSource text={DEMO_WAM} maxLines={22} />
+          <WamTurntable
+            source={DEMO_WAM}
+            anim="idle"
+            label="sentinel.wam — compiled in your browser"
+          />
+        </section>
+
+        <section className="tryit" aria-label="Try your own model">
+          <h2>Drop your own</h2>
+          <p>
+            Nothing is uploaded — the compiler runs here, in a worker, on your
+            machine. The first model pays for the runtime; after that it is cached.
           </p>
+          <WamTurntable />
         </section>
 
         <section className="features">

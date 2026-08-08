@@ -1,0 +1,8 @@
+# The Pyodide runtime is ~18MB and versioned by the paths in prepare-pyodide.mjs,
+# so it should be fetched exactly once per browser, ever.
+/pyodide/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Vite writes content-hashed filenames, so these are safe to pin too.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -10,6 +10,8 @@ const workerAssets = fileURLToPath(new URL('../backend/public', import.meta.url)
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // The compiler runs in a module worker; the build must emit ES workers to match.
+  worker: { format: 'es' },
   build: {
     outDir: workerAssets,
     // outDir sits outside the Vite project root, so Vite refuses to clear it
