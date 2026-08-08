@@ -1,0 +1,253 @@
+/* Palette lifted from the dragon the toolchain built: near-black slate hide,
+   bone horn, olive underbelly, and the ember of a lit maw as the one accent. */
+:root {
+  --hide: #171c1d;
+  --hide-raised: #1f2627;
+  --edge: #2e383a;
+  --horn: #cbc4a7;
+  --belly: #7f8763;
+  --ember: #e2531b;
+  --text: #d9dedd;
+  --muted: #8b9694;
+
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial,
+    sans-serif;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--hide);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  position: relative;
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 5rem;
+  overflow-x: hidden;
+}
+
+/* A single warm bloom behind the hero — the model is black on black, so the
+   page needs one light source or it reads as a flat sheet. */
+.glow {
+  position: absolute;
+  top: -18rem;
+  left: 50%;
+  width: min(60rem, 140vw);
+  height: 40rem;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(226, 83, 27, 0.16) 0%,
+    rgba(226, 83, 27, 0.05) 38%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* :not(.glow) matters — a bare `.page > *` has the same specificity as .glow
+   and, coming later, would flip it back to position: relative and push the
+   whole page down by its own 40rem height. */
+.page > *:not(.glow) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- masthead ---- */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 5rem;
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-size: 1.0625rem;
+  letter-spacing: 0.02em;
+  color: var(--horn);
+}
+
+.wordmark-dim {
+  color: var(--muted);
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+/* ---- hero ---- */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--belly);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-size: clamp(2.75rem, 9vw, 5.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  margin: 0;
+  color: var(--horn);
+}
+
+h1 .accent {
+  color: var(--ember);
+}
+
+.lede {
+  max-width: 34rem;
+  margin: 1.75rem 0 0;
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+
+/* ---- code sample ---- */
+.sample {
+  margin: 4.5rem 0 0;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--hide-raised);
+  overflow: hidden;
+}
+
+.sample-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--edge);
+}
+
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--edge);
+}
+
+.sample-name {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+
+.sample pre {
+  margin: 0;
+  padding: 1.25rem 1rem;
+  overflow-x: auto;
+}
+
+.sample code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre;
+}
+
+.sample-caption {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--edge);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ---- features ---- */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 2.5rem 2rem;
+  margin: 5rem 0 0;
+}
+
+.features h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--horn);
+  margin: 0 0 0.5rem;
+}
+
+.features p {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+/* ---- footer ---- */
+footer {
+  margin-top: 5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--edge);
+}
+
+footer p {
+  margin: 0;
+  max-width: 38rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+footer code {
+  font-family: var(--mono);
+  font-size: 0.8125em;
+  color: var(--belly);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero,
+  .sample,
+  .features {
+    animation: rise 0.5s ease-out both;
+  }
+  .sample {
+    animation-delay: 0.06s;
+  }
+  .features {
+    animation-delay: 0.12s;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
