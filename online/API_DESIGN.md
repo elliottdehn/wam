@@ -500,11 +500,85 @@ not let anything important depend on it being true. The one thing the server
 *can* verify without a compiler is textual similarity between a child and its
 declared parents, which needs nothing but the two sources.
 
+## Presentation: a link lands you in a lineage
+
+The unit of a page is not a model, it is a **track**. Landing on a link shows
+you the model at that position *and* where that position sits in its version
+history, so moving through versions happens on the page rather than by
+navigating to another one. Click-click-click through single-model pages is the
+thing this exists to avoid.
+
+### Canonical means "same secret"
+
+The DAG is public and anyone may declare descent from anything, so "which of
+these is the next version" needs an answer that cannot be claimed by a
+stranger. The answer is the secret: **edges between nodes owned by the same
+bucket form the canonical track.** Everything else is a branch.
+
+- Upload v1, then v2 naming v1 as parent, then v3 naming v2 — all with one
+  secret — and that is one canonical track, in order.
+- A stranger forking v2 with their own secret creates a branch. It is real, it
+  is in the graph, and it is not part of your version history.
+
+That separation also settles the inbound-content worry from earlier: other
+people's derivatives are visibly in a different part of the page from the
+version track, which is where a *hide* control belongs.
+
+A track may fork within one bucket — the same secret making two children of one
+node — so the "latest" is **potentially several tips**, not guaranteed one. The
+page has to handle that rather than assuming a line.
+
+### The link still pins one model
+
+Immutability applies to what a URL means, not just to bytes. `/m/<id>` must
+always resolve to exactly that model, or every link ever shared quietly starts
+meaning something else.
+
+So version iteration is *additional context*, and moving along the track
+**updates the URL to the node you moved to**. What you copy out of the address
+bar is always the thing on screen.
+
+### Only public nodes appear in anyone else's lineage
+
+Parents must be public, but a child may be private, so a public model can have
+private descendants. Those must never be listed on the parent's page — that
+would leak a private model's existence to everyone who visits its ancestor.
+
+The rule: a lineage view contains public nodes, plus the node you landed on if
+you arrived with its link. Nothing else.
+
+### One request, not N
+
+The page needs the whole track before it can draw a scrubber, so this is a
+resource of its own rather than a walk over `/successors`:
+
+```
+GET /api/lineage/:id
+  200 { focus: id,
+        canonical: [ {id, title, createdAt, tombstoned}, ... ],  # in order
+        tips: [id],            # latest on the canonical track; may be > 1
+        branches: [ {fromId, id, title, bucketId, similarity} ],
+        hint: "..." }
+```
+
+### Losing a secret now costs more than delete
+
+Worth being explicit, because it changes the advice. A secret was previously
+just the right to delete. Canonical-by-secret makes it the right to **continue
+a lineage**: upload the next version with a different secret and it is a
+branch off your own work, not the next version of it, and nothing can be done
+about that afterwards because nothing is mutable.
+
+That is a defensible consequence of having no accounts, but it means "save your
+secret" is no longer a minor note in the docs.
+
 ## Open questions
 
-**The presentation layer, and that is the only one left.** The index, how
-lineage is surfaced, whether a bucket is ever shown publicly. Internally it is
-an append-only DAG; nothing above prejudges what a page does with it.
+The index — what the gallery lists, and how it ranks — is still unspecified.
+Model pages are described above.
+
+Whether a bucket is ever surfaced as a browsable thing in its own right is
+also open, though canonical-by-secret makes it more tempting than it was.
 
 Terms of service are drafted in `TERMS.md`. They are unreviewed and say so.
 
