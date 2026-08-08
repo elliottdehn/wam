@@ -5,7 +5,7 @@
  *   <WamTurntable model={viewerJson} /> already compiled — no Pyodide at all
  *   <WamTurntable />                    drop or pick a .wam
  *
- * Just the turntable: it spins, and that is the whole interaction.
+ * Drag to orbit, wheel to zoom, and one chip per animation the model carries.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { compileWam, type CompileStage } from '../wam/compile'
@@ -44,6 +44,10 @@ export function WamTurntable({
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const [loaded, setLoaded] = useState<WamModel | null>(model ?? null)
+  const [anim, setAnim] = useState<string | undefined>(view.anim)
+  // The renderer is created in an effect that must not re-run when the
+  // selection changes, so it reads the choice through a ref.
+  const animRef = useRef<string | undefined>(view.anim)
   const [stage, setStage] = useState<CompileStage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -67,6 +71,19 @@ export function WamTurntable({
         setError(err instanceof Error ? err.message : String(err))
       })
   }, [])
+
+  // A newly dropped model has its own animations, so fall back to the rest
+  // pose unless it happens to carry the one that was requested.
+  useEffect(() => {
+    if (!loaded) return
+    const wanted = view.anim && loaded.anims.some((a) => a.name === view.anim)
+      ? view.anim
+      : undefined
+    animRef.current = wanted
+    setAnim(wanted)
+    engineRef.current?.setAnim(wanted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded])
 
   useEffect(() => {
     if (model) {
@@ -92,6 +109,7 @@ export function WamTurntable({
     }
     engineRef.current = engine
     engine.load(loaded)
+    engine.setAnim(animRef.current)
     // Reduced motion stops the *automatic* spin; it should not take away the
     // ability to turn the model by hand.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -126,6 +144,12 @@ export function WamTurntable({
     },
     [takeFile],
   )
+
+  const chooseAnim = (name?: string) => {
+    animRef.current = name
+    setAnim(name)
+    engineRef.current?.setAnim(name)
+  }
 
   const empty = !loaded && !busy
   const name = label ?? loaded?.name
@@ -184,6 +208,30 @@ export function WamTurntable({
           </div>
         )}
       </div>
+
+      {loaded && loaded.anims.length > 0 && (
+        <div className="wam-anims" role="group" aria-label="Animation">
+          <button
+            type="button"
+            className={anim ? undefined : 'on'}
+            aria-pressed={!anim}
+            onClick={() => chooseAnim(undefined)}
+          >
+            Rest
+          </button>
+          {loaded.anims.map((a) => (
+            <button
+              key={a.name}
+              type="button"
+              className={anim === a.name ? 'on' : undefined}
+              aria-pressed={anim === a.name}
+              onClick={() => chooseAnim(a.name)}
+            >
+              {a.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(name || loaded) && (
         <figcaption>

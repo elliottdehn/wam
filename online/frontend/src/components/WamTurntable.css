@@ -140,3 +140,33 @@
   font-size: 0.8125rem;
   color: var(--muted, #8b9694);
 }
+
+/* ---- animation chips ---- */
+.wam-anims {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.wam-anims button {
+  font: inherit;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  color: var(--muted, #8b9694);
+  background: transparent;
+  border: 1px solid var(--edge, #2e383a);
+  border-radius: 999px;
+  padding: 0.16rem 0.65rem;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+
+.wam-anims button:hover {
+  color: var(--horn, #cbc4a7);
+  border-color: var(--horn, #cbc4a7);
+}
+
+.wam-anims button.on {
+  color: var(--ember, #e2531b);
+  border-color: var(--ember, #e2531b);
+}
