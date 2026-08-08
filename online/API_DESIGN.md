@@ -233,6 +233,41 @@ tombstones everything in its bucket. The second is a shortcut, not the only
 door — otherwise removing one embarrassing model would cost every model
 uploaded alongside it.
 
+**Mechanically, delete is one R2 object going away.** `src/<sourceHash>` is
+removed and nothing else changes: the node row stays, its edges stay, the
+similarity scores stay, the link resolves. A deleted model keeps its place in
+the DAG, so anything descended from it still reads as descended from something
+rather than dangling.
+
+Because ids are `hash(source)` and first upload wins, a node and its object are
+**one to one**. No reference counting is needed before removing bytes — there
+is never a second node pointing at the same source.
+
+R2 is the source of truth for whether content exists; the `tombstoned` column
+is a cached answer so that rendering a page does not need a HEAD request. It
+also distinguishes *deleted* from *never successfully written*, which the
+absence of an object cannot.
+
+A bucket delete is the same operation batched. R2 takes up to 1,000 keys per
+batch delete, so a large bucket is a loop rather than a single call.
+
+**Re-uploading deleted source does not restore it.** First-write-wins returns
+the existing node, and the bytes stay gone — otherwise delete would not stick
+and anyone holding a copy could undo someone else's removal. The
+one-character escape hatch means nobody is actually blocked from publishing
+their own version.
+
+### Deleting should blank the strings too — RECOMMENDED
+
+Metadata is immutable, so **delete is the only remedy for a bad title.** If
+deletion removes the source and leaves the title standing, there is no way at
+all to take back an offensive or mistaken one, which is a hole rather than a
+design.
+
+Recommendation: a delete clears `title` and `description` alongside the object,
+keeping only the structural fields — id, timestamps, edges, tombstone. The DAG
+survives, the prose does not.
+
 ### Blast radius — accepted
 
 A leaked secret tombstones its whole bucket, irreversibly. That is a real cost
