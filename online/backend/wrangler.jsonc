@@ -47,6 +47,10 @@
 		{
 			"binding": "SOURCES",
 			"bucket_name": "wamshare-sources"
+		},
+		{
+			"bucket_name": "wamshare-sources",
+			"binding": "wamshare_sources"
 		}
 	],
 	"observability": {
