@@ -55,16 +55,55 @@ The secret is a bucket handle. It is the only thing that can delete an upload,
 and the only thing that makes a later upload the *next version* of the same
 model rather than a stranger's fork. **There is no recovery.**
 
-Keep it at `~/.wamshare/secret`, one line, mode `600`. Read it if it exists,
-and send it as the `X-Wam-Secret` header. Omit the header entirely on a first
-upload and the server mints one.
+**Look for an existing one before minting.** A fresh secret every session
+fragments the user's work into unrelated buckets, and nothing can merge them
+afterwards. Check, in order, and use the first that exists:
+
+1. `$WAMSHARE_SECRET_FILE`, if that variable is set
+2. `$XDG_STATE_HOME/wamshare/secret`, else `~/.local/state/wamshare/secret`
+3. `~/.wamshare/secret`
+4. `.wamshare-secret` in the project directory
+
+Found one? Send it as `X-Wam-Secret`. Found none? Omit the header entirely and
+the server mints one.
+
+### Where to write a newly minted secret
+
+**Wherever your runtime can actually write and have it persist.** The list
+above is a preference order, not a requirement: walk it, write to the first
+location that works, `chmod 600` it, and remember where you put it so a later
+session finds it.
+
+Sandboxes, containers and hosted runtimes often have no writable or no durable
+home directory. That is expected, and there is a hard rule for it:
+
+> **Never refuse to publish because you could not save the secret.**
+
+Blocking the upload turns a recoverable annoyance into a feature that does not
+work. If nothing is writable, upload anyway and then make sure the secret
+reaches the user through a channel that outlives your process:
+
+- Print it to them directly, on its own, clearly labelled, saying in plain
+  words that it cannot be recovered and that losing it means the model can
+  never be deleted or extended.
+- Offer to write it somewhere *they* choose.
+- Say which of the paths above you tried and why it failed, so they can fix it
+  for next time.
+
+**One thing you must not do: commit it.** If you write into a project
+directory, confirm the file is ignored first — `git check-ignore -q
+.wamshare-secret` — and add it to `.gitignore` if it is not. A secret pushed to
+a public repository is worse than a lost one: anyone who finds it can tombstone
+every model in that bucket.
 
 ### 2. Upload
 
 ```bash
+# $SECRET_FILE is whichever location step 1 settled on. An empty header is
+# treated as no header, so a first upload needs no special case.
 curl -sX POST https://wamshare.com/api/models \
   -H 'content-type: application/json' \
-  -H "X-Wam-Secret: $(cat ~/.wamshare/secret 2>/dev/null)" \
+  -H "X-Wam-Secret: $(cat "$SECRET_FILE" 2>/dev/null)" \
   -d @payload.json
 ```
 
@@ -82,13 +121,16 @@ curl -sX POST https://wamshare.com/api/models \
 Only the `.wam` source is uploaded. Nothing else — the service never compiles;
 whoever opens the link compiles it in their own browser.
 
-### 3. Save a minted secret before anything else
+### 3. Persist a minted secret immediately
 
-If the response contains a `secret` field, **one was just created for this
-machine and will never be shown again.** Write it to `~/.wamshare/secret`
-immediately, then tell the user it exists and what it controls. Do not print it
-and move on; a secret that only exists in scrollback is a secret that is going
-to be lost.
+If the response contains a `secret` field, **one was just created and will
+never be shown again.** Write it to the location you chose above before doing
+anything else, then tell the user it exists and what it controls.
+
+Tell them even when the write succeeded. A secret that only exists in a file
+the user does not know about is one they cannot carry to another machine, and
+carrying it is the only way to keep adding versions to the same lineage from
+somewhere else.
 
 ### 4. Hand over the link
 
@@ -136,4 +178,9 @@ Every response carries `hint`, `next`, and on errors `retryable`. Read them.
 - Do not describe CC0 as anything other than giving the work away.
 - Do not upload anything the user did not author or otherwise hold the rights
   to. Publishing carries a representation that they do.
-- Do not paste the secret into a chat message as the only copy of it.
+- Do not paste the secret into a chat message and consider it saved — unless
+  you genuinely could not write it anywhere, in which case say so plainly.
+- Do not commit a secret. Check `git check-ignore` before writing one into a
+  project directory.
+- Do not abandon an upload because the secret could not be persisted. Publish,
+  then hand the secret over and say where it could not be stored.

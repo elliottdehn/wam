@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 out/
+
+# never commit a wamshare ownership secret
+.wamshare-secret
