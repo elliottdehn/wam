@@ -7,12 +7,25 @@
 	"name": "wamshare",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-08-08",
+	// Append-only ledger. v1 shipped with the scaffold's class name, so it has
+	// to stay exactly as it was applied; the rename is a new tag on top. A
+	// delete-class migration would also satisfy the API but destroys the old
+	// object's storage, and a rename costs nothing.
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"Registry"
+				"MyDurableObject"
 			],
 			"tag": "v1"
+		},
+		{
+			"renamed_classes": [
+				{
+					"from": "MyDurableObject",
+					"to": "Registry"
+				}
+			],
+			"tag": "v2"
 		}
 	],
 	"assets": {
@@ -47,10 +60,6 @@
 		{
 			"binding": "SOURCES",
 			"bucket_name": "wamshare-sources"
-		},
-		{
-			"bucket_name": "wamshare-sources",
-			"binding": "wamshare_sources"
 		}
 	],
 	"observability": {
