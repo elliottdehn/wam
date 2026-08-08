@@ -26,11 +26,11 @@ skeleton
   bone head  parent=neck  dir=up len=0.12
   mirror
     bone clavicle parent=chest at=0.85 dir=side tilt=-16 len=0.19
-    bone upperarm parent=clavicle dir=down pitch=6 tilt=5 len=0.19
-    bone forearm  parent=upperarm dir=down pitch=-8 len=0.17
-    bone thigh parent=pelvis side=0.08 dir=down tilt=4 pitch=-7 len=0.24
-    bone shin  parent=thigh dir=down pitch=9 len=0.22
-    bone foot  parent=shin dir=fwd len=0.10
+    bone upperarm parent=clavicle dir=down pitch=6 tilt=5 len=0.19 bend=pitch,yaw,tilt
+    bone forearm  parent=upperarm dir=down pitch=-8 len=0.17 bend=-pitch
+    bone thigh parent=pelvis side=0.08 dir=down tilt=4 pitch=-7 len=0.24 bend=pitch,yaw
+    bone shin  parent=thigh dir=down pitch=9 len=0.22 bend=+pitch
+    bone foot  parent=shin dir=fwd len=0.10 bend=pitch
   end
 
 parts
@@ -47,15 +47,23 @@ parts
     ring 1.00 w=0.12 d=0.12
     cap start=dome end=dome
 
-  # No on= here, deliberately. on= snaps the origin to the nearest surface
-  # point and then aims the part along that surface's normal — from a point on
-  # the bone axis (i.e. inside the skull) it picked a side facet and stood the
-  # crest up 21 degrees off vertical and 0.018 off centre. Starting the free ray
-  # inside the head instead makes it flush and exactly vertical by construction.
-  loft crest bone=head at=0.72 dir=up len=0.13 material=gold
-    ring 0.00 w=0.04 d=0.16
-    ring 1.00 w=0.01 d=0.05 tip
-    cap start=flat end=point
+  # A crest, not a cone. Lofted front-to-back across the crown rather than
+  # straight up: with frame=up the ring's d is its HEIGHT, so the ridge can
+  # rise and fall along the skull instead of converging to a single point.
+  # No on= — it snaps to the nearest surface point and then aims along that
+  # face's normal, which from a point inside the skull stood the old crest up
+  # 21 degrees off vertical and 0.018 off centre. Starting the ray inside the
+  # head makes it flush by construction.
+  loft crest bone=head at=1.00 offset=(0,-0.015,-0.075) dir=fwd len=0.150 \
+       frame=up material=gold
+    ring 0.00 w=0.020 dtop=0.030 dbot=0.078
+    ring 0.15 w=0.038 dtop=0.110 dbot=0.060
+    ring 0.31 w=0.040 dtop=0.070 dbot=0.052
+    ring 0.48 w=0.044 dtop=0.125 dbot=0.050
+    ring 0.65 w=0.040 dtop=0.072 dbot=0.052
+    ring 0.83 w=0.036 dtop=0.105 dbot=0.060
+    ring 1.00 w=0.020 dtop=0.030 dbot=0.078
+    cap start=flat end=flat
 
   mirror
     attach eyeb bone=head kind=eye at=0.45 offset=(0.055,0.01,0.075) on=skull size=0.034 material=eye
@@ -92,15 +100,49 @@ animations
     ch upperarm.l tilt 0%=0 50%=9 100%=0
     ch upperarm.r tilt 0%=0 50%=-9 100%=0
 
+  anim walk loop dur=1.1
+    ch thigh.l    pitch 0%=-16 50%=16 100%=-16
+    ch shin.l     pitch 0%=0 25%=4 50%=6 68%=38 85%=20 100%=0
+    ch foot.l     pitch 0%=-5 25%=0 50%=2 68%=-20 90%=-9 100%=-5
+    ch upperarm.l pitch 0%=14 50%=-14 100%=14
+    ch forearm.l  pitch 0%=-6 30%=-18 70%=-4 100%=-6
+    # Same sign, because chain rotations compound: authored +4 / -5 these
+    # cancelled to about one degree of world rotation at the chest and the
+    # shoulder travelled 0.003. The head then counter-turns to hold its gaze.
+    ch spine yaw 0%=9 50%=-9 100%=9
+    ch chest yaw 0%=11 50%=-11 100%=11
+    ch head  yaw 0%=-13 50%=13 100%=-13
+    mirrorphase 50%
+
 checks
   # The crest stands straight up on the midline. Both read 0.018 when on= was
   # aiming it, so these move with the defect rather than merely passing.
   assert abs(x(crest)) < 0.005
   assert abs(z(crest)) < 0.005
   assert top(crest) > top(skull)
+  # The shape test that separates a mohawk from a spike: it runs further
+  # front-to-back than it stands tall. Measured on both — the cone this
+  # replaced read ~1.2, the accepted ridge reads 1.65 — so 1.45 sits in the
+  # gap rather than being a number someone liked the look of.
+  assert depth(crest) > height(crest) * 1.45
+  # It is hair on top of a head, not a visor. It read 0.116 against a skull
+  # front of 0.083, with its underside 0.0055 BELOW the eye — which is what
+  # "it comes down to his nose" looks like as a number.
+  assert zmax(crest) < zmax(skull)
+  assert zmin(crest) > zmin(skull)
+  assert ymin(crest) > y(eyeb.l)
+  measure crest_depth depth(crest)
+  measure crest_height height(crest)
   assert bottom(boot.l) in -0.01..0.02
   assert tris < 1200
   # The crest is rooted inside the skull on purpose — that is what makes it
   # flush. Everything else still has to keep its distance.
   noclip except=crest+skull
+  assert slide(boot.l, walk) < 0.02
+  assert lowest(walk) > -0.012
+  assert swing(thigh.l, walk) in 20..45
+  # The torso twist has to actually move something. swing() cannot see it —
+  # yawing an upright bone leaves its direction unchanged — so measure what
+  # the shoulder travels. It read 0.003 when the two channels cancelled.
+  assert travel(clavicle.l, walk) > 0.03
 `
