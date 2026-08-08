@@ -10,7 +10,7 @@
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyDurableObject"
+				"Registry"
 			],
 			"tag": "v1"
 		}
@@ -19,6 +19,7 @@
 		// Built by ../frontend (`npm run build` there writes straight into here),
 		// so this directory is generated output, not hand-edited source.
 		"directory": "./public",
+		"binding": "ASSETS",
 		// React owns client-side routing, so any path that isn't a real file has
 		// to fall through to index.html instead of 404ing.
 		"not_found_handling": "single-page-application",
@@ -29,14 +30,25 @@
 			"/api/*"
 		]
 	},
+	// One Durable Object holds the whole graph. The argument is serialisability,
+	// not headroom: first-write-wins and parents-must-be-public are both
+	// read-then-write races everywhere except inside a single DO.
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
-				"name": "MY_DURABLE_OBJECT"
+				"class_name": "Registry",
+				"name": "REGISTRY"
 			}
 		]
 	},
+	// R2 holds the source and nothing else. Compiled output is never stored:
+	// compilation is client side, and the browser caches its own renders.
+	"r2_buckets": [
+		{
+			"binding": "SOURCES",
+			"bucket_name": "wamshare-sources"
+		}
+	],
 	"observability": {
 		"enabled": true
 	},

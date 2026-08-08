@@ -364,7 +364,10 @@ own it" can say something true to its user. One that gets a bare `200` will
 report that the upload succeeded, which is not quite a lie and not the truth
 either.
 
-## Endpoints — DRAFT
+## Endpoints
+
+Implemented in `backend/src/index.ts`; every rule below is asserted in
+`backend/test/api.test.mjs`.
 
 The secret travels in a header (`X-Wam-Secret`), never in a URL — URLs end up
 in logs, referrers and screenshots, and this one is the keys to the corpus.
@@ -374,35 +377,36 @@ POST /api/models
   header X-Wam-Secret: <secret>          # omit on a first upload
   body   { source, title?, description?, visibility: "private"|"public",
            parents?: [id], meta? }
-  200    { id, url, bucketId,
-           existing: bool,               # this source was already uploaded
-           owned: bool,                  # ...and whether by this secret
+  201    { id, url, bucketId, existing: false, owned: true,
            secret?,                      # present ONLY when one was minted
-           compile: { ok, warnings[], stats } }
-  422    { compile: { ok: false, errors[] } }   # the compiler's own message
+           model, parents }
+  200    { id, url, bucketId, existing: true, owned: bool, model }
+  400/413                                # validation, with the limit named
+  422    { badParents: [id], reason: "missing"|"private" }
 
-GET  /api/models/:id            → metadata + compiled viewer blob
-GET  /api/models/:id/source     → the .wam, as text/plain
-GET  /api/models/:id/successors → declared children
-POST /api/models/:id/publish    → private → public. One way.
-GET  /api/gallery               → presentation; shape TBD
+GET    /api/models/:id             metadata + declared parents
+GET    /api/models/:id/source      the .wam, text/plain, immutable
+                                   410 once deleted; the link still resolves
+GET    /api/models/:id/successors  public children only
+POST   /api/models/:id/publish     private -> public. One way. Idempotent.
+DELETE /api/models/:id             tombstone one model
 
-DELETE /api/models/:id          → tombstone one model
-GET    /api/secrets/self        → what this secret owns
-DELETE /api/secrets/self        → tombstone the whole bucket.
-                                  Returns a preview unless confirm=true.
+GET    /api/lineage/:id            { focus, canonical[], tips[], branches[] }
+GET    /api/secrets/self           what this secret owns
+DELETE /api/secrets/self           preview; ?confirm=true to go ahead
+GET    /api/gallery?limit=         public tips, newest first
 ```
 
-`meta` is where the agent's structured compile output goes: triangle count,
-bone count, the model's own `checks` and their measured values. That is the
-thing an API buys that an upload form never could, and it is what makes the
-gallery searchable on real properties — every model under 3000 triangles,
-every one using a `web` membrane.
+There is no compile step and so no compile error. `meta` is where the agent
+puts its own compile output — triangle count, bone count, the model's checks
+and their measured values — and it is stored verbatim as a **claim**. We have
+no compiler with which to verify it.
 
-A note for whoever designs the index: immutability plus lineage turns eleven
-tuning iterations into a chain rather than eleven strangers, which is better —
-but only if the index does something with that. Listing every node makes the
-front page somebody's afternoon.
+`similarity` on an edge is the one thing about declared parentage we can check
+without one: Sørensen–Dice over the multiset of significant lines, ignoring
+blanks and whole-line comments. A line measure rather than a character one
+because WAM is line-oriented — a character diff reports a lightly-retuned
+model as barely related, since every number moved a digit.
 
 ## Storage: R2 + SQLite Durable Objects
 
