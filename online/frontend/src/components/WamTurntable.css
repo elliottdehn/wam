@@ -1,0 +1,142 @@
+.wam-turntable {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wam-stage {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  /* Full-bleed, a 4:3 box is taller than the viewport. The ratio still drives
+     the height; this just stops it running away on a wide container. */
+  max-height: 26rem;
+  border: 1px solid var(--edge, #2e383a);
+  border-radius: 10px;
+  background: var(--hide-raised, #1f2627);
+  overflow: hidden;
+}
+
+.wam-turntable.is-dragging .wam-stage {
+  border-color: var(--ember, #e2531b);
+  box-shadow: 0 0 0 3px rgba(226, 83, 27, 0.18);
+}
+
+.wam-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wam-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: var(--hide-raised, #1f2627);
+  color: var(--muted, #8b9694);
+  font-size: 0.9375rem;
+}
+
+.wam-overlay p {
+  margin: 0;
+}
+
+.wam-overlay small {
+  font-size: 0.8125rem;
+  opacity: 0.75;
+}
+
+.wam-overlay code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.875em;
+  color: var(--belly, #7f8763);
+}
+
+.wam-overlay button {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--horn, #cbc4a7);
+  background: transparent;
+  border: 1px solid var(--edge, #2e383a);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.wam-overlay button:hover {
+  border-color: var(--horn, #cbc4a7);
+}
+
+.wam-empty-title {
+  color: var(--horn, #cbc4a7);
+}
+
+.wam-error {
+  color: #e8a08a;
+}
+
+.wam-error-title {
+  color: var(--ember, #e2531b);
+  font-weight: 600;
+}
+
+.wam-error pre {
+  max-width: 100%;
+  max-height: 9rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+}
+
+.wam-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--edge, #2e383a);
+  border-top-color: var(--ember, #e2531b);
+  border-radius: 50%;
+  animation: wam-spin 0.7s linear infinite;
+}
+
+@keyframes wam-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wam-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.wam-hint {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.6875rem;
+  opacity: 0.62;
+}
+
+.wam-stage canvas:focus-visible {
+  outline: 2px solid var(--ember, #e2531b);
+  outline-offset: -2px;
+}
+
+.wam-turntable figcaption {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  color: var(--muted, #8b9694);
+}

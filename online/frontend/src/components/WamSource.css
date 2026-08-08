@@ -1,0 +1,166 @@
+.wam-source {
+  border: 1px solid var(--edge, #2e383a);
+  border-radius: 10px;
+  background: var(--hide-raised, #1f2627);
+  overflow: hidden;
+}
+
+/* ---- title bar ---- */
+.wam-source-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  border-bottom: 1px solid var(--edge, #2e383a);
+}
+
+.wam-source-name {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  color: var(--horn, #cbc4a7);
+}
+
+.wam-source-meta {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  color: var(--muted, #8b9694);
+  opacity: 0.8;
+}
+
+.wam-source-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.wam-source-actions button {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--muted, #8b9694);
+  background: transparent;
+  border: 1px solid var(--edge, #2e383a);
+  border-radius: 6px;
+  padding: 0.28rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wam-source-actions button:hover {
+  color: var(--horn, #cbc4a7);
+  border-color: var(--horn, #cbc4a7);
+}
+
+.wam-source-actions button.primary {
+  color: var(--hide, #171c1d);
+  background: var(--ember, #e2531b);
+  border-color: var(--ember, #e2531b);
+  font-weight: 600;
+}
+
+.wam-source-actions button.primary:hover {
+  color: var(--hide, #171c1d);
+  filter: brightness(1.08);
+}
+
+.wam-source-actions code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+
+/* ---- code ---- */
+.wam-source-code {
+  margin: 0;
+  padding: 0.9rem 0;
+  max-height: 26rem;
+  overflow: auto;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.wam-source-code code {
+  display: block;
+  min-width: max-content;
+}
+
+.wam-source-code .row {
+  display: block;
+}
+
+/* The gutter is decorative, so keep it out of a copied selection. */
+.wam-source-code .ln {
+  display: inline-block;
+  width: 2.5rem;
+  padding-right: 0.9rem;
+  text-align: right;
+  color: var(--muted, #8b9694);
+  opacity: 0.4;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wam-source-code .src {
+  white-space: pre;
+  color: var(--text, #d9dedd);
+}
+
+.t-section {
+  color: var(--ember, #e2531b);
+  font-weight: 600;
+}
+
+.t-directive {
+  color: var(--horn, #cbc4a7);
+}
+
+.t-key {
+  color: var(--belly, #7f8763);
+}
+
+.t-number {
+  color: #9fc3d6;
+}
+
+.t-comment {
+  color: var(--muted, #8b9694);
+  opacity: 0.72;
+  font-style: italic;
+}
+
+.t-punct {
+  color: var(--muted, #8b9694);
+}
+
+.t-color {
+  color: #d3c6b0;
+}
+
+/* An art tool should show you the colour, not just its digits. */
+.swatch {
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  margin-right: 0.35em;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  vertical-align: baseline;
+}
+
+.wam-source-more {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--muted, #8b9694);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--edge, #2e383a);
+  padding: 0.55rem;
+  cursor: pointer;
+}
+
+.wam-source-more:hover {
+  color: var(--horn, #cbc4a7);
+}

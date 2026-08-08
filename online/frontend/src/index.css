@@ -251,3 +251,40 @@ footer code {
     transform: none;
   }
 }
+
+/* ---- showcase: source beside the model it produces ---- */
+.showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 1.5rem;
+  margin: 4.5rem 0 0;
+}
+
+@media (max-width: 46rem) {
+  .showcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.showcase .sample {
+  margin: 0;
+}
+
+.tryit {
+  margin: 5rem 0 0;
+}
+
+.tryit h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--horn);
+  margin: 0 0 0.5rem;
+}
+
+.tryit p {
+  margin: 0 0 1.5rem;
+  max-width: 38rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
