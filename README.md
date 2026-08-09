@@ -110,6 +110,13 @@ compile, and visually iterate using the bundled toolchain.
 
 MIT — see [LICENSE](LICENSE).
 
+## No idea what to make?
+
+```bash
+python3 dice.py        # a brine-crusted heron with a crown of horns too heavy for its neck
+python3 dice.py -n 5   # five, and pick one
+```
+
 ## Publishing
 
 A finished model can be given a link at

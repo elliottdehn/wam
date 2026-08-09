@@ -65,6 +65,20 @@ modelling: name the creature, what it does, and the single thing a player
 should recognize it by — then say your choice. If memory holds anything about
 this user's preferences or a roster you have built with them before, use it.
 
+**Asked for "something" and nothing else? Roll for it.**
+
+```bash
+python3 dice.py            # one brief
+python3 dice.py -n 5       # five, and let the user pick
+```
+
+It returns things like *"a brine-crusted heron with a crown of horns too heavy
+for its neck"*. Show the user what you rolled before you build it — a roll they
+did not see is indistinguishable from you making something up, and half the
+value is that they get to say "no, the other one." Rolling beats inventing
+because your own unprompted choices cluster hard; the dice do not know what the
+default fantasy creature is.
+
 Distinctive shapes come from the creature's own world: what it eats and
 therefore what its jaw is for, how it moves and therefore where its mass
 sits, what its gear is made of and therefore how it catches light. A carrion
