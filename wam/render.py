@@ -212,6 +212,8 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
     # silently restyling every model that never asked for it — so the default
     # path is left bit-for-bit as it was.
     ndh = None
+    Hv = None
+    env = None
     if mat_pbr is not None and any(mp is not None for mp in mat_pbr):
         if eye is not None:
             cam = np.asarray(eye, dtype=float)
@@ -244,10 +246,34 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         img *= grad
     zbuf = np.full((height, width), np.inf)
 
+    # ---- near-plane clipping -------------------------------------------------
+    # A triangle straddling the camera plane used to be dropped whole, which is
+    # how a table can vanish mid push-in: nothing warns, the geometry is simply
+    # gone for the frames where it crosses. Clip it instead, so the part in
+    # front of the camera still draws.
+    near_clip = 0.05 if eye is not None else 1e-6
+    if len(T):
+        T, tri_mat, Vc, extended = _clip_near(
+            Vc, T, tri_mat, near_clip,
+            # every per-vertex array the rasteriser reads, or a clipped corner
+            # gets someone else's colour
+            dict(shade=shade, uv=uv, vert_colors=vert_colors, N=N, Hv=Hv,
+                 env=env),
+        )
+        if extended:
+            shade, uv = extended["shade"], extended["uv"]
+            vert_colors, N, Hv = extended["vert_colors"], extended["N"], extended["Hv"]
+            env = extended["env"]
+            z = -Vc[:, 2]
+            z[z < 1e-6] = 1e-6
+            sx = (Vc[:, 0] * f / aspect / z * 0.5 + 0.5) * width
+            sy = (0.5 - Vc[:, 1] * f / z * 0.5) * height
+
     order = None
     if len(T):
         a2, b2, c2 = T[:, 0], T[:, 1], T[:, 2]
-        # backface culling in screen space
+        # backface culling in screen space, after clipping so the new triangles
+        # are culled on their real screen area rather than the original's
         ax, ay = sx[a2], sy[a2]
         bx, by = sx[b2], sy[b2]
         cx, cy = sx[c2], sy[c2]
@@ -255,12 +281,9 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         keep = np.abs(area2) > 1e-9
         order = np.nonzero(keep)[0]
 
-    near_clip = 0.15 if eye is not None else 1e-6
     for ti in order if order is not None else []:
         ia, ib, ic = T[ti]
         zs = np.array([z[ia], z[ib], z[ic]])
-        if zs.min() < near_clip:
-            continue          # crosses the near plane: skip (no clipping)
         xs = np.array([sx[ia], sx[ib], sx[ic]])
         ys_ = np.array([sy[ia], sy[ib], sy[ic]])
         sh = np.array([shade[ia], shade[ib], shade[ic]])
@@ -351,6 +374,85 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
         zwin[upd] = zi[upd]
 
     return img
+
+
+def _clip_near(Vc, T, tri_mat, near, attrs):
+    """Clip triangles against the camera's near plane.
+
+    Sutherland-Hodgman against z = near in camera space. A crossing triangle
+    becomes one or two triangles; a triangle entirely behind the camera is
+    dropped, which is correct rather than merely convenient.
+
+    Every per-vertex attribute has to be interpolated at the new corners with
+    the same parameter as the position, or the clipped edge takes its shading,
+    UV or colour from the wrong vertex. Attributes are linear in camera space
+    and the cut is a linear interpolation there, so one `t` serves all of them.
+
+    Returns (T, tri_mat, Vc, extended) where `extended` is None when nothing
+    needed clipping — the overwhelmingly common case, and the one that has to
+    stay bit-for-bit identical to before.
+    """
+    zc = -Vc[:, 2]
+    inside = zc >= near
+    tri_in = inside[T].sum(axis=1)
+    if (tri_in == 3).all():
+        return T, tri_mat, Vc, None            # nothing crosses: untouched
+
+    new_pts = []                                # camera-space positions
+    new_src = []                                # (i0, i1, t) for attributes
+    cut_cache = {}
+
+    def cut(i0, i1):
+        key = (i0, i1) if i0 < i1 else (i1, i0)
+        hit = cut_cache.get(key)
+        if hit is not None:
+            return hit
+        t = (near - zc[i0]) / (zc[i1] - zc[i0])
+        idx = len(Vc) + len(new_pts)
+        new_pts.append(Vc[i0] + t * (Vc[i1] - Vc[i0]))
+        new_src.append((i0, i1, t))
+        cut_cache[key] = idx
+        return idx
+
+    out_tris, out_mats = [], []
+    for ti in range(len(T)):
+        n_in = tri_in[ti]
+        if n_in == 3:
+            out_tris.append(T[ti])
+            out_mats.append(tri_mat[ti])
+            continue
+        if n_in == 0:
+            continue                            # wholly behind the camera
+        poly = []
+        idx = list(T[ti])
+        for k in range(3):
+            a, b = idx[k], idx[(k + 1) % 3]
+            if inside[a]:
+                poly.append(a)
+            if inside[a] != inside[b]:
+                poly.append(cut(a, b))
+        for k in range(1, len(poly) - 1):       # fan-triangulate 3 or 4 corners
+            out_tris.append([poly[0], poly[k], poly[k + 1]])
+            out_mats.append(tri_mat[ti])
+
+    if not new_pts:
+        T2 = np.array(out_tris, dtype=int).reshape(-1, 3)
+        return T2, np.array(out_mats, dtype=int), Vc, None
+
+    Vc2 = np.concatenate([Vc, np.array(new_pts, dtype=float)])
+    ext = {}
+    for name, arr in attrs.items():
+        if arr is None:
+            ext[name] = None
+            continue
+        arr = np.asarray(arr, dtype=float)
+        rows = [arr[i0] + t * (arr[i1] - arr[i0]) for i0, i1, t in new_src]
+        ext[name] = np.concatenate([arr, np.array(rows, dtype=float)])
+        if name in ("N", "Hv"):                 # directions must stay unit
+            n = ext[name]
+            ext[name] = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+    T2 = np.array(out_tris, dtype=int).reshape(-1, 3)
+    return T2, np.array(out_mats, dtype=int), Vc2, ext
 
 
 def hstack_views(images, pad=6, bg=0.85):
