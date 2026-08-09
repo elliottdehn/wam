@@ -1179,6 +1179,33 @@ class Series:
 
 _AT = re.compile(r"\s+at\s+(-?[\d.]+)\s*%")
 
+# Python keywords are legal WAM names. `crown.break` is this spec's own
+# canonical example of a marker, and the check grammar rides on ast.parse, so
+# it has to survive a parser that disagrees. Every keyword token is mangled on
+# the way in and each dotted component is unmangled on the way out.
+#
+# Mangling has to cover the leading identifier too, not just attributes: an
+# actor can be given `as=break`, and `visible(break.tip)` is the same crash for
+# the same reason.
+_KW_MANGLE = "_kw_"
+_KEYWORDS = frozenset(__import__("keyword").kwlist)
+_KW_TOKEN = re.compile(r"\b(%s)\b" % "|".join(sorted(_KEYWORDS)))
+
+
+def _unmangle(name):
+    """Undo the mangling, per dotted component and only where it applies.
+
+    A blind `.replace(_KW_MANGLE, "")` would quietly rewrite an innocent part
+    named `my_kw_thing`, so strip the prefix only when what is left is the
+    keyword that put it there.
+    """
+    out = []
+    for part in name.split("."):
+        if part.startswith(_KW_MANGLE) and part[len(_KW_MANGLE):] in _KEYWORDS:
+            part = part[len(_KW_MANGLE):]
+        out.append(part)
+    return ".".join(out)
+
 
 def _resolve(env, key, at=None):
     v = env[key]
@@ -1205,6 +1232,11 @@ def _eval_check(expr, env, line_no, shot_name):
         if m:
             at = float(m.group(1)) / 100.0
             text = text[:m.start()] + text[m.end():]
+        # A marker may carry a name Python reserves (`crown.break` is the
+        # spec's own example), and the target vocabulary is deliberately one
+        # resolver — so mangle keyword attributes past the parser and strip
+        # the mangling when the dotted key is rebuilt for the env lookup.
+        text = _KW_TOKEN.sub(lambda m: _KW_MANGLE + m.group(1), text)
         node = ast.parse(text.strip(), mode="eval").body
 
         def walk(n):
@@ -1217,25 +1249,26 @@ def _eval_check(expr, env, line_no, shot_name):
             if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.USub):
                 return -walk(n.operand)
             if isinstance(n, ast.Name):
-                if n.id not in env:
+                key = _unmangle(n.id)
+                if key not in env:
                     raise WamError("shot %r: unknown value %r — known: %s"
-                                   % (shot_name, n.id, ", ".join(sorted(env))),
+                                   % (shot_name, key, ", ".join(sorted(env))),
                                    line_no, expr)
-                return _resolve(env, n.id, at)
+                return _resolve(env, key, at)
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
                 fn = n.func.id
                 keys = []
                 for arg in n.args:
-                    keys.append(arg.id if isinstance(arg, ast.Name)
-                                else ".".join(_dotted(arg)))
-                full = "%s(%s)" % (fn, ", ".join(keys))
+                    keys.append(_unmangle(arg.id if isinstance(arg, ast.Name)
+                                          else ".".join(_dotted(arg))))
+                full = "%s(%s)" % (_unmangle(fn), ", ".join(keys))
                 if full not in env:
                     raise WamError("shot %r: cannot measure %s — known: %s"
                                    % (shot_name, full, ", ".join(sorted(env))),
                                    line_no, expr)
                 return _resolve(env, full, at)
             if isinstance(n, ast.Attribute):
-                key = ".".join(_dotted(n))
+                key = _unmangle(".".join(_dotted(n)))
                 if key in env:
                     return _resolve(env, key, at)
             raise WamError("shot %r: cannot evaluate %r" % (shot_name, expr),

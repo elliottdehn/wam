@@ -269,9 +269,15 @@ FRACTURE = "\n".join([
     "  look at=crown.break",
     "  fov 34",
     "  checks",
-    "    assert clearance > 1.0", ""])
+    "    assert clearance > 1.0",
+    # `break` is a Python keyword and the check grammar rides on ast.parse.
+    # Aiming at the marker never went through the parser, so only asserting on
+    # it exercises the path that used to crash.
+    "    measure fracture_seen visible(crown.break)", ""])
 _, warns, infos = film(FRACTURE, "fracture")
 check("a marker can be orbited and aimed at", not warns, "; ".join(warns))
+check("and measured, despite being named after a Python keyword",
+      any("fracture_seen =" in m for m in infos), "; ".join(infos))
 check("the marker shot renders",
       os.path.exists(os.path.join(TMP, "out_fracture", "f", "0000.png")))
 

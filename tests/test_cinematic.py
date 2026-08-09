@@ -39,6 +39,7 @@ with open(MODEL, "w") as f:
   height 2.0
   style chunky
   marker crown at=(0,0.98,0)
+  marker break at=(0,1.05,0)
 
 palette
   hide #2c3336 rough=0.8
@@ -217,6 +218,40 @@ w, _, _ = run(build("parthidden", extra=WALL_LINE, look="figure.crown",
 check("a part behind something else fails its check",
       any("check failed" in x and "visible(figure.body)" in x for x in w),
       "; ".join(w) or "no warnings")
+
+# ---- names Python happens to reserve ----------------------------------------
+# `crown.break` is the canonical marker example in CINEMATIC_SPEC.md, and it
+# crashed the evaluator: the check grammar rides on ast.parse and `.break` is a
+# syntax error. Aiming at one was always fine, so the fixture that declared a
+# `break` marker never caught it — only putting it inside a check does.
+_, infos, _ = run(build("kw", look="figure.break",
+                        checks="  checks\n"
+                               "    assert visible(figure.break) > 0.999\n"
+                               "    assert frames(figure.break) < 0.01\n"
+                               "    measure seen visible(figure.break)"),
+                  "kw")
+check("a marker named after a Python keyword can be asserted on",
+      any("visible(figure.break)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "break" in m) or "not measured")
+check("and it can be aimed at",
+      any("seen = 1.0000" in m for m in infos), "; ".join(infos))
+
+# The same hazard in the leading position: an instance can be given as=break.
+_, infos, _ = run("\n".join([
+    "cinematic kw2", "  aspect 2.39", "  fps 4", "  size 160", "",
+    "scene s", "  light elevation=40 azimuth=120",
+    "  actor " + MODEL + " at=(0,0,0) anim=idle phase=0 as=break",
+    "  ground extend", "  fog auto", "",
+    "shot a dur=0.5 scene=s", "  eye 0%=(0,1.5,-6) 100%=(0,1.4,-5)",
+    "  look at=break", "  fov 40",
+    "  checks", "    assert visible(break) > 0.999",
+    "    assert visible(break.body) > 0.999", ""]), "kw2")
+check("an instance named after a keyword can be asserted on",
+      any("visible(break)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "break" in m) or "not measured")
+check("including a part beneath it",
+      any("visible(break.body)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "break.body" in m) or "not measured")
 
 # ---- unknown targets are errors, not silent no-ops --------------------------
 try:
