@@ -418,8 +418,35 @@ class Scene:
             # which is both the original bug and a lint that never shuts up.
             self.fog = dict(color=tuple(self.sky[1]), start=0.12 * GROUND_R,
                             end=0.88 * GROUND_R, max=1.0)
+        self._build_palette()
 
     # -- construction -------------------------------------------------------
+
+    def _build_palette(self):
+        """Every colour in this scene that has a name worth asserting against.
+
+        Materials come from the models that are actually staged, so the names
+        an author writes in a check are the names they wrote in the `.wam`. A
+        material name shared by two models with different colours is kept only
+        in its qualified form — resolving it to whichever model was staged
+        first would be a silent wrong answer about a colour.
+        """
+        self.palette = {}
+        clash = set()
+        for key, inst in self._instances.items():
+            for mname, rgb in inst["mdl"].mesh.materials:
+                rgb = tuple(float(c) for c in rgb)
+                self.palette["%s.%s" % (key, mname)] = rgb
+                if mname in self.palette and self.palette[mname] != rgb:
+                    clash.add(mname)
+                else:
+                    self.palette[mname] = rgb
+        for mname in clash:
+            self.palette.pop(mname, None)
+        self.palette["sky.top"] = tuple(float(c) for c in self.sky[0])
+        self.palette["sky.horizon"] = tuple(float(c) for c in self.sky[1])
+        if self.fog is not None:
+            self.palette["fog"] = tuple(float(c) for c in self.fog["color"])
 
     def _load_zone(self, path, chunks):
         """Stage a compiled zone's terrain and props.
@@ -1192,6 +1219,54 @@ _KEYWORDS = frozenset(__import__("keyword").kwlist)
 _KW_TOKEN = re.compile(r"\b(%s)\b" % "|".join(sorted(_KEYWORDS)))
 
 
+_COLOR_CALL = re.compile(
+    r"\bcolor\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*([\w.]+)\s*\)")
+_HEX_CALL = re.compile(r"\bhex\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)")
+
+
+def _numkey(v):
+    """One spelling for a number in an env key, so the regex pre-scan and the
+    parsed expression agree on what they are naming."""
+    return "%g" % float(v)
+
+
+def sample_px(img, x, y):
+    """The rendered pixel at a screen position, 0..1 from the top left."""
+    h, w = img.shape[:2]
+    j = int(round(min(max(x, 0.0), 1.0) * (w - 1)))
+    i = int(round(min(max(y, 0.0), 1.0) * (h - 1)))
+    return np.asarray(img[i, j], dtype=float)
+
+
+def to_hex(rgb):
+    c = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
+    return "#%02x%02x%02x" % tuple(int(round(v * 255)) for v in c)
+
+
+class RGBSeries:
+    """A sampled pixel colour. Reads out as hex, interpolates as colour."""
+
+    def __init__(self, ts, vals):
+        self.ts = list(ts)
+        self.vals = [np.asarray(v, dtype=float) for v in vals]
+
+    def at(self, t):
+        t = min(max(t, self.ts[0]), self.ts[-1])
+        i = int(np.searchsorted(self.ts, t))
+        if i <= 0:
+            return to_hex(self.vals[0])
+        if i >= len(self.ts):
+            return to_hex(self.vals[-1])
+        span = self.ts[i] - self.ts[i - 1]
+        u = 0.0 if span <= 0 else (t - self.ts[i - 1]) / span
+        return to_hex(self.vals[i - 1] + (self.vals[i] - self.vals[i - 1]) * u)
+
+    def value(self):
+        # No single frame is the answer, so give the whole strip. It is one
+        # line, and calibrating a `color()` bound is exactly what it is for.
+        return " ".join(to_hex(v) for v in self.vals)
+
+
 def _unmangle(name):
     """Undo the mangling, per dotted component and only where it applies.
 
@@ -1209,9 +1284,91 @@ def _unmangle(name):
 
 def _resolve(env, key, at=None):
     v = env[key]
-    if isinstance(v, Series):
+    if isinstance(v, (Series, RGBSeries)):
         return v.at(at) if at is not None else v.value()
     return v
+
+
+def _number(v):
+    """A colour readout is a string on purpose; arithmetic on it is a mistake
+    worth naming rather than a TypeError from inside the evaluator."""
+    if isinstance(v, str):
+        raise WamError("%s is a colour, not a number — compare it with "
+                       "color(x, y, <palette name>) instead of doing "
+                       "arithmetic on it" % v, 0, "")
+    return float(v)
+
+
+def _value(text, env, line_no, shot_name, expr):
+    """One side of an assertion, or a whole `measure` expression.
+
+    Returns a float for every measurement except a colour readout, which is a
+    string because that is what an author wants to see in the report.
+    """
+    import ast
+    # `frames(x) at 100%` is not Python, so lift the phase out before
+    # parsing and hand it to whatever the expression measured.
+    text = text.strip()
+    at = None
+    m = _AT.search(text)
+    if m:
+        at = float(m.group(1)) / 100.0
+        text = text[:m.start()] + text[m.end():]
+    # A marker may carry a name Python reserves (`crown.break` is the
+    # spec's own example), and the target vocabulary is deliberately one
+    # resolver — so mangle keyword attributes past the parser and strip
+    # the mangling when the dotted key is rebuilt for the env lookup.
+    text = _KW_TOKEN.sub(lambda m: _KW_MANGLE + m.group(1), text)
+    node = ast.parse(text.strip(), mode="eval").body
+
+    def walk(n):
+        if isinstance(n, ast.Constant):
+            return float(n.value)
+        if isinstance(n, ast.BinOp):
+            a, b = _number(walk(n.left)), _number(walk(n.right))
+            return {ast.Add: a + b, ast.Sub: a - b, ast.Mult: a * b,
+                    ast.Div: a / b if b else float("inf")}[type(n.op)]
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.USub):
+            return -walk(n.operand)
+        if isinstance(n, ast.Name):
+            key = _unmangle(n.id)
+            if key not in env:
+                raise WamError("shot %r: unknown value %r — known: %s"
+                               % (shot_name, key, ", ".join(sorted(env))),
+                               line_no, expr)
+            return _resolve(env, key, at)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            fn = n.func.id
+            keys = []
+            for arg in n.args:
+                if isinstance(arg, ast.Constant) and not isinstance(
+                        arg.value, str):
+                    keys.append(_numkey(arg.value))       # pixel coords
+                elif isinstance(arg, ast.UnaryOp) and isinstance(
+                        arg.op, ast.USub):
+                    keys.append(_numkey(-arg.operand.value))
+                else:
+                    keys.append(_unmangle(arg.id if isinstance(arg, ast.Name)
+                                          else ".".join(_dotted(arg))))
+            full = "%s(%s)" % (_unmangle(fn), ", ".join(keys))
+            if full not in env:
+                raise WamError("shot %r: cannot measure %s — known: %s"
+                               % (shot_name, full, ", ".join(sorted(env))),
+                               line_no, expr)
+            return _resolve(env, full, at)
+        if isinstance(n, ast.Attribute):
+            key = _unmangle(".".join(_dotted(n)))
+            if key in env:
+                return _resolve(env, key, at)
+        raise WamError("shot %r: cannot evaluate %r" % (shot_name, expr),
+                       line_no, expr)
+    return walk(node)
+
+
+def _measure(expr, env, line_no, shot_name):
+    """A report-only readout, which may be a colour and so cannot be reached
+    through a comparison."""
+    return _value(expr, env, line_no, shot_name, expr)
 
 
 def _eval_check(expr, env, line_no, shot_name):
@@ -1221,69 +1378,28 @@ def _eval_check(expr, env, line_no, shot_name):
     <expr>` and `assert <expr> in lo..hi` — because an author should not have
     to learn a second assertion language to point it at a camera.
     """
-    import ast
-
     def value(text):
-        # `frames(x) at 100%` is not Python, so lift the phase out before
-        # parsing and hand it to whatever the expression measured.
-        text = text.strip()
-        at = None
-        m = _AT.search(text)
-        if m:
-            at = float(m.group(1)) / 100.0
-            text = text[:m.start()] + text[m.end():]
-        # A marker may carry a name Python reserves (`crown.break` is the
-        # spec's own example), and the target vocabulary is deliberately one
-        # resolver — so mangle keyword attributes past the parser and strip
-        # the mangling when the dotted key is rebuilt for the env lookup.
-        text = _KW_TOKEN.sub(lambda m: _KW_MANGLE + m.group(1), text)
-        node = ast.parse(text.strip(), mode="eval").body
-
-        def walk(n):
-            if isinstance(n, ast.Constant):
-                return float(n.value)
-            if isinstance(n, ast.BinOp):
-                a, b = walk(n.left), walk(n.right)
-                return {ast.Add: a + b, ast.Sub: a - b, ast.Mult: a * b,
-                        ast.Div: a / b if b else float("inf")}[type(n.op)]
-            if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.USub):
-                return -walk(n.operand)
-            if isinstance(n, ast.Name):
-                key = _unmangle(n.id)
-                if key not in env:
-                    raise WamError("shot %r: unknown value %r — known: %s"
-                                   % (shot_name, key, ", ".join(sorted(env))),
-                                   line_no, expr)
-                return _resolve(env, key, at)
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
-                fn = n.func.id
-                keys = []
-                for arg in n.args:
-                    keys.append(_unmangle(arg.id if isinstance(arg, ast.Name)
-                                          else ".".join(_dotted(arg))))
-                full = "%s(%s)" % (_unmangle(fn), ", ".join(keys))
-                if full not in env:
-                    raise WamError("shot %r: cannot measure %s — known: %s"
-                                   % (shot_name, full, ", ".join(sorted(env))),
-                                   line_no, expr)
-                return _resolve(env, full, at)
-            if isinstance(n, ast.Attribute):
-                key = _unmangle(".".join(_dotted(n)))
-                if key in env:
-                    return _resolve(env, key, at)
-            raise WamError("shot %r: cannot evaluate %r" % (shot_name, expr),
-                           line_no, expr)
-        return walk(node)
+        return _value(text, env, line_no, shot_name, expr)
 
     if " in " in expr:
         lhs, rng = expr.split(" in ", 1)
         lo, hi = (float(x) for x in rng.strip().split(".."))
-        got = value(lhs)
+        got = _number(value(lhs))
         return got, lo <= got <= hi, "in %g..%g" % (lo, hi)
     for op in (">=", "<=", "==", ">", "<"):
         if op in expr:
             lhs, rhs = expr.split(op, 1)
             got, want = value(lhs), value(rhs)
+            if isinstance(got, str) or isinstance(want, str):
+                # Comparing colours: only equality means anything, and it means
+                # the exact same hex.
+                if op != "==":
+                    raise WamError(
+                        "shot %r: %r compares a colour with %s — a colour is "
+                        "only ever == another colour. For 'close to', use "
+                        "color(x, y, <palette name>) < <distance>"
+                        % (shot_name, expr, op), line_no, expr)
+                return got, str(got) == str(want), "== %s" % want
             good = {">": got > want, "<": got < want, ">=": got >= want,
                     "<=": got <= want, "==": abs(got - want) < 1e-9}[op]
             return got, good, "%s %g" % (op, want)
@@ -1332,6 +1448,24 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
             if scene.resolves(word):
                 named.add(word)
 
+    # Pixels any check wants to look at. Sampling one means rendering the
+    # frame, so this is opt-in: no colour check, no extra render.
+    want_px, want_color = set(), []
+    for _, expr in shot["checks"]:
+        for m in _HEX_CALL.finditer(expr):
+            want_px.add((float(m.group(1)), float(m.group(2))))
+        for m in _COLOR_CALL.finditer(expr):
+            want_px.add((float(m.group(1)), float(m.group(2))))
+            want_color.append((float(m.group(1)), float(m.group(2)),
+                               m.group(3)))
+    for _, _, name in want_color:
+        if name not in scene.palette:
+            raise WamError(
+                "shot %r: %r is not a colour in scene %r — it has: %s"
+                % (shot["name"], name, scene.name,
+                   ", ".join(sorted(scene.palette))), shot["line"], "")
+    px_samples = {k: [] for k in want_px}
+
     # Pairs named together in one call, for gap(a, b).
     pairs = []
     for _, expr in shot["checks"]:
@@ -1374,6 +1508,10 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
             agg.setdefault("updot", []).append(abs(float(f[1])))
         for a, b in pairs:
             agg.setdefault("gap(%s, %s)" % (a, b), []).append(gap(scene, a, b))
+        if px_samples:
+            img = _render(scene, cam, V, t, width, height)
+            for (x, y) in px_samples:
+                px_samples[(x, y)].append(sample_px(img, x, y))
         for ai, rec in live.items():
             a = scene.actors[ai]
             v0 = a["start"]
@@ -1543,6 +1681,13 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
         env["moves_px(%s)" % name] = (rec["travel"] * px_per_m
                                       / max(rec["dist"], 1e-6))
         env["cycles(%s)" % name] = secs / a["model"].anim_dur(a["anim"])
+    for (x, y), vals in px_samples.items():
+        env["hex(%s, %s)" % (_numkey(x), _numkey(y))] = RGBSeries(ts, vals)
+    for x, y, name in want_color:
+        want = np.asarray(scene.palette[name], dtype=float)
+        env["color(%s, %s, %s)" % (_numkey(x), _numkey(y), name)] = Series(
+            ts, [float(np.linalg.norm(v - want))
+                 for v in px_samples[(x, y)]], "max")
     info("shot %r: camera travels %.2fm, peak %.2f m/s, look swings %.0f deg"
          % (shot["name"], dolly, float(speeds.max()), swing))
     return env
@@ -1551,6 +1696,17 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
 # ---------------------------------------------------------------------------
 # rendering
 # ---------------------------------------------------------------------------
+
+def _render(scene, cam, V, t, width, height):
+    """One frame. Shared by the renderer and by the lint, so a pixel a check
+    measures is the same pixel the shot ships."""
+    return wr.render_view(
+        V, scene.T, scene.M, scene.colors,
+        width=width, height=height, fov_deg=cam.fov,
+        uv=scene.uv, tex=scene.atlas, sky=scene.sky, fog=scene.fog,
+        eye=cam.eye_at(t), look=cam.look_at(t),
+        sun=scene.sun, fill=scene.fill, ambient=scene.ambient)
+
 
 def _frame_size(film):
     """Long edge from `size`, the other from `aspect`. Letterboxing is the
@@ -1599,8 +1755,9 @@ def compile_cine(path, out_root=None, only=None, force=False, quiet=False):
             if expr.startswith("measure "):
                 rest = expr[len("measure "):].split(None, 1)
                 label, e = (rest + [rest[0]])[:2]
-                got, _, _ = _eval_check(e + " > -1e30", env, line_no, shot["name"])
-                info("shot %r: %s = %.4f" % (shot["name"], label, got))
+                got = _measure(e, env, line_no, shot["name"])
+                info("shot %r: %s = %s" % (shot["name"], label, got
+                     if isinstance(got, str) else "%.4f" % got))
                 continue
             got, good, want = _eval_check(expr, env, line_no, shot["name"])
             if good:
@@ -1623,12 +1780,7 @@ def compile_cine(path, out_root=None, only=None, force=False, quiet=False):
         for i in range(n):
             t = i / max(n - 1, 1)
             V = scene.pose(t, shot["dur"])
-            img = wr.render_view(
-                V, scene.T, scene.M, scene.colors,
-                width=width, height=height, fov_deg=cam.fov,
-                uv=scene.uv, tex=scene.atlas, sky=scene.sky, fog=scene.fog,
-                eye=cam.eye_at(t), look=cam.look_at(t),
-                sun=scene.sun, fill=scene.fill, ambient=scene.ambient)
+            img = _render(scene, cam, V, t, width, height)
             wr.write_png(os.path.join(shot_dir, "%04d.png" % i), img)
         info("shot %r: %d frames -> %s" % (shot["name"], n, shot_dir))
         manifest.append((shot, shot_dir, n))

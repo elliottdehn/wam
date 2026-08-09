@@ -219,6 +219,56 @@ check("a part behind something else fails its check",
       any("check failed" in x and "visible(figure.body)" in x for x in w),
       "; ".join(w) or "no warnings")
 
+# ---- pixels and the scene palette -------------------------------------------
+# The renderer shades and fogs, so a lit surface never lands on its palette
+# RGB exactly. The distance is still small and the wrong material is far away,
+# which is what makes a bound writable — and `hex` is there to calibrate it.
+_, infos, _ = run(build("colour", checks="  checks\n"
+                        "    assert color(0.5, 0.55, hide) < 0.2\n"
+                        "    assert color(0.05, 0.05, sky.top) < 0.05\n"
+                        "    assert color(0.05, 0.05, hide) > 0.3\n"
+                        "    measure centre hex(0.5, 0.55)\n"
+                        "    measure corner hex(0.05, 0.05) at 100%"),
+                  "colour")
+check("a pixel can be measured against a scene palette colour",
+      any("color(0.5, 0.55, hide)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "color(" in m) or "not measured")
+check("sky is nameable too",
+      any("color(0.05, 0.05, sky.top)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "sky.top" in m) or "not measured")
+check("and the wrong colour is far away",
+      any("color(0.05, 0.05, hide)" in m and ", ok)" in m for m in infos),
+      "; ".join(m for m in infos if "0.05, hide" in m) or "not measured")
+corner = [m for m in infos if "corner = " in m]
+check("a pixel reads out as hex at a named moment",
+      len(corner) == 1 and corner[0].strip().endswith(("0", "1", "2", "3", "4",
+                                                       "5", "6", "7", "8", "9",
+                                                       "a", "b", "c", "d", "e",
+                                                       "f"))
+      and corner[0].count("#") == 1, "; ".join(corner) or "not measured")
+centre = [m for m in infos if "centre = " in m]
+check("and as the whole strip when no moment is named",
+      len(centre) == 1 and centre[0].count("#") == C.LINT_PHASES,
+      "; ".join(centre) or "not measured")
+
+# A colour name the scene does not have is an error that lists what it does.
+try:
+    run(build("badcolour", checks="  checks\n"
+              "    assert color(0.5, 0.5, chartreuse) < 0.1"), "badcolour")
+    check("an unknown palette colour is an error", False, "no error raised")
+except WamError as e:
+    check("an unknown palette colour is an error",
+          "chartreuse" in str(e) and "hide" in str(e), str(e))
+
+# Arithmetic on a colour is a mistake worth naming.
+try:
+    run(build("hexmath", checks="  checks\n"
+              "    assert hex(0.5, 0.5) * 2 > 1"), "hexmath")
+    check("arithmetic on a colour is refused", False, "no error raised")
+except WamError as e:
+    check("arithmetic on a colour is refused", "colour, not a number" in str(e),
+          str(e))
+
 # ---- names Python happens to reserve ----------------------------------------
 # `crown.break` is the canonical marker example in CINEMATIC_SPEC.md, and it
 # crashed the evaluator: the check grammar rides on ast.parse and `.break` is a

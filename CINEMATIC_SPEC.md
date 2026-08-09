@@ -291,6 +291,54 @@ Pixels are the honest unit.
 | `grounded(x)` | how far the lowest point sits above the ground beneath it. 0 is standing on it, negative is buried, positive is floating |
 | `facing(x, camera)` | degrees between the way a model faces and the way to the camera. 0 is down the lens, 180 is the back of the head |
 
+**Pixels and colour**
+
+| name | meaning |
+| --- | --- |
+| `color(x, y, <name>)` | RGB distance between the pixel at that screen position and a named colour in the scene's palette |
+| `hex(x, y)` | that pixel as `#rrggbb` — report-only, for `measure` |
+
+`x` and `y` are screen positions, 0..1 from the top left. The palette is built
+from what is actually staged, so the names are the ones you wrote in the
+`.wam`:
+
+- `<material>` — a material name, when only one staged model uses it
+- `<instance>.<material>` — always available, and the only form when two
+  models disagree about what `plate` means. Resolving a clash to whichever
+  model was staged first would be a silent wrong answer about a colour
+- `sky.top`, `sky.horizon`, `fog`
+
+```
+  checks
+    assert color(0.5, 0.55, plate) < 0.15      # the centre is showing armour
+    assert color(0.05, 0.05, sky.top) < 0.05   # the top corner is still sky
+    assert color(0.5, 0.55, gold) > 0.3        # and is definitely not gold
+    measure centre hex(0.5, 0.55)
+    measure centre_end hex(0.5, 0.55) at 100%
+```
+
+**The renderer shades and fogs, so a lit surface never lands on its palette RGB
+exactly.** In practice a well-lit surface sits about 0.10–0.15 from its own
+colour while a different material is 0.3–0.9 away, so a bound around `0.2`
+separates them. Do not guess it — `measure … hex(x, y)` prints the sampled
+pixel at every phase, which is what it is for:
+
+```
+info: shot 'a': centre = #59624b #59624b #5a624c #5a634c #5c654e #5e6750 …
+info: shot 'a': centre_end = #626c53
+```
+
+With no `at`, `hex` gives the whole strip, because no single frame is the
+answer. With `at N%` it gives that moment, interpolated in RGB.
+
+A colour is a string, so arithmetic on one is refused, and `==` between two
+colours means the exact same hex. For "close to", that is what `color()` is.
+
+Sampling a pixel means rendering the frame, so these checks are **opt-in
+cost**: a shot with no colour check renders nothing extra, and a shot with one
+renders 8 additional frames at full size — same code path as the shipped
+frames, so the pixel a check measures is the pixel the shot ships.
+
 **Production**
 
 `frames_written`, `frame_w`, `frame_h`.
