@@ -152,7 +152,7 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
                 uv=None, tex=None, sky=None, fog=None,
                 eye=None, look=None, detail=None, detail_scale=180.0,
                 dist=None, center=None, fit="extents", shade_group=None,
-                mat_pbr=None):
+                mat_pbr=None, sun=None, fill=None, ambient=None):
     """Render one view: orbit camera by default, or first-person when
     eye=(x,y,z) and look=(x,y,z) are given.
 
@@ -198,14 +198,17 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
     sx = (Vc[:, 0] * f / aspect / z * 0.5 + 0.5) * width
     sy = (0.5 - Vc[:, 1] * f / z * 0.5) * height
 
-    # lighting: fixed world-space sun + soft fill (matches the viewer)
-    L1 = np.array([-0.45, 0.85, 0.40])
-    L1 /= np.linalg.norm(L1)
-    L2 = np.array([0.55, 0.15, -0.60])
-    L2 /= np.linalg.norm(L2)
+    # Lighting: world-space sun plus a soft fill, matching the viewer. The
+    # defaults are the values this renderer has always used, so a caller that
+    # does not ask for lighting gets exactly the render it got before.
+    L1 = np.asarray(sun if sun is not None else (-0.45, 0.85, 0.40), dtype=float)
+    L1 = L1 / max(np.linalg.norm(L1), 1e-9)
+    L2 = np.asarray(fill if fill is not None else (0.55, 0.15, -0.60), dtype=float)
+    L2 = L2 / max(np.linalg.norm(L2), 1e-9)
+    amb, key, fillk = (0.34, 0.60, 0.16) if ambient is None else ambient
     lam1 = np.clip(N @ L1, 0, None)
     lam2 = np.clip(N @ L2, 0, None)
-    shade = 0.34 + 0.60 * lam1 + 0.16 * lam2
+    shade = amb + key * lam1 + fillk * lam2
 
     # Specular is computed only for materials that actually declare metal or
     # rough. A setting the author cannot see in the sheet is a trap, but so is

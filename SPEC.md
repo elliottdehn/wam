@@ -1687,6 +1687,11 @@ The load-bearing rules, each learned the hard way:
   gradient + distance fog) and a fogless overview; the viewer JSON ships
   the packed scene atlas.
 
+For free cameras over a zone — dollies, orbits, multi-shot sequences, staged
+actors with their own animation phases, and the lint that catches a camera
+under the terrain before you render 2,000 frames — see **`CINEMATIC_SPEC.md`**
+and `python3 -m wam.cinematic film.cine`.
+
 ## The compiler fights back (by design)
 
 `wam.cli` runs a semantic lint on every compile. **Nothing below has to be
@@ -1796,6 +1801,8 @@ invisible at sheet scale and obvious at 3x.
   glTF export, software renderer, viewer-JSON export
 - `wam/zone.py` — the zone compiler (see **Zones**)
 - `wam/modelset.py` — the `.wamset` compiler (see **`.wamset`**)
+- `wam/cinematic.py` — the `.cine` compiler: staging, cameras and shot lint.
+  Its own grammar and check vocabulary are in **`CINEMATIC_SPEC.md`**
 - `scripts/compose_town.py` — composes a set of prop models into one scene
   (renders + merged viewer JSON with a packed mega-atlas)
 - `scripts/crop.py` — region crops of a reference image and a render, paired

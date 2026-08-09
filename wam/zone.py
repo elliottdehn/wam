@@ -468,6 +468,11 @@ def paint_terrain(z, xs, zs, H, road_w, tw, th, row0=None, row1=None):
 # compile
 # ----------------------------------------------------------------------
 
+# Bump when a field changes meaning or disappears. Readers should refuse a
+# schema they do not know rather than silently misinterpret an array.
+SCENE_SCHEMA = 1
+
+
 def compile_zone(path, out_prefix):
     z = parse_zone(path)
     W, D = z["size"]
@@ -872,9 +877,25 @@ def compile_zone(path, out_prefix):
     )
     with open(out_prefix + "_viewer.json", "w") as f:
         json.dump(data, f, separators=(",", ":"))
-    np.savez_compressed(out_prefix + "_scene.npz", V=V, T=T, M=M, UV=UV,
-                        tex=mega.astype(np.float32),
-                        colors=np.array(colors, dtype=np.float32))
+    # ---- scene dump: the film API ------------------------------------------
+    # This file is what cinematic work loads to place cameras in a compiled
+    # zone, so it is a contract rather than a debug artefact. It carries the
+    # sky and fog the vista was rendered with, and the heightfield, because a
+    # re-render that guesses either of those does not match and a camera that
+    # cannot ask the ground its height ends up inside a mountain.
+    np.savez_compressed(
+        out_prefix + "_scene.npz",
+        schema=np.array(SCENE_SCHEMA),
+        V=V, T=T, M=M, UV=UV,
+        tex=mega.astype(np.float32),
+        colors=np.array(colors, dtype=np.float32),
+        sky=np.array(sky, dtype=np.float32),
+        fog_color=np.array(fog["color"], dtype=np.float32),
+        fog_range=np.array([fog["start"], fog["end"], fog["max"]], dtype=np.float32),
+        heights=H.astype(np.float32),
+        grid_x=np.array([xs[0], xs[-1]], dtype=np.float32),
+        grid_z=np.array([zs[0], zs[-1]], dtype=np.float32),
+    )
     print("zone %s: %d verts, %d tris, %d prop instances"
           % (z["name"], len(V), len(T), len(instances)))
 

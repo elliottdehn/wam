@@ -45,6 +45,7 @@ python3 -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
 python3 -m wam.cli my.wam --bones              # skeleton overlay
 python3 -m wam.cli my.wam --width 760 --height 560     # landscape, long models
 python3 -m wam.modelset kit.wamset             # compose body + gear
+python3 -m wam.cinematic film.cine             # cameras over a scene (CINEMATIC_SPEC.md)
 ```
 
 From another project: `PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m wam.cli …`
