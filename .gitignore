@@ -5,3 +5,14 @@ out/
 
 # never commit a wamshare ownership secret
 .wamshare-secret
+
+# The service lives on the `online` branch, but its build artefacts and
+# dependencies sit in the working tree on every branch. The .gitignore files
+# that cover them are inside online/ and disappear on checkout, so 2,700
+# untracked files appear the moment you switch here. Ignore them from the root,
+# which every branch has.
+online/**/node_modules/
+online/**/dist/
+online/backend/public/
+online/backend/.wrangler/
+online/frontend/public/pyodide/
