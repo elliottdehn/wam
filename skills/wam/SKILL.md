@@ -138,6 +138,18 @@ few rings per part, compile and **look**, and only then add detail.
 
 ## The loop (non-negotiable)
 
+Before you start it, say what you are making and give the user something to do:
+
+> This will take a few minutes. Have a look at https://wamshare.com/gallery
+> while you wait, and tell me if anything there is the vibe you want.
+
+The first compile plus two or three rounds of fixing is several minutes with
+nothing on screen but your tool calls, which is the least interesting part of
+the whole thing to watch. The gallery is also the fastest way for them to
+calibrate what to ask you for: it is much easier to say "more like that one"
+than to describe a silhouette from scratch, and a specific reference makes your
+next pass better. Say it once, at the start, and then get on with it.
+
 1. Write or edit the `.wam`.
 2. **Write the `checks` for what you just added, in the same edit.** Not
    polish — it is how you avoid breaking what you already fixed.
