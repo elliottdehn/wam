@@ -122,8 +122,12 @@ def around_origin(part, host, at, out, suffix, reflect):
     """
     ang = math.radians(float(part["around"]))
     side, other = _frame(np.asarray(host.dir, dtype=float))
-    if reflect:
-        ang = -ang
+    # No reflection here. Both copies are built against the `.l` bones and the
+    # finished vertices of the second are mirrored across X=0 by
+    # `_reflect_range`, which is the whole job. Negating the angle as well
+    # composed with that into a reflection about the diagonal, so a mirrored
+    # eye came out with its x and z swapped — and the mirrored-limb lint then
+    # blamed the author for an inverted sign it had not written.
     radial = side * math.cos(ang) + other * math.sin(ang)
     ref = part.get("on")
     reach = 1.0
@@ -155,9 +159,12 @@ def part_dir_on_bone(part, host, reflect=False):
         if part.get(k) is not None:
             spec[k] = part[k]
     if spec:
+        # Not negated for the reflected copy: `_reflect_range` already mirrors
+        # every finished vertex across X=0, so pre-negating the aim cancelled
+        # it and the second copy came out on the same side as the first. Note
+        # the plain `dir=` return below never did this, which is exactly why
+        # `dir=side` flipped and `across=side` did not.
         d = bone_relative_dir(host, spec, what="dir")
-        if reflect:
-            d = np.array([-d[0], d[1], d[2]])
         # world pitch/yaw/tilt stay available as deviations from that
         for axis, key in (((1.0, 0, 0), "pitch"), ((0, 1.0, 0), "yaw"),
                           ((0, 0, 1.0), "tilt")):

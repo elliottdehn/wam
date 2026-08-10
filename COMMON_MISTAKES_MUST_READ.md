@@ -580,6 +580,41 @@ reverted — it referenced mesh state not available at that point in `lint.py`.
 Until that exists, render the strip and compare frame 1 against frame 4: if
 you cannot tell them apart at a glance, neither can a player.
 
+## 10. A shape that spans the centreline authored as a mirrored pair
+
+**Symptom.** A sword crossguard, a yoke, a brow ridge, a collar bar — anything
+that crosses the middle — is written as a `mirror` block of two halves, and it
+never quite sits right: a seam down the centre, or the two halves fighting over
+the same triangles.
+
+**Cause.** It is one shape. A `mirror` block builds two *separate* parts and
+reflects one, which is right for a pair of things (arms, horns, pauldrons) and
+wrong for a single thing that happens to be symmetric. The two halves meet at
+X=0 with nothing joining them, so they graze — and the graze lint exempts the
+pair, because a mirrored pair touching at the centreline is normally correct.
+
+**The correct form.** One part, spanning the centreline, centred on it:
+
+```
+loft quillons bone=hand.r at=0.62 across=fwd len=0.34 material=steel
+  ring 0.00 w=0.03 d=0.05
+  ring 0.50 w=0.05 d=0.06
+  ring 1.00 w=0.03 d=0.05
+```
+
+Ask which it is before reaching for `mirror`: **two things, or one thing that
+is symmetric?** Only the first is a mirrored pair.
+
+> **Historical note.** This entry used to carry a second cause — that a
+> mirrored part's *aim* did not reflect, so `across=`/`aim=`/`along=` and
+> `around=` put both copies on the same side — along with an
+> `across=left`/`across=right` workaround. That was a compiler bug, not an
+> authoring trap: `part_dir_on_bone` and `around_origin` each pre-negated the
+> aim on top of the vertex reflection that `_reflect_range` already does, and
+> the two cancelled. It is fixed, the workaround is unnecessary, and
+> `tests/test_mirror.py` holds it fixed. The advice above survives on its own
+> merits.
+
 ## The meta-lesson
 
 Every failure above shares a shape: **the compiler produced a valid result
