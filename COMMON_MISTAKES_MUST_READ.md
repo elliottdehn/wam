@@ -420,60 +420,44 @@ Same measure for an open skirt, a closed cuirass, a cape and a pauldron.
 
 ---
 
-## 6. Armour authored as one lump, or welded into the body
+## 6. Splitting gear into separate models nobody asked for
 
-**Symptom.** A character file where 35% of the parts are an equipment layer —
-helmet, visor, chestplate, pauldrons, greaves, boots — fused into the body.
-Measured on a real model: **13 of 37 parts**.
+**Symptom.** Someone asks for an armoured knight and gets seven files: a body,
+a helm, pauldrons, a cuirass, greaves, boots, and a `.wamset` to staple them
+back together. Every contact between armour and body now spans two files, none
+of it is checkable with ordinary `checks`, and the bone names have become a
+contract that has to be kept in sync by hand — to deliver one knight who wears
+one set of armour.
 
-**Cause.** It is the obvious thing to write, and it costs you everything
-afterwards: the armour cannot be reused on another body, cannot be swapped for
-a variant, cannot be inspected or checked on its own, and every "same character
-in different armour" duplicates the entire character.
+**Cause.** This file used to say the opposite, in bold, and it was wrong. The
+reasoning was real but it was all about *reuse*: armour welded into a body
+cannot be swapped, mixed, or worn by anyone else. True — and irrelevant to a
+brief that never asked for a second wearer. The cost of the split is paid
+immediately and in full; the benefit is speculative.
 
-**Correct form.** Anything worn or carried is **its own model**, and a set file
-assembles them. Armour is not one lump either: **each worn slot is a separate
-model.** Helm, pauldrons, cuirass, gauntlets, greaves, boots are separate
-files, because that is how they are worn, swapped and mixed. A single
-"plate set" model cannot be half-swapped, so every combination of pieces
-becomes a new file — the same duplication as welding it into the body, one
-level up.
+**Correct form.** **Author gear in place, in the character's own file, unless
+someone asks otherwise.** A knight in plate is one model. The armour is still
+separate *parts* — pauldrons, cuirass, greaves — with their own materials and
+their own shapes; it is the *file* that stays whole. `gap` and `leak` measure
+plate against body directly, in one place, with no retargeting in between.
 
-```
-set knight_kit
-models
-  body      bodies/human_m.wam
-  helm      armor/plate_helm.wam
-  pauldrons armor/plate_pauldrons.wam
-  cuirass   armor/plate_cuirass.wam
-  greaves   armor/plate_greaves.wam
-  hammer    weapons/warhammer.wam
+Split into models when there is an actual reason in front of you:
 
-compose knight
-  base body
-  graft helm                                    # names match -> fuses
-  graft pauldrons
-  graft cuirass
-  graft greaves
-  graft hammer to=hand.r:0.6 align=grip         # no match -> joins as new
-```
+- the brief asks for swappable or mixable gear
+- a second wearer exists now, not hypothetically
+- the prop is carried and handed around — a weapon several characters use
+- the piece needs its own `checks` because it ships on its own
 
-`graft` retargets by bone name, so one plate set fits every body using the
-same names and *adapts* — a longer forearm stretches the vambrace instead of
-letting it slide off.
+Then `SPEC.md` has `set`, `compose` and `graft`, and two things matter:
+**use conventional bone names** (`pelvis spine chest neck head`, `clavicle
+upperarm forearm hand`, `thigh shin foot`) because that is the contract that
+makes gear interchangeable and the one decision that cannot be fixed later;
+and **parent a garment's own extra bones — a hemline, a cape panel — to a bone
+the wearer really has**, or they follow the graft frame and land wherever it
+points.
 
-**Use conventional bone names.** `pelvis spine chest neck head`, `clavicle
-upperarm forearm hand`, `thigh shin foot`. This is the contract that makes
-gear interchangeable, and it is the one decision that cannot be fixed later.
-
-A garment may also carry bones the body does not have — a hemline, a cape
-panel. Those hang off the matched bone they are parented to, so **parent them
-to a bone the wearer really has.** A hemline parented to the pelvis follows
-the pelvis; one parented to nothing in particular follows the graft frame and
-lands wherever that points.
-
-Do **not** split integral anatomy — a golem's plating, a beetle's carapace, a
-dragon's scales. If it cannot come off, it is the body.
+And whichever way you go: **never split integral anatomy.** A golem's plating,
+a beetle's carapace, a dragon's scales. If it cannot come off, it is the body.
 
 ---
 

@@ -1209,12 +1209,17 @@ so `every: assert height > 0.9` is the per-model form of the fill check.
 
 ### `compose` — graft one model into another
 
-Anything worn or carried should be **its own model**, and a set file
-assembles them. That is the same argument as `group`, one level up: `group`
-exists because hand-deriving world rotations across a multi-part prop always
-failed, and welding armour into a body file fails the same way — it cannot be
-reused, swapped, or checked on its own, and every variant duplicates the
-whole character.
+Gear can be **its own model**, with a set file assembling it. This is worth
+reaching for when something will actually be reused, swapped or mixed — a
+plate set worn by six different bodies, a weapon several characters pick up,
+a roster whose armour recombines.
+
+**It is not the default.** A character who wears one set of armour is one
+model, and authoring the armour in place is simpler to write, simpler to
+read, and simpler to check: everything is in one file, contacts are
+measurable with ordinary `checks`, and there is no bone-name contract to keep
+in sync. Split when someone asks for interchangeable gear, or when you have a
+second wearer in hand — not on the chance that one day there might be.
 
 There is one operation, `graft`, and wearing and holding are outcomes of it
 rather than separate primitives:
@@ -1235,10 +1240,10 @@ compose knight
   graft cape  to=spine                          # a mixture, which is the point
 ```
 
-Each worn slot is its own model — helm, pauldrons, cuirass, gauntlets,
-greaves, boots. A single "plate set" cannot be half-swapped, so every
-combination of pieces becomes another file, which is the duplication problem
-again one level up.
+If you do split, split by the slot that gets swapped: a single "plate set"
+model cannot be half-swapped, so every combination of pieces becomes another
+file. Split as far as the swapping actually goes and no further — six files
+for a suit nobody recombines is the same overhead with none of the benefit.
 
 #### `hold` — the model states how it is carried
 

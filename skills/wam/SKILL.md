@@ -103,12 +103,7 @@ the brief. Recognize these as *defaults rather than choices*:
    angles will not fix it. Ribs must anchor at different points along the
    body (`from=`), and the span matters far more than the ratios — a rejected
    wing spanned 1.46 body-lengths where an accepted one spanned 3.60.
-4. **Equipment welded into the body** — one real model measured 13 of 37
-   parts as an equipment layer fused into the character.
-5. **Detail instead of shape** — adding buckles, studs and spikes to a
-   silhouette that does not read. It never works. A silhouette that reads
-   wrong is not fixed by adding parts.
-6. **Cylinders everywhere** — uniform ring widths, so no limb has taper or
+4. **Cylinders everywhere** — uniform ring widths, so no limb has taper or
    mass and the whole figure reads as balloon animals.
 
 Where the brief pins a direction, follow it exactly — the brief's words
