@@ -46,7 +46,7 @@ from .parser import WamError, _num, _vec, _hex_color, _split_kv
 
 GRID = 220            # heightfield cells along the longer axis
 ATLAS = 4096          # scene atlas; terrain chart on top, props/water below
-PROP_CELL = 320
+PROP_CELL = 512
 TERR_H = 3072
 
 
@@ -57,7 +57,7 @@ TERR_H = 3072
 def parse_zone(path):
     z = dict(name="zone", size=(400.0, 300.0), water=None, camera=None,
              textures={}, terrain=[], surface=[], splines=[], props=[],
-             bridges=[])
+             bridges=[], sky=None, fog=None)
     section = None
     cur_tex = None
     for line_no, raw in enumerate(open(path).read().splitlines(), 1):
@@ -87,6 +87,22 @@ def parse_zone(path):
             _, kv, _ = _split_kv(tokens[1:], line_no, line)
             z["water"] = _num(kv.get("level", "0"), line_no, line)
             continue
+        if kw == "sky":
+            # The time of day is a zone decision, not a renderer default: the
+            # scene dump carries it, so every camera in every .cine over this
+            # zone agrees about what colour the sky is.
+            _, kv, _ = _split_kv(tokens[1:], line_no, line)
+            z["sky"] = (_hex_color(kv["top"], line_no, line),
+                        _hex_color(kv["horizon"], line_no, line))
+            continue
+        if kw == "fog":
+            _, kv, _ = _split_kv(tokens[1:], line_no, line)
+            z["fog"] = dict(
+                color=_hex_color(kv["color"], line_no, line),
+                start=_num(kv["start"], line_no, line) if "start" in kv else None,
+                end=_num(kv["end"], line_no, line) if "end" in kv else None,
+                max=_num(kv.get("max", "0.55"), line_no, line))
+            continue
         if kw == "bridge":
             _, kv, _ = _split_kv(tokens[1:], line_no, line)
             z["bridges"].append(dict(
@@ -114,6 +130,10 @@ def parse_zone(path):
                 cur_tex = dict(base=_hex_color(kv["base"], line_no, line), ops=[])
                 z["textures"][tokens[1]] = cur_tex
             else:
+                from .parser import TEXTURE_OPS
+                if kw not in TEXTURE_OPS:
+                    raise WamError("unknown texture op %r — the ops are %s"
+                                   % (kw, ", ".join(TEXTURE_OPS)), line_no, line)
                 _, kv, flags = _split_kv(tokens[1:], line_no, line)
                 op = dict(op=kw)
                 for k, v in kv.items():
@@ -169,6 +189,13 @@ def parse_zone(path):
                 m = re.match(r"^slope<([\d.]+)$", t)
                 if m:
                     p["maxslope"] = float(m.group(1))
+            if "on" in kv:
+                if kv["on"] != "road":
+                    raise WamError("scatter on=%s — only on=road exists"
+                                   % kv["on"], line_no, line)
+                p["onroad"] = True
+            if "spacing" in kv:
+                p["spacing"] = _num(kv["spacing"], line_no, line)
             z["props"].append(p)
             continue
         raise WamError("unrecognized zone line", line_no, line)
@@ -637,9 +664,16 @@ def compile_zone(path, out_prefix):
                     continue
                 if slope_at(x, zc) > maxslope:
                     continue
-                if road_at(x, zc) > 0.25:
+                # Scatter avoids roads by default — a forest growing through a
+                # highway is the common case. A crowd *on* the road is the
+                # other one, and there was no way to ask for it.
+                if p.get("onroad"):
+                    if road_at(x, zc) < 0.45:
+                        continue
+                elif road_at(x, zc) > 0.25:
                     continue
-                if any((x - q[0]) ** 2 + (zc - q[1]) ** 2 < 36 for q in placed):
+                sp2 = p.get("spacing", 6.0) ** 2
+                if any((x - q[0]) ** 2 + (zc - q[1]) ** 2 < sp2 for q in placed):
                     continue
                 if any((x - ex) ** 2 + (zc - ez) ** 2 < er * er
                        for ex, ez, er in exclude):
@@ -838,9 +872,14 @@ def compile_zone(path, out_prefix):
 
     # ---- outputs ----
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
-    sky = ((0.55, 0.68, 0.83), (0.85, 0.87, 0.83))
-    fog = dict(color=(0.80, 0.82, 0.80), start=0.45 * max(W, D),
-               end=1.35 * max(Wp, Dp), max=0.55)
+    sky = z.get("sky") or ((0.55, 0.68, 0.83), (0.85, 0.87, 0.83))
+    _fz = z.get("fog")
+    fog = dict(color=_fz["color"] if _fz else (0.80, 0.82, 0.80),
+               start=(_fz["start"] if _fz and _fz["start"] is not None
+                      else 0.45 * max(W, D)),
+               end=(_fz["end"] if _fz and _fz["end"] is not None
+                    else 1.35 * max(Wp, Dp)),
+               max=_fz["max"] if _fz else 0.55)
     # vista: from the zone's camera directive (or a default inside the valley)
     if z.get("camera"):
         cam = z["camera"]
@@ -873,7 +912,7 @@ def compile_zone(path, out_prefix):
         anims=[],
         uv=[round(float(c), 4) for c in UV.reshape(-1)],
         tex="data:image/png;base64," + base64.b64encode(wr.png_bytes(mega)).decode(),
-        sky=[0.62, 0.72, 0.84],
+        sky=[round(float(c), 3) for c in sky[0]],
     )
     with open(out_prefix + "_viewer.json", "w") as f:
         json.dump(data, f, separators=(",", ":"))

@@ -6,6 +6,7 @@ Usage:
                      [--bones] [--no-gltf] [--width 480 --height 600]
 """
 import argparse
+import math
 import os
 import sys
 
@@ -57,7 +58,8 @@ def shared_framing(V, yaws, width, height, fov=28.0, pitch=10.0, margin=1.12):
 
 def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                   bones_overlay=False, do_gltf=True, quiet=False,
-                  width=480, height=600, anim_views=None, do_viewer=True):
+                  width=480, height=600, anim_views=None, do_viewer=True,
+                  light=None):
     anim_views = anim_views or views
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
@@ -76,6 +78,19 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     if atlas is not None:
         wrender.write_png(out_prefix + "_tex.png", atlas)
 
+    # A model authored for a night film renders near-black under the default
+    # key, and shape cannot be judged in a silhouette-free black mass. The
+    # sheet is an inspection tool, so let the author light it.
+    lightkw = {}
+    if light:
+        el, az, amb = light[0], light[1], light[2]
+        key = light[3] if len(light) > 3 else 0.95
+        fill = light[4] if len(light) > 4 else 0.20
+        r_el, r_az = math.radians(el), math.radians(az)
+        lightkw["sun"] = (math.cos(r_el) * math.sin(r_az), math.sin(r_el),
+                          math.cos(r_el) * math.cos(r_az))
+        lightkw["ambient"] = (amb, key, fill)
+
     imgs = []
     center = dist = None
     if len(V) and views:
@@ -88,7 +103,7 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
                                   center=center, dist=dist,
                                   vert_colors=vcols, uv=atlas_uv, tex=atlas,
                                   shade_group=mesh.shade_group,
-                                  mat_pbr=mat_pbr)
+                                  mat_pbr=mat_pbr, **lightkw)
         imgs.append(img)
     if imgs:
         sheet = wrender.hstack_views(imgs)
@@ -188,6 +203,10 @@ def main(argv=None):
     ap.add_argument("--no-viewer", action="store_true",
                     help="skip the standalone viewer page (it is the "
                          "deliverable, so this is rarely what you want)")
+    ap.add_argument("--light", default=None, metavar="EL,AZ,AMBIENT[,KEY,FILL]",
+                    help="light the sheet, e.g. --light 35,140,0.35. A model "
+                         "authored for a night film is unreadable under the "
+                         "default key, and a black mass hides every defect")
     ap.add_argument("--width", type=int, default=480,
                     help="panel width in pixels (default 480)")
     ap.add_argument("--height", type=int, default=600,
@@ -205,6 +224,8 @@ def main(argv=None):
                       bones_overlay=args.bones, do_gltf=not args.no_gltf,
                       do_viewer=not args.no_viewer,
                       width=args.width, height=args.height,
+                      light=(tuple(float(v) for v in args.light.split(","))
+                             if args.light else None),
                       anim_views=(args.anim_views.split(",")
                                   if args.anim_views else None))
     except wparser.WamError as e:

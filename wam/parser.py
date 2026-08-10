@@ -82,6 +82,7 @@ class Model:
         self.anims = []            # list of dicts
         self.checks = []           # list of dicts: assert / measure
         self.warnings = []         # ambient parse-time complaints
+        self.infos = []            # ...and what it merely decided
         self.source_path = None
 
 
@@ -126,7 +127,24 @@ KNOWN_KEYS = {
     "marker": {"at"},
     "side": {"dir", "pitch", "yaw", "tilt"},
     "hold": {"point", "edge", "carry"},
+    # texture ops. A misspelled op used to be appended to the stack and then
+    # skipped by the evaluator, which is the silently-dropped-key failure one
+    # level down: the material simply came out flat and nothing said why.
+    "tex:gradient": {"axis", "from", "to"},
+    "tex:noise": {"scale", "amount", "seed", "octaves", "lacunarity", "gain"},
+    "tex:streaks": {"along", "amount", "scale"},
+    "tex:spots": {"scale", "density", "color", "seed"},
+    "tex:band": {"axis", "at", "width", "color", "wander", "ragged",
+                 "scale", "octaves", "seed", "hard", "dir"},
+    "tex:planks": {"dir", "count", "seam", "width", "width_m"},
+    "tex:bricks": {"courses", "ratio", "seam", "width", "course", "length"},
+    "tex:ao": {"amount", "radius"},
+    "tex:facet": {"amount", "seed"},
+    "tex:wear": {"amount", "color", "bias", "break", "scale", "octaves",
+                 "seed", "radius"},
 }
+
+TEXTURE_OPS = sorted(k.split(":", 1)[1] for k in KNOWN_KEYS if k.startswith("tex:"))
 
 
 def _check_keys(model, kind, kv, line_no, line):
@@ -592,11 +610,21 @@ def parse(text, path=None):
             else:
                 if not model.textures:
                     raise WamError("texture op before any texture", line_no, line)
+                if kw not in TEXTURE_OPS:
+                    near = sorted(TEXTURE_OPS, key=lambda c: _similar(kw, c))[:1]
+                    hint = (", did you mean %r?" % near[0]) if near and \
+                        _similar(kw, near[0]) <= max(3, len(kw) // 2) else \
+                        " — the ops are %s" % ", ".join(TEXTURE_OPS)
+                    raise WamError("unknown texture op %r%s" % (kw, hint),
+                                   line_no, line)
                 _, kv, flags = _split_kv(tokens[1:], line_no, line)
+                _check_keys(model, "tex:" + kw, kv, line_no, line)
                 op = dict(op=kw)
                 for k, v in kv.items():
                     if v.startswith("#"):
                         op[k] = _hex_color(v, line_no, line)
+                    elif v.startswith("("):
+                        op[k] = _vec(v, line_no, line)
                     elif re.match(r"^[a-zA-Z_]", v):
                         op[k] = v
                     else:
@@ -688,6 +716,13 @@ def parse(text, path=None):
                         p["dir"] = f
                     if f == "double_sided":
                         p["double_sided"] = True
+                    if f == "freestanding":
+                        # A prop planted in the ground beside a figure, a
+                        # monument on its own base, a severed thing: the
+                        # island lint is right that it touches nothing and
+                        # wrong that this is a defect. `overlap` already
+                        # exists for the graft side of the same argument.
+                        p["freestanding"] = True
                     if f in ("faceted", "smooth"):
                         p["faceted"] = (f == "faceted")
                 if "bones" in kv:
@@ -932,7 +967,7 @@ def parse(text, path=None):
     # costs a long time to spot. Say what each block covered.
     for ln, names in mirror_items:
         if names:
-            model.warnings.append(
+            model.infos.append(
                 "line %d: mirror covers %s%s — each of those is built twice, "
                 "once per side"
                 % (ln, ", ".join(repr(n) for n in names[:6]),

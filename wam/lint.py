@@ -187,8 +187,15 @@ def _islands(V, T, ranges, touch, joins=None):
     return list(groups.values())
 
 
+def _first_ring_bone(mesh, v0):
+    """The bone the shared ring of a `continues=` loft is bound to."""
+    sk = mesh.skin[v0] if v0 < len(mesh.skin) else []
+    return max(sk, key=lambda nw: nw[1])[0] if sk else None
+
+
 def lint(model, bones, mesh):
     warnings = list(getattr(model, "warnings", []))
+    parse_infos = list(getattr(model, "infos", []))
     warnings += list(getattr(mesh, "warnings", []))
     infos = []
     V, T, M = mesh.arrays()
@@ -305,6 +312,10 @@ def lint(model, bones, mesh):
         hb = bones.get(host_ref) or bones.get(host_ref + ".l")
         if hb is None:
             continue
+        if part.get("freestanding"):
+            # A spear stuck in the ground beside a kneeling man really is
+            # nearest his foot, and really is not attached to it.
+            continue
         origin = hb.point_at(part.get("at", 1.0)) + np.array(part.get("offset", (0, 0, 0)))
         d_host = seg_dist(origin, hb)
         best_name, d_best = None, 1e9
@@ -416,6 +427,12 @@ def lint(model, bones, mesh):
             for i in range(v0, v1):
                 names.update(n for n, w in mesh.skin[i] if w > 0.01)
             most = max((len(mesh.skin[i]) for i in range(v0, v1)), default=0)
+            # A `continues=` loft's first ring is bound to the part it grows
+            # out of, on purpose — that shared binding is what makes the two
+            # deform as one surface. Counting it as an unblended second bone
+            # reports the construct working exactly as designed.
+            if key in getattr(mesh, "continues", {}):
+                names.discard(_first_ring_bone(mesh, v0))
             if len(names) > 1 and most < 2:
                 warnings.append(
                     "loft %r spans %d bones but no vertex blends between them "
@@ -575,6 +592,10 @@ def lint(model, bones, mesh):
             if mesh.part_ranges[k][1] > mesh.part_ranges[k][0]]
     boxes = {k: (V[slice(*mesh.part_ranges[k])].min(axis=0),
                  V[slice(*mesh.part_ranges[k])].max(axis=0)) for k in keys}
+    # Two parts joined by `continues=` share a ring exactly, so they always
+    # measure 0.0 apart. That is the construct's whole promise, not a graze.
+    cont = getattr(mesh, "continues", {})
+    joined = {frozenset((k, v)) for k, v in cont.items()}
     grazes = []
     for i, a in enumerate(keys):
         alo, ahi = boxes[a]
@@ -591,6 +612,8 @@ def lint(model, bones, mesh):
                 continue          # decisive overlap: renders fine
             if not _same_facing(av, at, bv, bt):
                 continue          # facing each other is a visible gap, not a fight
+            if frozenset((a, b)) in joined:
+                continue          # `continues=`: they are one surface by construction
             grazes.append((d, a, b))
     for d, a, b in sorted(grazes)[:6]:
         warnings.append(
@@ -629,8 +652,13 @@ def lint(model, bones, mesh):
             # floating away from the decoration.
             return (-min(shallowest[k] for k in g),
                     sum(mesh.part_ranges[k][1] - mesh.part_ranges[k][0] for k in g))
+        free = {pt["name"] + sfx
+                for pt in model.parts if pt.get("freestanding")
+                for sfx in ("", ".l", ".r")}
         islands.sort(key=anchored, reverse=True)
         for group in islands[1:]:
+            if all(k in free for k in group):
+                continue
             names = ", ".join(repr(k) for k in sorted(group)[:4]) + \
                 (" (+%d more)" % (len(group) - 4) if len(group) > 4 else "")
             warnings.append(
@@ -666,4 +694,4 @@ def lint(model, bones, mesh):
 
     infos.append("%d vertices, %d triangles, %d materials"
                  % (len(V), len(T), len(mesh.materials)))
-    return warnings, infos
+    return warnings, parse_infos + infos

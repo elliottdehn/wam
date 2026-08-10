@@ -137,12 +137,26 @@ ending at a visible cliff. (A polygon fan shades with diagonal seams and stops
 at a hard edge; *"the huntsman is standing on the edge of a void, the terrain
 just stops"* was a viewer-reported bug, which makes it the compiler's job.)
 
-### `fog auto` / `fog off`
+### `sky` and `fog`
 
-`auto` — the default — matches the fog colour to the sky's horizon and tunes
-its range so the ground's rim is gone before you reach it. In a zone, the
-zone's own fog is used. `off` disables it, which is mostly useful for proving
-to yourself what the fog was hiding.
+```
+sky top=#1b2740 horizon=#c4784a
+fog auto | off | fog color=#2a2f42 start=30 end=260 max=0.7
+```
+
+`fog auto` — the default — matches the fog colour to the sky's horizon and
+tunes its range so the ground's rim is gone before you reach it. `off`
+disables it, which is mostly useful for proving to yourself what the fog was
+hiding.
+
+A zone carries the sky and fog it was compiled with (`sky` and `fog` are zone
+directives too), so every camera over that zone agrees about the time of day.
+**A scene's own `sky` or `fog` overrules the zone's** — it is applied after the
+zone loads, so an interior is not stuck with a daylight gradient it can see
+between the columns.
+
+Because a colour is written `#rrggbb`, `#` only starts a comment when what
+follows is not six hex digits.
 
 ## `shot` — a camera over time
 
@@ -171,6 +185,19 @@ eye orbit around=<target> radius=175..145 arc=-10 height=+14..-20
 `a..b` interpolates over the shot; a bare number holds. `arc` is degrees of
 travel around the target. This is the shot you would otherwise write with
 per-frame trigonometry.
+
+### `fov`
+
+```
+fov 40          # holds
+fov 54..28      # swings the lens across the shot, on the shot's easing
+```
+
+A camera that only translates can dolly and it can orbit. It cannot do the move
+where the subject holds still and the world changes shape around it, which is
+what a lens range is for. Every framing measurement follows the lens, not just
+the camera, and a locked-off camera with a moving lens is correctly not
+reported as a still.
 
 ### `look at=<target>`
 
@@ -378,6 +405,14 @@ info: shot 'push': camera travels 4.04m, peak 3.01 m/s, look swings 1 deg
 info: shot 'push': 'crown' occupies 34% of frame height at 0%, 41% at 100%
 info: shot 'push': 'pilgrim' moves 21 px over the shot (anim 'walk')
 ```
+
+**An assertion at a named moment stands the matching ambient warning down.**
+`assert visible(warden) at 0% < 0.25` is the author saying this subject is
+*meant* to be hidden then — which is what a reveal is — so the occlusion
+warning goes quiet for it; the same goes for `inframe`/`offscreen` and the
+leaves-frame warning. A *bare* `visible(warden)` does not silence anything,
+because a bare name means the worst frame, which is the same thing the warning
+is about.
 
 A shot is measured against whatever it is *about*: its look target, plus
 anything its checks name. Measuring every staged model instead would bury the

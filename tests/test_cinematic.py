@@ -411,6 +411,100 @@ hit, w = warned("\n".join([
     "  fov 40", ""]), "locked", "nothing moves")
 check("a locked-off shot of nothing is caught", hit, "; ".join(w) or "no warnings")
 
+# ---- a scene can say what the sky and the air are like ----------------------
+# `#rrggbb` had to stop being a comment for any of this to be sayable.
+film_s = C.parse_cine(cine("\n".join([
+    "cinematic dusk", "  aspect 2.39", "  fps 4", "  size 160", "",
+    "scene s",
+    "  sky top=#1b2740 horizon=#c4784a   # dusk, and this really is a comment",
+    "  fog color=#2a2f42 start=30 end=260 max=0.7",
+    "  actor " + MODEL + " at=(0,0,0) anim=idle phase=0",
+    "  ground extend", "",
+    "shot a dur=0.5 scene=s", "  eye 0%=(0,1.5,-6)", "  look at=figure",
+    "  fov 40", ""]), "dusk"))
+cache_s = {}
+sc_s = C.Scene(film_s["scenes"]["s"], film_s,
+               lambda p: cache_s.setdefault(p, C.Loaded(p)))
+check("a scene can name its own sky",
+      C.to_hex(sc_s.sky[0]) == "#1b2740" and C.to_hex(sc_s.sky[1]) == "#c4784a",
+      "%s / %s" % (C.to_hex(sc_s.sky[0]), C.to_hex(sc_s.sky[1])))
+check("a trailing comment is still a comment", film_s["name"] == "dusk",
+      film_s["name"])
+check("a scene can name its own fog",
+      sc_s.fog is not None and C.to_hex(sc_s.fog["color"]) == "#2a2f42"
+      and sc_s.fog["start"] == 30 and sc_s.fog["end"] == 260
+      and sc_s.fog["max"] == 0.7, str(sc_s.fog))
+check("and that fog is in the palette",
+      sc_s.palette.get("fog") is not None
+      and C.to_hex(sc_s.palette["fog"]) == "#2a2f42", str(sc_s.palette.get("fog")))
+
+# ---- the lens can move ------------------------------------------------------
+film_f = C.parse_cine(cine(build("lens", eye="eye 0%=(0,1.5,-6) 100%=(0,1.5,-6)")
+                           .replace("  fov 40", "  fov 28..62"), "lens"))
+cam_f = C.Camera(film_f["shots"][0], sc_s)
+check("a bare fov holds", C.Camera(C.parse_cine(cine(build("hold"), "hold"))
+                                   ["shots"][0], sc_s).fov_at(0.5) == 40)
+check("`a..b` swings the lens across the shot",
+      abs(cam_f.fov_at(0.0) - 28) < 1e-9 and abs(cam_f.fov_at(1.0) - 62) < 1e-9
+      and 28 < cam_f.fov_at(0.5) < 62,
+      "%.2f -> %.2f -> %.2f" % (cam_f.fov_at(0), cam_f.fov_at(0.5), cam_f.fov_at(1)))
+
+w, infos_z, _ = run(build("zoom", eye="eye 0%=(0,1.5,-6) 100%=(0,1.5,-6)",
+                          checks="  checks\n"
+                                 "    assert frames(figure) at 0% > frames(figure) at 100%")
+                    .replace("  fov 40", "  fov 28..62"), "zoom")
+check("and the framing follows the lens, not just the camera",
+      any("frames(figure) at 0%" in m and ", ok)" in m for m in infos_z),
+      "; ".join(w) or "not measured")
+# A locked camera whose lens is moving does not render identical frames.
+check("a zoom is not a still", not any("nothing moves" in x for x in w),
+      "; ".join(w))
+
+# ---- atlas bands: both coordinates get remapped -----------------------------
+# Only v was, which is invisible while every contributor is the same width. A
+# zone bakes 4096 and a model bakes 1024, so a staged model's u still spanned
+# the whole sheet and three quarters of every chart sampled empty space.
+class _FakeScene(C.Scene):
+    def __init__(self):
+        self.colors = []
+        self.uv_rows = []
+
+
+wide = np.zeros((64, 400, 3), dtype=np.float32)
+narrow = np.zeros((32, 100, 3), dtype=np.float32)
+Vq = np.zeros((4, 3))
+Tq = np.array([[0, 1, 2]])
+uvq = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+fs = _FakeScene()
+fs._merge([(Vq, Tq, np.zeros(1, int), uvq, wide, None),
+           (Vq, Tq, np.zeros(1, int), uvq, narrow, None)])
+check("a merged atlas is as wide as its widest contributor",
+      fs.atlas.shape[1] == 400, str(fs.atlas.shape))
+check("a narrower chart's u is remapped into the band it actually occupies",
+      abs(fs.uv[4:, 0].max() - 100 / 400) < 1e-9,
+      "u max %.4f, expected %.4f" % (fs.uv[4:, 0].max(), 100 / 400))
+check("and the widest contributor's u is left alone",
+      abs(fs.uv[:4, 0].max() - 1.0) < 1e-9, "u max %.4f" % fs.uv[:4, 0].max())
+
+# ---- an asserted subject stands the ambient warning down --------------------
+# A reveal that begins on the back of someone's head is a shot working as
+# written, and asserting that it *is* hidden at 0% was itself what warned.
+w, _, _ = run(build("reveal", extra=WALL_LINE,
+                    checks="  checks\n    assert visible(figure) at 0% < 0.25"),
+              "reveal")
+check("asserting a subject is hidden at a moment silences the occlusion warning",
+      not any("is occluded" in x for x in w), "; ".join(w))
+
+w, _, _ = run(build("stillwarns", extra=WALL_LINE,
+                    checks="  checks\n    assert clearance > 0.1"), "stillwarns")
+check("and without that assertion it still speaks",
+      any("is occluded" in x for x in w), "; ".join(w) or "no warnings")
+
+w, _, _ = run(build("bare", extra=WALL_LINE,
+                    checks="  checks\n    assert visible(figure) > 0.0"), "bare")
+check("a bare assertion does not silence it, because it means the worst frame",
+      any("is occluded" in x for x in w), "; ".join(w) or "no warnings")
+
 # ---- determinism and resume --------------------------------------------------
 _, _, o1 = run(build("det1"), "det1")
 first = open(os.path.join(o1, "a", "0000.png"), "rb").read()

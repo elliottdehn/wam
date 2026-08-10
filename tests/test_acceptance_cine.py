@@ -48,6 +48,8 @@ def put(name, text):
 
 ZONE = put("vale.zone", """zone vale
   size 260 200
+  sky top=#101a33 horizon=#b0603a
+  fog color=#242a3d start=25 end=300 max=0.8
 camera at=(0,-70) look=(0,40) height=6
 
 textures
@@ -237,6 +239,33 @@ check("a placed model can be pitched flat, not just yawed",
       and abs(up[1] - up[2]) > 1.0,
       "upright extents %s, pitched extents %s"
       % (np.round(up, 3), np.round(flat, 3)))
+
+# ---- the zone carries its own sky, and a scene may still overrule it --------
+def sky_of(extra_scene=""):
+    f = C.parse_cine(put("sky_%d.cine" % len(extra_scene),
+                         "\n".join([HEAD, scene(extra=extra_scene), "",
+                                     "shot a dur=0.2 scene=s",
+                                     "  eye 0%=(0,8,-18)", "  look at=crown",
+                                     "  fov 40", ""])))
+    cache = {}
+    sc = C.Scene(f["scenes"]["s"], f, lambda p: cache.setdefault(p, C.Loaded(p)))
+    return sc
+
+
+sc_z = sky_of()
+check("a compiled zone carries the sky it was built with",
+      C.to_hex(sc_z.sky[0]) == "#101a33", C.to_hex(sc_z.sky[0]))
+check("and the fog it was built with",
+      C.to_hex(sc_z.fog["color"]) == "#242a3d"
+      and abs(sc_z.fog["max"] - 0.8) < 1e-6      # float32, via the scene dump
+      and sc_z.fog["start"] == 25 and sc_z.fog["end"] == 300,
+      str(sc_z.fog))
+
+# Setting this before the zone loads let the zone quietly overwrite it, which
+# is how an interior scene ended up lit by a daylight gradient.
+sc_o = sky_of("  sky top=#2d0b0b horizon=#7a2f14")
+check("a scene overrules the zone's sky rather than the other way round",
+      C.to_hex(sc_o.sky[0]) == "#2d0b0b", C.to_hex(sc_o.sky[0]))
 
 # ---- break it three ways -----------------------------------------------------
 _, warns, _ = film(shot("eye 0%=(0,~-4,-18) 100%=(0,~-4,-12)"), "under")

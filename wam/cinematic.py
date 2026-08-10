@@ -98,7 +98,10 @@ def parse_cine(path):
     section = None
 
     for line_no, line in enumerate(raw.splitlines(), 1):
-        body = line.split("#")[0].rstrip()
+        # `#` starts a comment, but `#rrggbb` is a colour — the .wam
+        # parser has drawn that distinction since colours existed, and
+        # a scene could not name a sky without it
+        body = re.split(r"#(?![0-9a-fA-F]{6}\b)", line, 1)[0].rstrip()
         if not body.strip():
             continue
         indented = body[0].isspace()
@@ -186,10 +189,28 @@ def parse_cine(path):
             elif kw == "ground":
                 scene["ground"] = tok[1] if len(tok) > 1 else "extend"
             elif kw == "fog":
-                scene["fog"] = tok[1] if len(tok) > 1 else "auto"
+                if len(tok) > 1 and "=" in tok[1]:
+                    fkv = _kv(tok[1:], line_no, line)
+                    scene["fog"] = "custom"
+                    scene["fogspec"] = dict(
+                        color=wparser._hex_color(fkv["color"], line_no, line),
+                        start=float(fkv.get("start", 40.0)),
+                        end=float(fkv.get("end", 400.0)),
+                        max=float(fkv.get("max", 0.55)))
+                else:
+                    scene["fog"] = tok[1] if len(tok) > 1 else "auto"
+            elif kw == "sky":
+                # A staged scene took the renderer's daylight gradient and had
+                # no way to say otherwise, so every interior — a throne room
+                # under a mountain, a vault, a hold — was lit by a blue sky
+                # you could see between the columns.
+                skv = _kv(tok[1:], line_no, line)
+                scene["sky"] = (wparser._hex_color(skv["top"], line_no, line),
+                                wparser._hex_color(skv["horizon"], line_no, line))
             else:
                 raise WamError("scene does not understand %r — it takes zone, "
-                               "place, actor, ground and fog" % kw, line_no, line)
+                               "place, actor, ground, sky, light and fog"
+                               % kw, line_no, line)
 
         elif section == "shot":
             if kw == "eye":
@@ -220,7 +241,11 @@ def parse_cine(path):
                 else:
                     raise WamError("look needs at=<target>", line_no, line)
             elif kw == "fov":
-                shot["fov"] = _num(tok[1], line_no, line)
+                # `54..28` swings the lens across the shot. A camera that only
+                # translates can dolly and it can orbit, and it cannot do the
+                # one move where the world changes shape around a subject that
+                # stays put — the pull-back whose scale keeps getting worse.
+                shot["fov"] = tok[1] if ".." in tok[1] else _num(tok[1], line_no, line)
             elif kw == "cut":
                 shot["cut"] = tok[1] if len(tok) > 1 else "hard"
             elif kw == "dissolve":
@@ -341,7 +366,7 @@ class Scene:
     def __init__(self, spec, film, loader):
         self.name = spec["name"]
         self.fog = None
-        self.sky = ((0.55, 0.68, 0.83), (0.85, 0.87, 0.83))
+        self.sky = spec.get("sky") or ((0.55, 0.68, 0.83), (0.85, 0.87, 0.83))
         lg = spec.get("light") or {}
         self.sun = lg.get("sun")
         self.fill = lg.get("fill")
@@ -418,6 +443,18 @@ class Scene:
             # which is both the original bug and a lint that never shuts up.
             self.fog = dict(color=tuple(self.sky[1]), start=0.12 * GROUND_R,
                             end=0.88 * GROUND_R, max=1.0)
+        elif spec["fog"] == "custom":
+            # An explicit fog wins over the zone's own, because the author who
+            # wrote it out is the one saying what this scene's air is like.
+            fs = spec["fogspec"]
+            self.fog = dict(color=tuple(fs["color"]), start=fs["start"],
+                            end=fs["end"], max=fs["max"])
+        if spec.get("sky"):
+            # After the zone, not before it. A zone carries the sky it was
+            # built with, so setting this up front let the zone quietly
+            # overwrite the one the author wrote down — and an interior scene
+            # went back to being lit by a blue daylight gradient.
+            self.sky = spec["sky"]
         self._build_palette()
 
     # -- construction -------------------------------------------------------
@@ -517,6 +554,7 @@ class Scene:
                     h, w = tex.shape[:2]
                     atlas[yoff:yoff + h, :w] = tex
                     u = np.asarray(uv, dtype=float).copy()
+                    u[:, 0] = u[:, 0] * w / width
                     u[:, 1] = (u[:, 1] * h + yoff) / total
                     UVs.append(u)
                     yoff += h
@@ -751,11 +789,25 @@ class Camera:
     def __init__(self, shot, scene):
         self.shot = shot
         self.scene = scene
-        self.fov = shot["fov"]
+        self._fov = shot["fov"]
+        self.fov = (float(str(self._fov).split("..")[0])
+                    if isinstance(self._fov, str) else self._fov)
         self.ease = EASINGS[shot.get("ease", "linear")]
         self.keys = sorted(shot["eye"], key=lambda k: k[0])
         self.orbit = shot["orbit"]
         self.look_name = shot["look"]
+
+    def fov_at(self, t):
+        """The lens at phase t. A bare number holds; `a..b` interpolates.
+
+        A camera that only translates can dolly and it can orbit; it cannot do
+        the move where the subject holds still and the world changes shape
+        around it.
+        """
+        if not isinstance(self._fov, str):
+            return self._fov
+        a, b = (float(x) for x in self._fov.split(".."))
+        return a + (b - a) * self.ease(min(max(t, 0.0), 1.0))
 
     def _range(self, spec, t):
         """`175..145` interpolates; a bare number is constant."""
@@ -1448,6 +1500,29 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
             if scene.resolves(word):
                 named.add(word)
 
+    # A subject the author has written a moment-qualified assertion about has
+    # had its bar set deliberately, so the ambient warning stands down for it —
+    # the same bargain `noclip` strikes in a model's checks. Not doing this made
+    # the useful case unsayable: a reveal that begins on the back of someone's
+    # head is a shot working exactly as written, and asserting that it *is*
+    # hidden at 0% was itself what raised the warning.
+    #
+    # Only a moment-qualified assertion stands the warning down. A bare
+    # `visible(x)` means the worst frame, which is the same thing the warning is
+    # about, so there both should speak.
+    asserted_visible, asserted_framed = set(), set()
+    for _, expr in shot["checks"]:
+        for m in re.finditer(
+                r"visible\(\s*([A-Za-z_][\w.]*)\s*\)\s*at\s+[\d.]+\s*%", expr):
+            asserted_visible.add(m.group(1))
+        # and the same bargain for framing: a push-in that deliberately crops
+        # its own subject is a shot, not a defect, and `inframe(x) at 0% > 0.9`
+        # is the author saying where they wanted it whole.
+        for m in re.finditer(
+                r"(?:inframe|offscreen)\(\s*([A-Za-z_][\w.]*)\s*\)"
+                r"\s*at\s+[\d.]+\s*%", expr):
+            asserted_framed.add(m.group(1))
+
     # Pixels any check wants to look at. Sampling one means rendering the
     # frame, so this is opt-in: no colour check, no extra render.
     want_px, want_color = set(), []
@@ -1491,6 +1566,7 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
         pct = round(t * 100)
         V = scene.pose(t, shot["dur"])
         eye, look = cam.eye_at(t), cam.look_at(t)
+        fov_t = cam.fov_at(t)
         ts.append(t)
         eyes.append(eye)
         looks.append(look)
@@ -1530,33 +1606,33 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
         if c < 0:
             under.append((pct, -c, eye))
         if len(scene.T) and c < 2.0:
-            _, _, z = _project(V, eye, look, cam.fov, width, height)
+            _, _, z = _project(V, eye, look, fov_t, width, height)
             zt = z[scene.T]
             n_str = int(((zt.min(axis=1) < 0.05) & (zt.max(axis=1) > 0.05)).sum())
             if n_str:
                 near_cross.append((pct, n_str))
-        frac, side = sees_edge(scene, V, eye, look, cam.fov, width, height)
+        frac, side = sees_edge(scene, V, eye, look, fov_t, width, height)
         if frac > 0:
             edges.append((pct, frac, side))
         for name in named:
             if scene.subject(name) is None:
                 continue                  # a literal point has no geometry
-            fr = frames(scene, name, eye, look, cam.fov, width, height)
+            fr = frames(scene, name, eye, look, fov_t, width, height)
             sizes.setdefault(name, []).append(fr)
-            off = offscreen(scene, name, eye, look, cam.fov, width, height)
+            off = offscreen(scene, name, eye, look, fov_t, width, height)
             if off > 0.02:
                 offs.setdefault(name, []).append((pct, off))
-            vis = visible(scene, name, V, eye, look, cam.fov, width, height)
+            vis = visible(scene, name, V, eye, look, fov_t, width, height)
             if vis < 0.15:
                 occl.setdefault(name, []).append((pct, 1 - vis))
             agg.setdefault("frames(%s)" % name, []).append(fr)
             agg.setdefault("visible(%s)" % name, []).append(vis)
             agg.setdefault("inframe(%s)" % name, []).append(
-                inframe(scene, name, eye, look, cam.fov, width, height))
+                inframe(scene, name, eye, look, fov_t, width, height))
             agg.setdefault("centered(%s)" % name, []).append(
-                centered(scene, name, eye, look, cam.fov, width, height))
+                centered(scene, name, eye, look, fov_t, width, height))
             agg.setdefault("headroom(%s)" % name, []).append(
-                headroom(scene, name, eye, look, cam.fov, width, height))
+                headroom(scene, name, eye, look, fov_t, width, height))
             agg.setdefault("offscreen(%s)" % name, []).append(off)
             agg.setdefault("grounded(%s)" % name, []).append(
                 grounded(scene, name))
@@ -1587,10 +1663,14 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
              "down or in, or bring the fog closer so the rim fades out"
              % (shot["name"], span(edges), side, frac * 100))
     for name, items in offs.items():
+        if name in asserted_framed:
+            continue
         pct, worst = max(items, key=lambda o: o[1])
         warn("shot %r %s: %r leaves frame (%.0f%% outside at %d%%)"
              % (shot["name"], span(items), name, worst * 100, pct))
     for name, items in occl.items():
+        if name in asserted_visible:
+            continue
         pct, worst = max(items, key=lambda o: o[1])
         warn("shot %r %s: %r is occluded (%.0f%% hidden at %d%%)"
              % (shot["name"], span(items), name, worst * 100, pct))
@@ -1599,7 +1679,7 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
     # the wrong way round: you find it after rendering the shot. Measure it in
     # pixels, because a 2mm twitch reads on a close-up and not at 80 metres,
     # and the author needs to know which one they have.
-    px_per_m = height / (2.0 * math.tan(math.radians(cam.fov) / 2))
+    px_per_m = height / (2.0 * math.tan(math.radians(cam.fov_at(0.5)) / 2))
     dead = []
     for ai, rec in live.items():
         a = scene.actors[ai]
@@ -1625,7 +1705,9 @@ def lint_shot(shot, scene, cam, width, height, fps, warn, info):
     nframes = max(1, int(round(shot["dur"] * fps)))
     # No animated actors at all counts too: a locked camera over static
     # props is still the same picture N times.
-    if len(dead) == len(live) and eye_travel < 1e-6 and nframes > 1:
+    lens_moves = abs(cam.fov_at(0.0) - cam.fov_at(1.0)) > 1e-9
+    if (len(dead) == len(live) and eye_travel < 1e-6 and nframes > 1
+            and not lens_moves):
         warn("shot %r: nothing moves — the camera is locked off and every "
              "actor is still, so this renders %d identical frames"
              % (shot["name"], nframes))
@@ -1702,7 +1784,7 @@ def _render(scene, cam, V, t, width, height):
     measures is the same pixel the shot ships."""
     return wr.render_view(
         V, scene.T, scene.M, scene.colors,
-        width=width, height=height, fov_deg=cam.fov,
+        width=width, height=height, fov_deg=cam.fov_at(t),
         uv=scene.uv, tex=scene.atlas, sky=scene.sky, fog=scene.fog,
         eye=cam.eye_at(t), look=cam.look_at(t),
         sun=scene.sun, fill=scene.fill, ambient=scene.ambient)

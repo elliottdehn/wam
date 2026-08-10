@@ -282,6 +282,21 @@ def _section_extent(p):
                p.get("dtop", d), p.get("dbot", d))
 
 
+def _section_extent_along(p, axes, u):
+    """Full extent of a ring section along one world direction.
+
+    A tube folds in the plane it bends in, so what decides whether it doubles
+    back is how far the section reaches *in that plane* — not how wide it is
+    overall. Measuring the widest dimension instead reports a fold on
+    everything broad and thin that curves the flat way: a wave, a banner, a
+    wing membrane, a curtain wall following a hill.
+    """
+    side, other, _ = axes
+    w = max(p.get("w", 0.0), p.get("wtop", 0.0), p.get("wbot", 0.0))
+    d = max(p.get("d", 0.0), p.get("dtop", 0.0), p.get("dbot", 0.0))
+    return w * abs(float(u @ side)) + d * abs(float(u @ other))
+
+
 def _explicit_skin(bones, spec, suffix, part_name):
     """Resolve an authored `skin=` list to [(bone name, weight), ...]."""
     resolved = []
@@ -847,7 +862,14 @@ def _emit_tube(out, centers, axes, params, mats, skins, n_sides,
         band.
         """
         if seam is not None and ri == 0:
-            return seam[k % len(seam)]
+            src_id = seam[k % len(seam)]
+            key = (ri, k, mat)
+            if key in cache:
+                return cache[key]
+            cache[key] = out.add_vert(np.array(out.verts[src_id], dtype=float),
+                                      list(out.skin[src_id]),
+                                      uv=(k / n_sides, 0.0))
+            return cache[key]
         pts, collapsed, vcoord = geom[ri]
         key = (ri, -1 if collapsed else k, mat)
         if key in cache:
@@ -1149,7 +1171,19 @@ def build_loft(out, model, bones, part, suffix="", reflect=False):
         theta = math.acos(c)
         L = float(np.linalg.norm(centers[i + 1] - centers[i]))
         reach = L / (2.0 * math.sin(theta / 2.0) + 1e-9)
-        rmax = max(_section_extent(params[i]), _section_extent(params[i + 1])) / 2.0
+        # the direction the bend actually closes on: perpendicular to the
+        # tangent, inside the plane the path turns in
+        nvec = np.cross(t1, t2)
+        nn = float(np.linalg.norm(nvec))
+        if nn < 1e-9:
+            continue
+        fold_dir = np.cross(nvec / nn, t1)
+        fd = float(np.linalg.norm(fold_dir))
+        if fd < 1e-9:
+            continue
+        fold_dir = fold_dir / fd
+        rmax = max(_section_extent_along(params[i], axes[i], fold_dir),
+                   _section_extent_along(params[i + 1], axes[i + 1], fold_dir)) / 2.0
         if rmax > reach:
             out.warnings.append(
                 "loft %r folds between rings %.2f and %.2f: the path bends "
