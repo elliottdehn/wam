@@ -47,8 +47,8 @@ python -m wam.cli my.wam --anim walk --frames 6       # human-readable output
 python -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
 python -m wam.cli my.wam --bones               # skeleton overlay, first 2 views
 python -m wam.cli my.wam --width 760 --height 560     # landscape, long models
-python -m wam.modelset kit.wamset               # compose body + gear
-python -m wam.cinematic film.cine               # cameras over a scene
+python -m wam.modelset kit.wamset              # compose body + gear
+python -m wam.cinematic film.cine              # cameras over a scene (CINEMATIC_SPEC.md)
 ```
 
 On Windows replace `python` with `.\.venv\Scripts\python.exe`. On POSIX use
@@ -74,8 +74,8 @@ this user's preferences or a roster you have built with them before, use it.
 **Asked for "something" and nothing else? Roll for it.**
 
 ```bash
-python3 dice.py            # one brief
-python3 dice.py -n 5       # five, and let the user pick
+python dice.py            # one brief
+python dice.py -n 5       # five, and let the user pick
 ```
 
 It returns things like *"a brine-crusted heron with a crown of horns too heavy
@@ -124,7 +124,7 @@ Work in two passes. First write a compact plan — four things, no bones yet:
   These are the numbers eyes are worst at judging and best at noticing.
 - **Silhouette**: what shape this reads as at 32px, in one sentence. If that
   sentence is "a humanoid," go back. Do not guess this — once there is
-  geometry, `python3 scripts/silhouette.py my.wam` renders it flat and at
+  geometry, `python scripts/silhouette.py my.wam` renders it flat and at
   thumbnail size, and the smallest row settles the question.
 - **Signature**: the one feature this creature is remembered by.
 

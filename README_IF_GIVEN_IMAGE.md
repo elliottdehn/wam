@@ -58,7 +58,7 @@ budgeted act. Never let the first turn into the second by momentum.
 - Anything that survives neither is **dropped, out loud, with a reason.**
 
 The test for geometry: *would this change the shape at 32 pixels?* If not, it
-is not geometry. Run `python3 scripts/silhouette.py my.wam` and look — that is
+is not geometry. Run `python scripts/silhouette.py my.wam` and look — that is
 what the player sees first, and it is the only channel small parts do not
 reach.
 
@@ -67,7 +67,7 @@ reach.
 Cut the reference up and read the pieces:
 
 ```bash
-python3 scripts/crop.py ref.jpg --grid 3x3 -o out/refcrops
+python scripts/crop.py ref.jpg --grid 3x3 -o out/refcrops
 ```
 
 **Open one crop. Write down what it shows. Only then open the next.** The
@@ -143,7 +143,7 @@ Go back to the list. For each `[G]` and `[C]` item, cut the matching region
 out of both images side by side:
 
 ```bash
-python3 scripts/crop.py ref.jpg out/mine_sheet.png \
+python scripts/crop.py ref.jpg out/mine_sheet.png \
     --box 0.30,0.00,0.70,0.35 --box2 0.05,0.02,0.20,0.30 -o out/cmp_head.png
 ```
 
