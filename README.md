@@ -268,6 +268,9 @@ MIT — see [LICENSE](LICENSE).
 ## Fork changelog
 
 Fork-specific additions are listed in [CHANGELOG.md](CHANGELOG.md).
+For an upstream-oriented review of the fork's interfaces, compatibility,
+limitations, and validation evidence, see
+[Audits/2026-08-14-upstream-comparison-audit.md](Audits/2026-08-14-upstream-comparison-audit.md).
 
 ## No idea what to make?
 

@@ -6,6 +6,9 @@ This fork starts from [`elliottdehn/wam` commit `938e08e`](https://github.com/el
 It retains the upstream MIT license and copyright notice in
 [`LICENSE`](LICENSE).
 
+For an upstream-facing interface map, compatibility assessment, limitations,
+and validation evidence, see the [upstream comparison audit](Audits/2026-08-14-upstream-comparison-audit.md).
+
 ## Fork additions — 2026-08-14
 
 ### Codex workflow
