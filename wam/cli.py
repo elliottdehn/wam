@@ -107,6 +107,18 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
         wedges.apply_layer(mesh, bones, edit_layer)
         infos.append("edit layer: %d operation(s) applied" %
                      len(edit_layer["operations"]))
+        # An edit layer turns the whole build flat, because a per-face repaint
+        # has no representation in a baked atlas.  That is far too large a
+        # consequence to leave implicit in an operation count: a model whose
+        # surfaces are carried by bands, grain and crevice shading reads as a
+        # different model once it is flat.  It is an info rather than a
+        # warning because the editor bridge treats any warning as a refusal to
+        # save, and a textured model would then be uneditable outright.
+        if getattr(model, "textures", None):
+            infos.append(
+                "edit layer: the baked texture atlas is disabled, so %d authored "
+                "texture(s) are not applied and the glTF carries no image"
+                % len(model.textures))
     artifacts = {
         "viewsManifest": None,
         "views": [],
