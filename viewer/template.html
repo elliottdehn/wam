@@ -110,6 +110,59 @@
   }
   #dropHint.hidden { display: none; }
   #stage.dragover canvas { outline: 3px dashed var(--accent); outline-offset: -6px; }
+
+  /* ---- edit panel: hierarchy and progressive disclosure ----------------
+     The editor started as one flat run of ten headings, ~50 controls and
+     nine always-visible number fields in a 232px column. Nothing below
+     changes what any control does; it changes how many of them are asking
+     for attention at once. */
+  aside.editing { width: 300px; }
+  .edit-sec { margin-bottom: 16px; }
+  .edit-sec:last-child { margin-bottom: 0; }
+
+  /* Joined buttons read as one control with one active choice, rather than
+     three independent toggles that happen to sit next to each other. */
+  .seg { display: flex; }
+  .seg button { flex: 1; border-radius: 0; margin-left: -1px; padding: 7px 6px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button.on { position: relative; z-index: 1; }
+
+  /* Show only the active tool's numbers. Eight of the nine fields were noise
+     at any given moment. They stay in the DOM, so every function that reads
+     the transform form still sees all three axes of all three operations. */
+  #editPanel[data-gizmo="move"]   .xform:not(.xform-move),
+  #editPanel[data-gizmo="rotate"] .xform:not(.xform-rotate),
+  #editPanel[data-gizmo="scale"]  .xform:not(.xform-scale) { display: none; }
+  /* Same idea for the mirror target: it is meaningless until Mirror X is on,
+     and it was occupying two rows plus a paragraph of help text regardless. */
+  #editPanel[data-mirror="off"] .mirror-only { display: none; }
+
+  /* The draft is what the panel is for, so it gets weight and full width. */
+  .draft-dock { border: 1px solid var(--line); border-radius: 7px;
+                padding: 11px; margin-top: 4px; }
+  .draft-dock .primary { width: 100%; margin-bottom: 6px; }
+  .draft-dock .btns button { flex: 1; }
+
+  /* Recovery, layer files and the log matter rarely and cost a lot of room. */
+  details.more { border-top: 1px solid var(--line); margin-top: 12px;
+                 padding-top: 10px; }
+  details.more + details.more { margin-top: 0; }
+  details.more > summary { cursor: pointer; list-style: none; padding: 3px 0;
+                           font-size: 11px; font-weight: 600; color: var(--muted);
+                           text-transform: uppercase; letter-spacing: 0.09em; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "\25B8\00a0"; }
+  details.more[open] > summary::before { content: "\25BE\00a0"; }
+  details.more > summary:focus-visible { outline: 2px solid var(--accent);
+                                         outline-offset: 2px; }
+  details.more > *:not(summary) { margin-top: 8px; }
+
+  /* A destructive button should look different before it is clicked, not
+     only read differently. */
+  button.danger { color: #a9242d; border-color: #a9242d59; }
+  button.danger:hover { border-color: #a9242d; }
+  button.wide { width: 100%; }
 </style>
 
 <header>
@@ -141,51 +194,76 @@
     </div>
     <div class="group">
       <h2>Edit mode</h2>
-      <div class="btns"><button id="editToggle" data-tooltip="Toggle local, non-destructive geometry editing. Right-drag still orbits the camera.">Enter edit mode</button></div>
+      <div class="btns"><button id="editToggle" class="wide" data-tooltip="Toggle local, non-destructive geometry editing. Right-drag still orbits the camera.">Enter edit mode</button></div>
+      <div class="btns" style="margin-top:6px"><button id="recenterCamera" class="wide" data-tooltip="Recalculate the camera frame around the current edited model.">Recenter model</button></div>
     </div>
-    <div class="group edit" id="editPanel" hidden>
-      <h2>Selection</h2>
-      <div class="edit-status" id="editStatus">Click a part or face.</div>
-      <div class="edit-label">Geometry — grouped by bone</div>
-      <select id="geometrySelect" aria-label="Selected geometry" data-tooltip="Choose a geometry attached to a bone. Canvas selection keeps this menu in sync."></select>
-      <div class="edit-row"><button id="selectObject" data-tooltip="Select a whole geometry for transforms, object colour, hiding, or mirror pairing.">Object select</button><button id="selectFace" data-tooltip="Select one visible triangle for inspection or hiding. This cancels an armed mirror picker.">Face select</button></div>
-      <h2>Transform</h2>
-      <div class="edit-row"><button id="gizmoMove" class="on" data-tooltip="Move along World or Local X, Y, or Z handles. Shortcut: W.">Move (W)</button><button id="gizmoRotate" data-tooltip="Rotate around World or Local X, Y, or Z rings. Shortcut: E.">Rotate (E)</button><button id="gizmoScale" data-tooltip="Scale along World or Local X, Y, or Z handles. Shortcut: R.">Scale (R)</button></div>
-      <label class="edit-label" for="rotationSpace">Transform orientation</label>
-      <select id="rotationSpace" aria-label="Transform orientation" data-tooltip="World uses model axes. Local follows the selected geometry's dominant bone frame for Move, Rotate, and Scale; the frame is stored in the edit layer."><option value="world">World</option><option value="local">Local (bone)</option></select>
-      <p class="hint">The gizmo transforms a whole part. In Face mode, use colour or hide.</p>
-      <label class="check" data-tooltip="Reflect a move, rotation, or scale to the selected mirror target. Colours stay asymmetric."><input type="checkbox" id="mirrorTransform"> Mirror X — transforms</label>
-      <label class="check" data-tooltip="Synchronize the armature only when this geometry exclusively owns its displayed bones. Shared body bones always remain mesh-only."><input type="checkbox" id="syncRigTransform"> Sync isolated rig</label>
-      <div class="edit-label">Mirror target</div>
-      <div class="edit-row"><select id="mirrorTarget" aria-label="Mirror target" data-tooltip="Choose the geometry that receives the reflected transform." disabled></select><button id="pickMirror" type="button" data-tooltip="Pick a source and then its mirror target directly in the model." disabled>Pick mirror pair</button></div>
-      <p class="hint" id="mirrorHelp">Enable Mirror X, then pick a source and its target for a symmetrical transform.</p>
-      <div class="edit-label">Move X / Y / Z</div>
-      <div class="edit-grid"><input id="moveX" type="number" step="0.01" value="0" aria-label="move x" data-tooltip="Relative world X movement. The value previews locally before saving."><input id="moveY" type="number" step="0.01" value="0" aria-label="move y" data-tooltip="Relative world Y movement. The value previews locally before saving."><input id="moveZ" type="number" step="0.01" value="0" aria-label="move z" data-tooltip="Relative world Z movement. The value previews locally before saving."></div>
-      <div class="edit-label" id="rotationLabel">Rotate World X / Y / Z (degrees)</div>
-      <div class="edit-grid"><input id="rotX" type="number" step="1" value="0" aria-label="rotate x" data-tooltip="Relative rotation around world X in degrees."><input id="rotY" type="number" step="1" value="0" aria-label="rotate y" data-tooltip="Relative rotation around world Y in degrees."><input id="rotZ" type="number" step="1" value="0" aria-label="rotate z" data-tooltip="Relative rotation around world Z in degrees."></div>
-      <div class="edit-label">Scale X / Y / Z</div>
-      <div class="edit-grid"><input id="scaleX" type="number" step="0.05" min="0.01" value="1" aria-label="scale x" data-tooltip="Relative scale along world X. Values below 0.01 are refused."><input id="scaleY" type="number" step="0.05" min="0.01" value="1" aria-label="scale y" data-tooltip="Relative scale along world Y. Values below 0.01 are refused."><input id="scaleZ" type="number" step="0.05" min="0.01" value="1" aria-label="scale z" data-tooltip="Relative scale along world Z. Values below 0.01 are refused."></div>
-      <div class="btns"><button id="applyTransform" data-tooltip="Keep the current transform preview as a pending draft correction.">Add transform to draft</button></div>
-      <h2>Colour and geometry</h2>
-      <div class="edit-row"><input id="editColor" type="color" value="#c98a4b" aria-label="Active edit colour" data-tooltip="Choose the active colour for object paint, face paint, and manual primitives."><button id="paintPart" data-tooltip="Add a pending recolour for the selected whole geometry.">Colour object</button><button id="paintFace" data-tooltip="Toggle a brush: left-click or drag across visible faces to add one paint stroke to the draft.">Paint faces</button></div>
-      <p class="hint" id="paintHelp">Paint faces: left-click or drag across visible faces. Esc exits the brush.</p>
-      <div class="edit-row"><button id="hidePart" class="danger" data-tooltip="Add a pending non-destructive hide for the selected whole geometry.">Hide object</button><button id="hideFace" class="danger" data-tooltip="Add a pending non-destructive hide for the selected face.">Hide face</button></div>
-      <div class="edit-row"><select id="primitive" aria-label="Manual primitive type" data-tooltip="Choose the shape to attach to the selected geometry's dominant bone."><option value="box">Box</option><option value="sphere">Sphere</option><option value="cylinder">Cylinder</option><option value="cone">Cone</option></select><label class="check" data-tooltip="Create a linked primitive on the other side of the X centreline."><input type="checkbox" id="primitiveMirror"> Add mirror</label><button id="addPrimitive" data-tooltip="Add the chosen primitive as a pending correction.">Add</button></div>
-      <h2>Draft</h2>
-      <div class="edit-status" id="draftStatus">No pending corrections.</div>
-      <div class="btns"><button id="saveAllChanges" class="primary" data-tooltip="Commit every pending correction. Connected mode also saves beside the WAM source and rebuilds its outputs." disabled>Save all changes</button><button id="discardDraft" class="danger" data-tooltip="Discard only pending draft corrections. Previously saved changes remain.">Discard pending draft</button></div>
-      <h2>Save & recovery</h2>
-      <div class="edit-status" id="diskSaveStatus">Checking whether this viewer has a connected project save.</div>
-      <div class="edit-status" id="recoveryStatus">Local recovery is checked when a model opens.</div>
-      <div class="btns"><button id="forgetRecovery" class="danger" data-tooltip="Forget this model's browser-local recovery. The current view stays open, but reload will start clean." disabled>Forget local recovery</button></div>
-      <h2>Edit layer file</h2>
-      <div class="edit-row"><button id="undoEdit" data-tooltip="Undo the latest editor state, including pending draft and transform sessions.">Undo</button><button id="redoEdit" data-tooltip="Restore the latest undone editor state.">Redo</button><button id="downloadEdits" data-tooltip="Download the portable .wamedit.json file after saving all changes.">Download edit layer (.wamedit.json)</button><button id="loadEdits" data-tooltip="Load a compatible .wamedit.json file and replace this model's local recovery.">Load edit layer file…</button></div>
-      <div class="btns"><button id="copyBrief" data-tooltip="Copy an English summary of saved corrections to share with Codex.">Copy summary</button></div>
-      <h2>Camera</h2>
-      <div class="btns"><button id="recenterCamera" data-tooltip="Recalculate the camera frame around the current edited model.">Recenter model</button></div>
-      <h2>Log</h2>
-      <div class="edit-log" id="editLog" aria-live="polite">Log is empty.</div>
-      <div class="btns"><button id="copyLog" data-tooltip="Copy the temporary English session log for troubleshooting.">Copy log</button><button id="clearLog" data-tooltip="Clear the temporary session log. It never affects your edits.">Clear</button></div>
+    <div class="group edit" id="editPanel" data-gizmo="move" data-mirror="off" hidden>
+      <div class="edit-sec">
+        <h2>Selection</h2>
+        <div class="edit-status" id="editStatus">Click a part or face.</div>
+        <div class="edit-label">Geometry — grouped by bone</div>
+        <select id="geometrySelect" aria-label="Selected geometry" data-tooltip="Choose a geometry attached to a bone. Canvas selection keeps this menu in sync."></select>
+        <div class="edit-label">Click selects a whole</div>
+        <div class="seg" role="group" aria-label="Selection mode"><button id="selectObject" data-tooltip="Select a whole geometry for transforms, object colour, hiding, or mirror pairing.">Object</button><button id="selectFace" data-tooltip="Select one visible triangle for inspection or hiding. This cancels an armed mirror picker.">Face</button></div>
+      </div>
+      <div class="edit-sec">
+        <h2>Transform</h2>
+        <div class="seg" role="group" aria-label="Transform tool"><button id="gizmoMove" class="on" data-tooltip="Move along World or Local X, Y, or Z handles. Shortcut: W.">Move</button><button id="gizmoRotate" data-tooltip="Rotate around World or Local X, Y, or Z rings. Shortcut: E.">Rotate</button><button id="gizmoScale" data-tooltip="Scale along World or Local X, Y, or Z handles. Shortcut: R.">Scale</button></div>
+        <label class="edit-label" for="rotationSpace">Orientation</label>
+        <select id="rotationSpace" aria-label="Transform orientation" data-tooltip="World uses model axes. Local follows the selected geometry's dominant bone frame for Move, Rotate, and Scale; the frame is stored in the edit layer."><option value="world">World</option><option value="local">Local (bone)</option></select>
+        <div class="xform xform-move">
+          <div class="edit-label">Move X / Y / Z</div>
+          <div class="edit-grid"><input id="moveX" type="number" step="0.01" value="0" aria-label="move x" data-tooltip="Relative world X movement. The value previews locally before saving."><input id="moveY" type="number" step="0.01" value="0" aria-label="move y" data-tooltip="Relative world Y movement. The value previews locally before saving."><input id="moveZ" type="number" step="0.01" value="0" aria-label="move z" data-tooltip="Relative world Z movement. The value previews locally before saving."></div>
+        </div>
+        <div class="xform xform-rotate">
+          <div class="edit-label" id="rotationLabel">Rotate World X / Y / Z (degrees)</div>
+          <div class="edit-grid"><input id="rotX" type="number" step="1" value="0" aria-label="rotate x" data-tooltip="Relative rotation around world X in degrees."><input id="rotY" type="number" step="1" value="0" aria-label="rotate y" data-tooltip="Relative rotation around world Y in degrees."><input id="rotZ" type="number" step="1" value="0" aria-label="rotate z" data-tooltip="Relative rotation around world Z in degrees."></div>
+        </div>
+        <div class="xform xform-scale">
+          <div class="edit-label">Scale X / Y / Z</div>
+          <div class="edit-grid"><input id="scaleX" type="number" step="0.05" min="0.01" value="1" aria-label="scale x" data-tooltip="Relative scale along world X. Values below 0.01 are refused."><input id="scaleY" type="number" step="0.05" min="0.01" value="1" aria-label="scale y" data-tooltip="Relative scale along world Y. Values below 0.01 are refused."><input id="scaleZ" type="number" step="0.05" min="0.01" value="1" aria-label="scale z" data-tooltip="Relative scale along world Z. Values below 0.01 are refused."></div>
+        </div>
+        <label class="check" data-tooltip="Reflect a move, rotation, or scale to the selected mirror target. Colours stay asymmetric."><input type="checkbox" id="mirrorTransform"> Mirror X — transforms</label>
+        <div class="mirror-only">
+          <div class="edit-row"><select id="mirrorTarget" aria-label="Mirror target" data-tooltip="Choose the geometry that receives the reflected transform." disabled></select><button id="pickMirror" type="button" data-tooltip="Pick a source and then its mirror target directly in the model." disabled>Pick mirror pair</button></div>
+          <p class="hint" id="mirrorHelp">Enable Mirror X, then pick a source and its target for a symmetrical transform.</p>
+        </div>
+        <label class="check" data-tooltip="Synchronize the armature only when this geometry exclusively owns its displayed bones. Shared body bones always remain mesh-only."><input type="checkbox" id="syncRigTransform"> Sync isolated rig</label>
+        <div class="btns" style="margin-top:8px"><button id="applyTransform" class="wide" data-tooltip="Keep the current transform preview as a pending draft correction.">Add transform to draft</button></div>
+        <p class="hint">Transforms move a whole part. In Face mode, use colour or hide.</p>
+      </div>
+      <div class="edit-sec">
+        <h2>Colour and geometry</h2>
+        <div class="edit-row"><input id="editColor" type="color" value="#c98a4b" aria-label="Active edit colour" data-tooltip="Choose the active colour for object paint, face paint, and manual primitives."><button id="paintPart" data-tooltip="Add a pending recolour for the selected whole geometry.">Colour object</button><button id="paintFace" data-tooltip="Toggle a brush: left-click or drag across visible faces to add one paint stroke to the draft.">Paint faces</button></div>
+        <p class="hint" id="paintHelp">Paint faces: left-click or drag across visible faces. Esc exits the brush.</p>
+        <div class="edit-row"><button id="hidePart" class="danger" data-tooltip="Add a pending non-destructive hide for the selected whole geometry.">Hide object</button><button id="hideFace" class="danger" data-tooltip="Add a pending non-destructive hide for the selected face.">Hide face</button></div>
+        <div class="edit-label">Add a primitive</div>
+        <div class="edit-row"><select id="primitive" aria-label="Manual primitive type" data-tooltip="Choose the shape to attach to the selected geometry's dominant bone."><option value="box">Box</option><option value="sphere">Sphere</option><option value="cylinder">Cylinder</option><option value="cone">Cone</option></select><button id="addPrimitive" data-tooltip="Add the chosen primitive as a pending correction.">Add</button></div>
+        <label class="check" data-tooltip="Create a linked primitive on the other side of the X centreline."><input type="checkbox" id="primitiveMirror"> Add mirror</label>
+      </div>
+      <div class="edit-sec draft-dock">
+        <h2>Draft</h2>
+        <div class="edit-status" id="draftStatus" style="margin-bottom:9px">No pending corrections.</div>
+        <button id="saveAllChanges" class="primary" data-tooltip="Commit every pending correction. Connected mode also saves beside the WAM source and rebuilds its outputs." disabled>Save all changes</button>
+        <div class="btns"><button id="undoEdit" data-tooltip="Undo the latest editor state, including pending draft and transform sessions.">Undo</button><button id="redoEdit" data-tooltip="Restore the latest undone editor state.">Redo</button><button id="discardDraft" class="danger" data-tooltip="Discard only pending draft corrections. Previously saved changes remain.">Discard</button></div>
+      </div>
+      <details class="more">
+        <summary>Save &amp; recovery</summary>
+        <div class="edit-status" id="diskSaveStatus">Checking whether this viewer has a connected project save.</div>
+        <div class="edit-status" id="recoveryStatus">Local recovery is checked when a model opens.</div>
+        <div class="btns"><button id="forgetRecovery" class="danger wide" data-tooltip="Forget this model's browser-local recovery. The current view stays open, but reload will start clean." disabled>Forget local recovery</button></div>
+      </details>
+      <details class="more">
+        <summary>Edit layer file</summary>
+        <div class="btns"><button id="downloadEdits" class="wide" data-tooltip="Download the portable .wamedit.json file after saving all changes.">Download edit layer (.wamedit.json)</button></div>
+        <div class="btns"><button id="loadEdits" class="wide" data-tooltip="Load a compatible .wamedit.json file and replace this model's local recovery.">Load edit layer file…</button></div>
+        <div class="btns"><button id="copyBrief" class="wide" data-tooltip="Copy an English summary of saved corrections to share with Codex.">Copy summary</button></div>
+      </details>
+      <details class="more">
+        <summary>Log</summary>
+        <div class="edit-log" id="editLog" aria-live="polite">Log is empty.</div>
+        <div class="btns"><button id="copyLog" data-tooltip="Copy the temporary English session log for troubleshooting.">Copy log</button><button id="clearLog" data-tooltip="Clear the temporary session log. It never affects your edits.">Clear</button></div>
+      </details>
       <input type="file" id="editFile" accept=".json,.wamedit.json" style="display:none">
     </div>
     <div class="group">
@@ -803,6 +881,8 @@ function updateMirrorControls(){
   const target=document.getElementById('mirrorTarget'),picker=document.getElementById('pickMirror'),help=document.getElementById('mirrorHelp');
   const selected=editor.selection&&M&&partMeta(M.DATA,editor.selection.part),mirrorEnabled=document.getElementById('mirrorTransform').checked;
   const active=!!selected&&mirrorEnabled&&editor.selection.face===null;
+  // The target row and its help text are meaningless until Mirror X is on.
+  document.getElementById('editPanel').dataset.mirror=mirrorEnabled?'on':'off';
   if(!mirrorEnabled)editor.mirrorPickPhase='none';
   target.disabled=!active;picker.disabled=!mirrorEnabled;picker.textContent=active?'Pick mirror target':'Pick mirror pair';
   picker.classList.toggle('on',editor.mirrorPickPhase!=='none');
@@ -1583,6 +1663,9 @@ function showTransformDelta(operation){
 function setGizmoMode(mode){
   transformGizmo.mode=mode;transformGizmo.hover=null;
   [['move','gizmoMove'],['rotate','gizmoRotate'],['scale','gizmoScale']].forEach(([value,id])=>document.getElementById(id).classList.toggle('on',value===mode));
+  // Reveal only the active tool's number fields. All nine stay in the DOM, so
+  // every reader of the transform form still sees all three operations.
+  document.getElementById('editPanel').dataset.gizmo=mode;
   updateRotationSpaceControls();
   const local=document.getElementById('rotationSpace').value==='local';
   const space=local?'Local (bone)':'World';
@@ -1920,6 +2003,9 @@ document.getElementById('editToggle').onclick=()=>{
   if(!M.DATA.editSource){alert('This viewer predates edit layers. Recompile its .wam with the current WAM compiler.');return;}
   editor.enabled=!editor.enabled;
   document.getElementById('editPanel').hidden=!editor.enabled;
+  // The editor needs more room than the read-only viewer, but only while it
+  // is open, so the model keeps the wider stage the rest of the time.
+  document.querySelector('aside').classList.toggle('editing',editor.enabled);
   document.getElementById('editToggle').textContent=editor.enabled?'Exit edit mode':'Enter edit mode';
   cv.style.cursor=editor.enabled?'crosshair':'';
   if(editor.enabled){

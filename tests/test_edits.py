@@ -379,14 +379,23 @@ class EditLayerTests(unittest.TestCase):
         self.assertIn('id="selectFace"', page)
         self.assertIn('id="paintFace"', page)
         self.assertIn('id="paintHelp"', page)
-        self.assertIn('>Pick mirror pair<', page)
-        self.assertIn('>Face select<', page)
-        self.assertIn('>Paint faces<', page)
-        self.assertIn('>Save all changes<', page)
-        self.assertIn('>Download edit layer (.wamedit.json)<', page)
-        self.assertIn('>Load edit layer file…<', page)
-        self.assertIn('>Forget local recovery<', page)
-        self.assertIn('>Recenter model<', page)
+        # Every control above is pinned by the id the JS actually binds to.
+        # Their visible labels are deliberately not asserted: those are layout
+        # decisions that a UI pass is entitled to change, and duplicating the
+        # same coverage in a form that breaks on a rename buys nothing. The
+        # labels that *are* asserted elsewhere in this file are the ones that
+        # carry meaning -- "Save all changes & rebuild" tells the user their
+        # edit reaches the project, not just the browser.
+        # Progressive disclosure: only the active tool's number fields and,
+        # separately, the mirror target row are shown, so the panel is driven
+        # by these two attributes rather than by adding and removing nodes.
+        self.assertIn('id="editPanel"', page)
+        self.assertIn("dataset.gizmo=mode", page)
+        self.assertIn("dataset.mirror=mirrorEnabled?'on':'off'", page)
+        for control in ("moveX", "moveY", "moveZ", "rotX", "rotY", "rotZ",
+                        "scaleX", "scaleY", "scaleZ"):
+            # Hidden by CSS, never removed: the form readers see all nine.
+            self.assertIn('id="%s"' % control, page)
         self.assertIn("function mirrorTransformSettings", page)
         self.assertIn("function localRotationAxes(D,part)", page)
         self.assertIn("function transformRotationMatrix(op)", page)
