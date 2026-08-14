@@ -8,11 +8,13 @@ animation, reference-image, or `.wam` work.
 - On Windows, run `powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1`.
   On macOS and Linux, run `./setup-wam.sh`. Both create the same `.venv`.
 - Use that virtual environment's interpreter explicitly afterwards:
-  `.\.venv\Scripts\python.exe` on Windows, `./.venv/bin/python` on macOS and
-  Linux. Do not depend on whichever `python` or `python3` alias happens to be
-  first on `PATH`. Every `python` below means the `.venv` one.
-- Use `python -m wam.codex_cli` for agent work because it reserves stdout for
-  deterministic JSON. `python -m wam.cli` remains the human-oriented command.
+  `.\.venv\Scripts\python.exe` on Windows, `./.venv/bin/python3` on macOS and
+  Linux. Do not depend on whichever interpreter is first on `PATH`.
+- Commands below are written `python3`, which resolves on macOS and Linux both
+  inside and outside the venv. Windows has no `python3`: use
+  `.\.venv\Scripts\python.exe` or `py -3` there.
+- Use `python3 -m wam.codex_cli` for agent work because it reserves stdout for
+  deterministic JSON. `python3 -m wam.cli` remains the human-oriented command.
 
 ## Multi-image and multi-view contract
 
@@ -30,7 +32,7 @@ animation, reference-image, or `.wam` work.
 
 ## Validation and safety
 
-- Run `python tests/run_all.py` for the complete suite; the runner keeps the
+- Run `python3 tests/run_all.py` for the complete suite; the runner keeps the
   repository's script-style tests isolated. Forward slashes work on every
   supported platform, including Windows.
 - Add useful English comments for non-obvious contracts and fallbacks.

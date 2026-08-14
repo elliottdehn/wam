@@ -78,7 +78,7 @@ The audit compares this fork with the stated commit only. It does not compare wi
 
 ### Existing human CLI: `wam`
 
-`python -m wam.cli` remains the human-oriented compiler. The existing input, `--out`, animation, lighting, glTF/viewer switches, panel dimensions, and `--bones` options remain. The fork adds:
+`python3 -m wam.cli` remains the human-oriented compiler. The existing input, `--out`, animation, lighting, glTF/viewer switches, panel dimensions, and `--bones` options remain. The fork adds:
 
 ```text
 --edits LAYER.wamedit.json
@@ -106,7 +106,7 @@ The historical `<prefix>_sheet.png`, glTF, viewer data, viewer HTML, texture out
 
 ### Machine-oriented CLI: `wam-codex`
 
-`python -m wam.codex_cli` is new. It reserves stdout for one deterministic JSON record and mirrors errors on stderr for people. Its commands are:
+`python3 -m wam.codex_cli` is new. It reserves stdout for one deterministic JSON record and mirrors errors on stderr for people. Its commands are:
 
 ```text
 wam-codex compile INPUT [--edits LAYER] [--views LIST] [--anim NAME]
@@ -177,7 +177,7 @@ The new Windows entry point is:
 
 ```bat
 Launch-Latest-Version.cmd edit "path\to\model.wam" [--out PREFIX]   :: Windows
-python -m wam.editor_bridge path/to/model.wam [--out PREFIX]        #  macOS / Linux
+python3 -m wam.editor_bridge path/to/model.wam [--out PREFIX]        #  macOS / Linux
 ```
 
 It starts `wam.editor_bridge` on `127.0.0.1` with one random session token and one WAM source. The bridge discovers exactly one matching existing `*_views.json` render profile, or refuses ambiguity until `--out` chooses a prefix. It accepts only a bounded (4 MiB) token-authenticated save request, validates the layer, builds strictly into a sibling transaction folder, then promotes the managed viewer/glTF/PNG/manifest artifacts and the sidecar only after a successful build. A journal supports recovery from an interrupted promotion.

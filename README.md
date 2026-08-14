@@ -47,16 +47,20 @@ powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1   # Windows
 ```
 
 Both build a `.venv` beside this checkout and install WAM into it as an
-editable package. **Every `python` below means that virtual environment's
-interpreter** — `.\.venv\Scripts\python.exe` on Windows,
-`./.venv/bin/python` on macOS and Linux. Setup also puts `wam`, `wam-codex`
-and `wam-references` on that environment's path if you prefer the short forms.
+editable package, and put `wam`, `wam-codex` and `wam-references` on that
+environment's path.
 
-```
-python -m wam.cli mymodel.wam                 # compile + render 5 views
-python -m wam.cli mymodel.wam --anim walk --frames 6
-python -m wam.cli mymodel.wam --bones
-python -m wam.cli mymodel.wam --width 760 --height 560
+Commands below use `python3`, which exists both system-wide and inside the
+`.venv` on macOS and Linux. **On Windows there is no `python3`** — use
+`.\.venv\Scripts\python.exe` (or `py -3`) wherever these say `python3`. To
+guarantee the environment WAM was installed into rather than whichever
+interpreter is first on `PATH`, spell it out: `./.venv/bin/python3`.
+
+```bash
+python3 -m wam.cli mymodel.wam                 # compile + render 5 views
+python3 -m wam.cli mymodel.wam --anim walk --frames 6
+python3 -m wam.cli mymodel.wam --bones
+python3 -m wam.cli mymodel.wam --width 760 --height 560
 ```
 
 Outputs land in `out/`: a skinned, animated `.gltf` (drops into
@@ -102,7 +106,7 @@ review loop automatically. The agent-friendly CLI keeps stdout as predictable
 JSON:
 
 ```
-python -m wam.codex_cli compile mymodel.wam
+python3 -m wam.codex_cli compile mymodel.wam
 ```
 
 It rejects unknown or duplicate views, accepts custom
@@ -113,7 +117,7 @@ For several source images, name each piece of evidence and optionally map it
 to a camera view:
 
 ```
-python -m wam.codex_cli references \
+python3 -m wam.codex_cli references \
   --reference front="refs/front.png" --view front=front \
   --reference side="refs/side.png" --view side=side \
   --reference badge="refs/badge detail.png" --kind badge=detail
@@ -206,7 +210,7 @@ Launch-Latest-Version.cmd edit "path\to\model.wam"      ::  Windows
 ```
 
 ```bash
-python -m wam.editor_bridge path/to/model.wam           #   macOS / Linux
+python3 -m wam.editor_bridge path/to/model.wam           #   macOS / Linux
 ```
 
 The `.cmd` is a double-click convenience that forwards to exactly that module,
@@ -225,7 +229,7 @@ backup.
 To rebuild a downloaded layer without the connected editor:
 
 ```
-python -m wam.codex_cli compile mymodel.wam \
+python3 -m wam.codex_cli compile mymodel.wam \
   --edits out/mymodel.wamedit.json
 ```
 
@@ -239,7 +243,7 @@ When a WAM source has intentionally changed but a downloaded layer should be
 migrated, keep both inputs and use the controlled rebase command:
 
 ```
-python -m wam.codex_cli rebase-edits old.wamedit.json \
+python3 -m wam.codex_cli rebase-edits old.wamedit.json \
   --from old-model.wam --to rigged-model.wam -o rigged-model.wamedit.json \
   --sync-rig-parts plum_ear,red_ear,plum_tail,red_tail
 ```
@@ -300,8 +304,8 @@ limitations, and validation evidence, see
 ## No idea what to make?
 
 ```bash
-python dice.py        # a brine-crusted heron with a crown of horns too heavy for its neck
-python dice.py -n 5   # five, and pick one
+python3 dice.py        # a brine-crusted heron with a crown of horns too heavy for its neck
+python3 dice.py -n 5   # five, and pick one
 ```
 
 ## Publishing

@@ -11,15 +11,16 @@ paths there are relative to the repository root.
 
 Use the checkout's own virtual environment interpreter, never whichever
 `python` happens to be first on `PATH`: `.\.venv\Scripts\python.exe` on
-Windows, `./.venv/bin/python` on macOS and Linux. If it does not exist, run
+Windows, `./.venv/bin/python3` on macOS and Linux. If it does not exist, run
 `powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1` (Windows) or
-`./setup-wam.sh` (macOS/Linux). Every `python` below means that interpreter.
-Use `python -m wam.codex_cli` through it for predictable JSON.
+`./setup-wam.sh` (macOS/Linux). Commands below say `python3`, which resolves
+on macOS and Linux; Windows has no `python3`, so use the `.venv` path there.
+Use `python3 -m wam.codex_cli` through it for predictable JSON.
 
 For one or more supplied images, prepare every source before authoring:
 
 ```
-python -m wam.codex_cli references \
+python3 -m wam.codex_cli references \
   --reference front="refs/front.png" --view front=front \
   --reference side="refs/side.png" --view side=side \
   --reference crest="refs/crest detail.png" --kind crest=detail \
@@ -34,7 +35,7 @@ Compile with all telling views, including custom `id:yaw[:pitch]` angles when
 a source image does not match a standard view:
 
 ```
-python -m wam.codex_cli compile model.wam \
+python3 -m wam.codex_cli compile model.wam \
   --views front,threequarter,side,threequarter_back,back,high:25:30
 ```
 
@@ -47,7 +48,7 @@ the `.wam` remains untouched. Recompile an exported layer explicitly, then
 inspect all new per-view PNGs before treating its changes as accepted:
 
 ```
-python -m wam.codex_cli compile model.wam \
+python3 -m wam.codex_cli compile model.wam \
   --edits out/model.wamedit.json
 ```
 

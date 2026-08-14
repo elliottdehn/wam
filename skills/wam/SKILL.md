@@ -42,17 +42,19 @@ macOS and Linux — then use the explicit `.venv` interpreter. Python 3.9 or
 newer with numpy; the multi-reference tools also require Pillow.
 
 ```bash
-python -m wam.codex_cli compile my.wam         # JSON + per-view PNGs + glTF
-python -m wam.cli my.wam --anim walk --frames 6       # human-readable output
-python -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
-python -m wam.cli my.wam --bones               # skeleton overlay, first 2 views
-python -m wam.cli my.wam --width 760 --height 560     # landscape, long models
-python -m wam.modelset kit.wamset              # compose body + gear
-python -m wam.cinematic film.cine              # cameras over a scene (CINEMATIC_SPEC.md)
+python3 -m wam.codex_cli compile my.wam         # JSON + per-view PNGs + glTF
+python3 -m wam.cli my.wam --anim walk --frames 6       # human-readable output
+python3 -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
+python3 -m wam.cli my.wam --bones               # skeleton overlay, first 2 views
+python3 -m wam.cli my.wam --width 760 --height 560     # landscape, long models
+python3 -m wam.modelset kit.wamset              # compose body + gear
+python3 -m wam.cinematic film.cine              # cameras over a scene (CINEMATIC_SPEC.md)
 ```
 
-On Windows replace `python` with `.\.venv\Scripts\python.exe`. On POSIX use
-`./.venv/bin/python`. When running from another project, set `PYTHONPATH` to
+`python3` resolves on macOS and Linux both inside and outside the `.venv`.
+Windows has no `python3` — use `.\.venv\Scripts\python.exe` or `py -3` there.
+To pin the environment WAM was installed into, spell it out:
+`./.venv/bin/python3`. When running from another project, set `PYTHONPATH` to
 the resolved WAM root rather than to a host-specific plugin variable.
 
 ## Ground it in the creature
@@ -74,8 +76,8 @@ this user's preferences or a roster you have built with them before, use it.
 **Asked for "something" and nothing else? Roll for it.**
 
 ```bash
-python dice.py            # one brief
-python dice.py -n 5       # five, and let the user pick
+python3 dice.py            # one brief
+python3 dice.py -n 5       # five, and let the user pick
 ```
 
 It returns things like *"a brine-crusted heron with a crown of horns too heavy
@@ -124,7 +126,7 @@ Work in two passes. First write a compact plan — four things, no bones yet:
   These are the numbers eyes are worst at judging and best at noticing.
 - **Silhouette**: what shape this reads as at 32px, in one sentence. If that
   sentence is "a humanoid," go back. Do not guess this — once there is
-  geometry, `python scripts/silhouette.py my.wam` renders it flat and at
+  geometry, `python3 scripts/silhouette.py my.wam` renders it flat and at
   thumbnail size, and the smallest row settles the question.
 - **Signature**: the one feature this creature is remembered by.
 
@@ -155,7 +157,7 @@ next pass better. Say it once, at the start, and then get on with it.
 2. **Write the `checks` for what you just added, in the same edit.** Not
    polish — it is how you avoid breaking what you already fixed.
 3. Compile and **read every lint line**, including `info:`. For agent runs,
-   prefer `python -m wam.codex_cli compile`; read `_views.json` and every
+   prefer `python3 -m wam.codex_cli compile`; read `_views.json` and every
    individual view PNG it lists before using the combined sheet. Many failures are
    ambient and need no assertion: misspelled keys (silently dropped
    otherwise), intersecting parts, a mirrored limb crossing the centreline,
