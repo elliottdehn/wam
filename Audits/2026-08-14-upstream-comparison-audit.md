@@ -63,7 +63,7 @@ The audit compares this fork with the stated commit only. It does not compare wi
 | Area | Files | Observed change and purpose |
 | --- | --- | --- |
 | Codex discovery and guidance | `.agents/skills/wam/SKILL.md`, `.agents/skills/wam/agents/openai.yaml`, `AGENTS.md`, `skills/wam/SKILL.md` | Adds a ChatGPT Codex-discoverable skill entry point, host-neutral repository resolution, explicit virtual-environment guidance, and multi-image/per-view inspection instructions. The existing Claude skill remains, but no longer relies on a Claude-only environment variable. |
-| Local setup and packaging | `pyproject.toml`, `Setup-WAM.ps1`, `Launch-Latest-Version.cmd`, `.gitignore`, `scripts/__init__.py`, `viewer/__init__.py` | Packages `wam`, `scripts`, and `viewer`; declares Python `>=3.10`, NumPy, and Pillow; exposes `wam`, `wam-codex`, and `wam-references`; creates a Windows virtual environment; adds an exact-checkout launcher; ignores local/generated artifacts. |
+| Local setup and packaging | `pyproject.toml`, `Setup-WAM.ps1`, `Launch-Latest-Version.cmd`, `.gitignore`, `scripts/__init__.py`, `viewer/__init__.py` | Packages `wam`, `scripts`, and `viewer`; declares Python `>=3.9`, NumPy, and Pillow; exposes `wam`, `wam-codex`, and `wam-references`; creates the virtual environment on Windows and on macOS/Linux; adds an exact-checkout launcher; ignores local/generated artifacts. |
 | Agent command surface | `wam/codex_cli.py` | Adds a JSON-on-stdout command surface for `compile`, `references`, and `rebase-edits`, including JSON argument errors and artifact reporting. |
 | View contract and core compiler | `wam/views.py`, `wam/cli.py` | Centralizes named/custom camera parsing; writes per-view PNGs and a deterministic render manifest; validates views, dimensions, and requested animations; accepts an optional edit layer. |
 | Other rendering entry points | `scripts/silhouette.py`, `wam/modelset.py`, `scripts/build_viewer.py` | Makes silhouette and composition rendering use the shared view contract; composition gains individual view panels and a manifest while retaining its historical horizontal sheet; viewer building uses explicit UTF-8 file handling. |
@@ -176,7 +176,8 @@ The viewer has no server dependency in static `file://` use. Static mode can res
 The new Windows entry point is:
 
 ```bat
-Launch-Latest-Version.cmd edit "C:\path\to\model.wam" [--out PREFIX]
+Launch-Latest-Version.cmd edit "path\to\model.wam" [--out PREFIX]   :: Windows
+python -m wam.editor_bridge path/to/model.wam [--out PREFIX]        #  macOS / Linux
 ```
 
 It starts `wam.editor_bridge` on `127.0.0.1` with one random session token and one WAM source. The bridge discovers exactly one matching existing `*_views.json` render profile, or refuses ambiguity until `--out` chooses a prefix. It accepts only a bounded (4 MiB) token-authenticated save request, validates the layer, builds strictly into a sibling transaction folder, then promotes the managed viewer/glTF/PNG/manifest artifacts and the sidecar only after a successful build. A journal supports recovery from an interrupted promotion.

@@ -6,13 +6,17 @@ keep whole-object views, detail crops, and palette evidence separate.
 
 Prepare all references before writing a bone:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli references `
-  --reference front="C:\refs\front.png" --view front=front `
-  --reference rear="C:\refs\rear.png" --view rear=back `
-  --reference clasp="C:\refs\clasp detail.png" --kind clasp=detail `
-  -o out\references
 ```
+python -m wam.codex_cli references \
+  --reference front="refs/front.png" --view front=front \
+  --reference rear="refs/rear.png" --view rear=back \
+  --reference clasp="refs/clasp detail.png" --kind clasp=detail \
+  -o out/references
+```
+
+(`python` is the checkout's `.venv` interpreter — see the Quick start in
+[README.md](README.md). On Windows use `` ` `` instead of `\` to continue a
+line.)
 
 Read `references.json`, then inspect every image and every crop group. Prefix
 notes with the reference ID (`front:r0c1`, `rear:r1c2`, `clasp:r0c0`) so

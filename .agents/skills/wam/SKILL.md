@@ -9,18 +9,21 @@ Resolve the repository root, then read `../../../skills/wam/SKILL.md` fully for
 the canonical authoring workflow. Also read the files that workflow routes to;
 paths there are relative to the repository root.
 
-On Windows, use `.\.venv\Scripts\python.exe`. If it does not exist, run
-`powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1`. Use
-`python -m wam.codex_cli` through that interpreter for predictable JSON.
+Use the checkout's own virtual environment interpreter, never whichever
+`python` happens to be first on `PATH`: `.\.venv\Scripts\python.exe` on
+Windows, `./.venv/bin/python` on macOS and Linux. If it does not exist, run
+`powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1` (Windows) or
+`./setup-wam.sh` (macOS/Linux). Every `python` below means that interpreter.
+Use `python -m wam.codex_cli` through it for predictable JSON.
 
 For one or more supplied images, prepare every source before authoring:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli references `
-  --reference front="C:\path\front.png" --view front=front `
-  --reference side="C:\path\side.png" --view side=side `
-  --reference crest="C:\path\crest detail.png" --kind crest=detail `
-  -o out\references
+```
+python -m wam.codex_cli references \
+  --reference front="refs/front.png" --view front=front \
+  --reference side="refs/side.png" --view side=side \
+  --reference crest="refs/crest detail.png" --kind crest=detail \
+  -o out/references
 ```
 
 Read `out/references/references.json`, inspect every reference and its crop
@@ -30,8 +33,8 @@ is navigation, not sufficient evidence by itself.
 Compile with all telling views, including custom `id:yaw[:pitch]` angles when
 a source image does not match a standard view:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli compile model.wam `
+```
+python -m wam.codex_cli compile model.wam \
   --views front,threequarter,side,threequarter_back,back,high:25:30
 ```
 
@@ -43,9 +46,9 @@ When a human needs to guide a revision directly, hand over the compiled
 the `.wam` remains untouched. Recompile an exported layer explicitly, then
 inspect all new per-view PNGs before treating its changes as accepted:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli compile model.wam `
-  --edits out\model.wamedit.json
+```
+python -m wam.codex_cli compile model.wam \
+  --edits out/model.wamedit.json
 ```
 
 Do not hand-author face indexes or bypass a stale-layer error. The viewer

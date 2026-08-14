@@ -30,7 +30,8 @@ portable backup.
 - **Cause:** A standalone `file://` page cannot safely choose a filesystem
   path or invoke the WAM compiler. Its earlier **Save all changes** wording
   did not make that boundary sufficiently explicit.
-- **Expected behavior:** `Launch-Latest-Version.cmd edit <model.wam>` starts
+- **Expected behavior:** `Launch-Latest-Version.cmd edit <model.wam>` (or
+  `python -m wam.editor_bridge <model.wam>` on macOS/Linux) starts
   a loopback-only session for exactly one source. **Save all changes & rebuild**
   validates the fingerprinted layer, stages a strict compilation, then writes
   `<model>.wamedit.json` beside the source and replaces its current outputs.

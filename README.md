@@ -36,24 +36,35 @@ baked into an auto-unwrapped texel atlas that ships inside the glTF.
 
 ## Quick start
 
-Create the local environment once (Windows):
+Create the local environment once.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1
+powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1   # Windows
 ```
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.cli mymodel.wam  # compile + render 5 views
-.\.venv\Scripts\python.exe -m wam.cli mymodel.wam --anim walk --frames 6
-.\.venv\Scripts\python.exe -m wam.cli mymodel.wam --bones
-.\.venv\Scripts\python.exe -m wam.cli mymodel.wam --width 760 --height 560
+```bash
+./setup-wam.sh                                             # macOS / Linux
+```
+
+Both build a `.venv` beside this checkout and install WAM into it as an
+editable package. **Every `python` below means that virtual environment's
+interpreter** — `.\.venv\Scripts\python.exe` on Windows,
+`./.venv/bin/python` on macOS and Linux. Setup also puts `wam`, `wam-codex`
+and `wam-references` on that environment's path if you prefer the short forms.
+
+```
+python -m wam.cli mymodel.wam                 # compile + render 5 views
+python -m wam.cli mymodel.wam --anim walk --frames 6
+python -m wam.cli mymodel.wam --bones
+python -m wam.cli mymodel.wam --width 760 --height 560
 ```
 
 Outputs land in `out/`: a skinned, animated `.gltf` (drops into
 Blender/three.js/engines), one PNG per view, a contact sheet, a deterministic
 `*_views.json` manifest, the texture atlas, and a
 `*_viewer.json` — open `viewer/template.html` in a browser and drop the
-JSON onto it for an interactive orbit/animation view. Requires Python 3 + numpy.
+JSON onto it for an interactive orbit/animation view. Requires Python 3.9 or
+newer and numpy; the multi-reference tools also need Pillow.
 
 The repository ships no example models — [SPEC.md](SPEC.md) is the reference,
 and every construct in it has a worked snippet. A taste of the language:
@@ -90,8 +101,8 @@ Open this checkout as a Codex project. `AGENTS.md` and
 review loop automatically. The agent-friendly CLI keeps stdout as predictable
 JSON:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli compile mymodel.wam
+```
+python -m wam.codex_cli compile mymodel.wam
 ```
 
 It rejects unknown or duplicate views, accepts custom
@@ -101,11 +112,11 @@ have to inspect a very wide low-resolution sheet.
 For several source images, name each piece of evidence and optionally map it
 to a camera view:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli references `
-  --reference front="C:\refs\front.png" --view front=front `
-  --reference side="C:\refs\side.png" --view side=side `
-  --reference badge="C:\refs\badge detail.png" --kind badge=detail
+```
+python -m wam.codex_cli references \
+  --reference front="refs/front.png" --view front=front \
+  --reference side="refs/side.png" --view side=side \
+  --reference badge="refs/badge detail.png" --kind badge=detail
 ```
 
 This writes `out/references/references.json`, one crop grid per image, and a
@@ -191,8 +202,16 @@ never rewrites the source `.wam`. For a project-side save, start the connected
 editor from the repository root:
 
 ```bat
-Launch-Latest-Version.cmd edit "C:\path\to\model.wam"
+Launch-Latest-Version.cmd edit "path\to\model.wam"      ::  Windows
 ```
+
+```bash
+python -m wam.editor_bridge path/to/model.wam           #   macOS / Linux
+```
+
+The `.cmd` is a double-click convenience that forwards to exactly that module,
+so the two are the same session with the same options (`--out`, `--port`,
+`--no-browser`).
 
 Its **Save all changes & rebuild** button validates the layer, writes
 `model.wamedit.json` beside `model.wam`, and strictly replaces the matching
@@ -205,9 +224,9 @@ backup.
 
 To rebuild a downloaded layer without the connected editor:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli compile mymodel.wam `
-  --edits out\mymodel.wamedit.json
+```
+python -m wam.codex_cli compile mymodel.wam \
+  --edits out/mymodel.wamedit.json
 ```
 
 The layer carries the exact SHA-256 fingerprint of its source WAM and stable
@@ -219,9 +238,9 @@ an immediate return to the untouched parametric model.
 When a WAM source has intentionally changed but a downloaded layer should be
 migrated, keep both inputs and use the controlled rebase command:
 
-```powershell
-.\.venv\Scripts\python.exe -m wam.codex_cli rebase-edits old.wamedit.json `
-  --from old-model.wam --to rigged-model.wam -o rigged-model.wamedit.json `
+```
+python -m wam.codex_cli rebase-edits old.wamedit.json \
+  --from old-model.wam --to rigged-model.wam -o rigged-model.wamedit.json \
   --sync-rig-parts plum_ear,red_ear,plum_tail,red_tail
 ```
 
@@ -281,8 +300,8 @@ limitations, and validation evidence, see
 ## No idea what to make?
 
 ```bash
-python3 dice.py        # a brine-crusted heron with a crown of horns too heavy for its neck
-python3 dice.py -n 5   # five, and pick one
+python dice.py        # a brine-crusted heron with a crown of horns too heavy for its neck
+python dice.py -n 5   # five, and pick one
 ```
 
 ## Publishing

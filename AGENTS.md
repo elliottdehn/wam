@@ -6,8 +6,11 @@ animation, reference-image, or `.wam` work.
 ## Local setup
 
 - On Windows, run `powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1`.
-- Use `.\.venv\Scripts\python.exe` explicitly after setup. Do not depend on
-  whichever `python` or `python3` alias happens to be first on `PATH`.
+  On macOS and Linux, run `./setup-wam.sh`. Both create the same `.venv`.
+- Use that virtual environment's interpreter explicitly afterwards:
+  `.\.venv\Scripts\python.exe` on Windows, `./.venv/bin/python` on macOS and
+  Linux. Do not depend on whichever `python` or `python3` alias happens to be
+  first on `PATH`. Every `python` below means the `.venv` one.
 - Use `python -m wam.codex_cli` for agent work because it reserves stdout for
   deterministic JSON. `python -m wam.cli` remains the human-oriented command.
 
@@ -27,8 +30,9 @@ animation, reference-image, or `.wam` work.
 
 ## Validation and safety
 
-- Run `.\.venv\Scripts\python.exe tests\run_all.py` for the complete suite;
-  the runner keeps the repository's script-style tests isolated.
+- Run `python tests/run_all.py` for the complete suite; the runner keeps the
+  repository's script-style tests isolated. Forward slashes work on every
+  supported platform, including Windows.
 - Add useful English comments for non-obvious contracts and fallbacks.
 - Never upload or publish a generated model unless the user explicitly asks.
   Read `PUBLISHING_MUST_READ.md` immediately before any publishing action.

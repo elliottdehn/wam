@@ -37,8 +37,9 @@ The compiler ships with this skill. Resolve the repository or plugin root by
 walking upward from this file until the directory contains `wam/`, `SPEC.md`
 and `COMMON_MISTAKES_MUST_READ.md`; do not assume a host-specific environment
 variable. In a checkout, `git rev-parse --show-toplevel` gives the same root.
-Run `Setup-WAM.ps1` once on Windows, then use the explicit `.venv` interpreter.
-Python requires numpy; the multi-reference tools also require Pillow.
+Run the setup script once — `Setup-WAM.ps1` on Windows, `./setup-wam.sh` on
+macOS and Linux — then use the explicit `.venv` interpreter. Python 3.9 or
+newer with numpy; the multi-reference tools also require Pillow.
 
 ```bash
 python -m wam.codex_cli compile my.wam         # JSON + per-view PNGs + glTF
