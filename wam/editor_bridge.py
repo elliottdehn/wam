@@ -77,6 +77,28 @@ def _write_json(path: Path, payload: object) -> None:
     os.replace(temporary, path)
 
 
+def _inject_bridge(page: str, script: str) -> str:
+    """Place the session config in the page before any viewer script runs.
+
+    This used to be ``page.replace("</head>", ...)``.  The viewer template is a
+    fragment: it opens at ``<title>`` and never emits a ``<head>``, so that
+    replace matched nothing, the config was dropped, and every connected
+    session presented itself to the browser as an ordinary read-only
+    ``file://`` viewer -- the save button read "browser only" and no edit ever
+    reached the project.  Anchor on what the page actually contains, and raise
+    rather than serve a page that has quietly lost its bridge.
+    """
+    for anchor, after in (("</head>", False), ("</title>", True)):
+        index = page.find(anchor)
+        if index != -1:
+            cut = index + len(anchor) if after else index
+            return page[:cut] + script + page[cut:]
+    if not page.lstrip().startswith("<"):
+        raise EditorBridgeError("viewer page is not HTML; cannot connect the editor")
+    # A script before the title still lands in the browser's implied head.
+    return script + page
+
+
 def _view_tokens(items: object) -> tuple[str, ...]:
     if not isinstance(items, list) or not items:
         raise EditorBridgeError("build profile needs one or more views")
@@ -486,7 +508,7 @@ class _EditorRequestHandler(BaseHTTPRequestHandler):
             "sourceName": self.server.workspace.source.name,
         }
         bridge = "<script>window.__WAM_EDITOR_BRIDGE__=%s;</script>" % json.dumps(config)
-        page = page.replace("</head>", bridge + "</head>", 1)
+        page = _inject_bridge(page, bridge)
         body = page.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -534,9 +556,13 @@ def run(source: str, out: str | None = None, port: int = 0,
     token = secrets.token_urlsafe(32)
     server = _EditorHTTPServer(("127.0.0.1", int(port)), workspace, token)
     url = "http://127.0.0.1:%d/?token=%s" % (server.server_address[1], token)
-    print("WAM connected editor: %s" % url)
-    print("Source: %s" % workspace.source)
-    print("Save all changes & rebuild writes %s beside the WAM source." % workspace.sidecar.name)
+    # serve_forever() never returns, and Python block-buffers a redirected
+    # stdout, so without an explicit flush a launcher that captures output
+    # gets a running server and no reachable URL.
+    print("WAM connected editor: %s" % url, flush=True)
+    print("Source: %s" % workspace.source, flush=True)
+    print("Save all changes & rebuild writes %s beside the WAM source."
+          % workspace.sidecar.name, flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

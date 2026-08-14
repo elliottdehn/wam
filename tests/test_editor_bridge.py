@@ -231,7 +231,23 @@ class EditorBridgeTests(unittest.TestCase):
             self.assertEqual(denied.exception.code, 403)
             with contextlib.closing(urlopen(root + "/?token=test-token", timeout=3)) as response:
                 self.assertEqual(response.status, 200)
-                self.assertIn(b"__WAM_EDITOR_BRIDGE__", response.read())
+                page = response.read().decode("utf-8")
+            # Asserting the bare identifier proved nothing: the viewer's own
+            # client code mentions __WAM_EDITOR_BRIDGE__, so the assertion
+            # passed for a year while the injection silently matched no anchor
+            # and every connected session looked read-only to the browser.
+            # Pin the assignment and the session values instead.
+            self.assertIn("window.__WAM_EDITOR_BRIDGE__={", page)
+            config = json.loads(page.split("window.__WAM_EDITOR_BRIDGE__=", 1)[1]
+                                    .split(";</script>", 1)[0])
+            self.assertEqual(config["schemaVersion"], 1)
+            self.assertEqual(config["token"], "test-token")
+            self.assertEqual(config["saveUrl"], "/api/save")
+            self.assertEqual(config["sourceName"], self.source.name)
+            # The template is a fragment with no </head>; the config must still
+            # precede the viewer script that reads it.
+            self.assertLess(page.index("window.__WAM_EDITOR_BRIDGE__={"),
+                            page.index("function editorBridge()"))
             request = Request(root + "/api/save", data=b"{}", method="POST",
                               headers={"Content-Type": "application/json"})
             with self.assertRaises(HTTPError) as denied_post:
