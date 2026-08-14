@@ -38,13 +38,14 @@ from wam import skeleton as wskel          # noqa: E402
 from wam import mesh as wmesh              # noqa: E402
 from wam import animation as wanim         # noqa: E402
 from wam import render as wrender          # noqa: E402
-from wam.cli import VIEW_ANGLES, shared_framing   # noqa: E402
+from wam import views as wviews            # noqa: E402
+from wam.cli import shared_framing         # noqa: E402
 
 INK = (0.10, 0.10, 0.12)
 PAPER = (1.0, 1.0, 1.0)
 
 
-def silhouette_view(V, T, yaw, width, height, center, dist):
+def silhouette_view(V, T, view, width, height, center, dist):
     """One panel as a true binary mask: covered or not, nothing in between.
 
     Handing the renderer a single dark material is not enough — it still lights
@@ -55,7 +56,8 @@ def silhouette_view(V, T, yaw, width, height, center, dist):
     outline alone.
     """
     flat = np.zeros(len(T), dtype=int)
-    img = wrender.render_view(V, T, flat, [INK], yaw_deg=yaw,
+    img = wrender.render_view(V, T, flat, [INK], yaw_deg=view.yaw,
+                              pitch_deg=view.pitch,
                               width=width, height=height,
                               center=center, dist=dist, bg=PAPER)
     lum = img[..., :3].mean(axis=2)
@@ -107,9 +109,10 @@ def main(argv=None):
         "out", os.path.splitext(os.path.basename(args.input))[0] + "_sil")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
 
-    views = [v for v in args.views.split(",") if v]
-    yaws = [VIEW_ANGLES.get(v, 0) for v in views]
-
+    try:
+        views = wviews.parse_views(args.views)
+    except wviews.ViewSpecError as error:
+        sys.exit("ERROR: %s" % error)
     if args.anim:
         anim = next((a for a in model.anims if a["name"] == args.anim), None)
         if anim is None:
@@ -121,16 +124,18 @@ def main(argv=None):
             posed.append(wanim.skin_verts(mesh, bones, order, rots))
         # frame against every pose at once, or the figure appears to scale
         allpose = np.concatenate(posed)
-        center, dist = shared_framing(allpose, yaws, args.width, args.height)
+        center, dist = shared_framing(
+            allpose, views, args.width, args.height)
         rows = [wrender.hstack_views(
-            [silhouette_view(P, T, y, args.width, args.height, center, dist)
-             for P in posed]) for y in yaws]
+            [silhouette_view(P, T, view, args.width, args.height, center, dist)
+             for P in posed]) for view in views]
         sheet = rows[0] if len(rows) == 1 else wrender.vstack_views(rows)
     else:
-        center, dist = shared_framing(V, yaws, args.width, args.height)
-        sheet = wrender.hstack_views(
-            [silhouette_view(V, T, y, args.width, args.height, center, dist)
-             for y in yaws])
+        center, dist = shared_framing(V, views, args.width, args.height)
+        panels = [silhouette_view(
+            V, T, view, args.width, args.height, center, dist)
+            for view in views]
+        sheet = wrender.hstack_views(panels)
 
     wrender.write_png(out + ".png", sheet)
     written = [out + ".png"]

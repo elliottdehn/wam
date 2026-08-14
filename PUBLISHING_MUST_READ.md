@@ -27,7 +27,8 @@ Present **both** options, each with its licence stated plainly. Do not
 summarise them as "share it?" — the difference is legal and permanent, and the
 user cannot un-choose it later.
 
-Use `AskUserQuestion` with these three, in this order:
+Use the host's structured user-input prompt when available; otherwise ask the
+user directly. Present these three choices in this order:
 
 | Option | What to say |
 |---|---|

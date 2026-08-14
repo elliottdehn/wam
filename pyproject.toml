@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wam-language"
+version = "0.1.0"
+description = "Text language and compiler for LLM-authored low-poly 3D models"
+readme = "README.md"
+# 3.9 is what macOS ships in the Command Line Tools, and nothing here needs
+# more: every module compiles on it, the full suite passes, there is no
+# match/case or zip(strict=), and each PEP 604 union sits behind
+# `from __future__ import annotations`. A floor of 3.10 locked the maintainer
+# out of installing the project on a stock Mac for no capability gained.
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Elliott Dehnbosel" }]
+dependencies = [
+  "numpy>=1.24",
+  "Pillow>=10",
+]
+
+[project.scripts]
+wam = "wam.cli:main"
+wam-codex = "wam.codex_cli:main"
+wam-references = "wam.references:main"
+
+[tool.setuptools.packages.find]
+include = ["wam*", "scripts*", "viewer*"]
+
+[tool.setuptools.package-data]
+viewer = ["*.html"]

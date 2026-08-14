@@ -1199,7 +1199,8 @@ def build_functions(models):
     }
 
 
-def render_composition(c, out_prefix, views=("front", "threequarter", "side"),
+def render_composition(c, out_prefix,
+                       views=("front", "threequarter", "side"),
                        width=420, height=560):
     """Sheet, glTF and viewer page for a composition.
 
@@ -1211,15 +1212,29 @@ def render_composition(c, out_prefix, views=("front", "threequarter", "side"),
     from . import gltf as wgltf
     from . import animation as wanim
     from . import cli as wcli
+    from . import views as wviews
+    views = wviews.parse_views(views)
     V, T, M = c.mesh.arrays()
     colors = [rgb for _, rgb in c.mesh.materials]
-    yaws = [wcli.VIEW_ANGLES.get(v, 0) for v in views]
-    center, dist = wcli.shared_framing(V, yaws, width, height)
-    imgs = [wrender.render_view(V, T, M, colors, yaw_deg=y, width=width,
-                                height=height, center=center, dist=dist)
-            for y in yaws]
+    center, dist = wcli.shared_framing(V, views, width, height)
+    imgs = [wrender.render_view(
+        V, T, M, colors, yaw_deg=view.yaw, pitch_deg=view.pitch,
+        width=width, height=height, center=center, dist=dist)
+        for view in views]
     os.makedirs(os.path.dirname(out_prefix) or ".", exist_ok=True)
-    wrender.write_png(out_prefix + "_sheet.png", wrender.hstack_views(imgs))
+    view_paths = []
+    for view, image in zip(views, imgs):
+        view_path = "%s_view_%s.png" % (out_prefix, view.id)
+        wrender.write_png(view_path, image)
+        view_paths.append(view_path)
+    # Preserve the established horizontal composition sheet; consumers that
+    # need one view at a time use the new individual panel files.
+    sheet = wrender.hstack_views(imgs)
+    sheet_path = out_prefix + "_sheet.png"
+    wrender.write_png(sheet_path, sheet)
+    wviews.write_render_manifest(
+        out_prefix + "_views.json", None, views, view_paths, sheet_path,
+        width, height, center, dist)
     from . import viewer_export as wviewer
     from scripts.build_viewer import build as build_viewer_page
     wviewer.export_built(c.model, c.bones, list(c.bones.values()), c.mesh,

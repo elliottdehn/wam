@@ -45,6 +45,7 @@
   canvas { position: absolute; inset: 0; width: 100%; height: 100%;
            background: var(--canvas-bg); cursor: grab; touch-action: none; }
   canvas.dragging { cursor: grabbing; }
+  #gizmo { pointer-events: none; background: transparent; }
   aside {
     width: 232px; flex: none; border-left: 1px solid var(--line);
     background: var(--panel); padding: 16px; overflow-y: auto;
@@ -66,12 +67,35 @@
   label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 2px 0; }
   input[type=checkbox] { accent-color: var(--accent); }
   .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .swatch { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .swatch { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); text-align: left; }
+  button.swatch { min-width: 0; padding: 5px; }
+  button.swatch.on { outline: 2px solid var(--accent); outline-offset: 1px; }
   .swatch i { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line); flex: none; }
   .stats { font: 12px/1.7 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted);
            font-variant-numeric: tabular-nums; }
   .stats b { color: var(--ink); font-weight: 600; }
   .hint { font-size: 12px; color: var(--muted); margin: 0; }
+  .edit { border-top: 1px solid var(--line); padding-top: 14px; }
+  .edit[hidden] { display: none; }
+  .edit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+  .edit-grid input, .edit select { min-width: 0; width: 100%; box-sizing: border-box; }
+  #geometrySelect, #mirrorTarget { width: 100%; box-sizing: border-box; }
+  .edit-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .edit-label { font-size: 11px; color: var(--muted); margin: 5px 0 2px; }
+  .edit-status { font: 11px/1.35 ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+  .edit-log { max-height: 132px; overflow: auto; white-space: pre-wrap; padding: 7px;
+              border: 1px solid var(--line); border-radius: 4px; font: 10px/1.4 ui-monospace, monospace;
+              color: var(--muted); background: #15110f; }
+  .danger { color: #a9242d; }
+  .primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .recovery-ok { color: #83bf8f; }
+  .recovery-warning { color: #d9a75b; }
+  #viewerTooltip { position: fixed; z-index: 30; max-width: 260px; padding: 7px 9px;
+                   border: 1px solid var(--line); border-radius: 5px; background: #171311;
+                   color: var(--ink); font-size: 11px; line-height: 1.35; pointer-events: none;
+                   box-shadow: 0 4px 18px #0008; opacity: 0; transform: translateY(3px);
+                   transition: opacity .12s ease, transform .12s ease; }
+  #viewerTooltip.show { opacity: 1; transform: translateY(0); }
   @media (max-width: 640px) {
     main { flex-direction: column; }
     #stage { min-height: 55vh; }
@@ -86,6 +110,59 @@
   }
   #dropHint.hidden { display: none; }
   #stage.dragover canvas { outline: 3px dashed var(--accent); outline-offset: -6px; }
+
+  /* ---- edit panel: hierarchy and progressive disclosure ----------------
+     The editor started as one flat run of ten headings, ~50 controls and
+     nine always-visible number fields in a 232px column. Nothing below
+     changes what any control does; it changes how many of them are asking
+     for attention at once. */
+  aside.editing { width: 300px; }
+  .edit-sec { margin-bottom: 16px; }
+  .edit-sec:last-child { margin-bottom: 0; }
+
+  /* Joined buttons read as one control with one active choice, rather than
+     three independent toggles that happen to sit next to each other. */
+  .seg { display: flex; }
+  .seg button { flex: 1; border-radius: 0; margin-left: -1px; padding: 7px 6px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button.on { position: relative; z-index: 1; }
+
+  /* Show only the active tool's numbers. Eight of the nine fields were noise
+     at any given moment. They stay in the DOM, so every function that reads
+     the transform form still sees all three axes of all three operations. */
+  #editPanel[data-gizmo="move"]   .xform:not(.xform-move),
+  #editPanel[data-gizmo="rotate"] .xform:not(.xform-rotate),
+  #editPanel[data-gizmo="scale"]  .xform:not(.xform-scale) { display: none; }
+  /* Same idea for the mirror target: it is meaningless until Mirror X is on,
+     and it was occupying two rows plus a paragraph of help text regardless. */
+  #editPanel[data-mirror="off"] .mirror-only { display: none; }
+
+  /* The draft is what the panel is for, so it gets weight and full width. */
+  .draft-dock { border: 1px solid var(--line); border-radius: 7px;
+                padding: 11px; margin-top: 4px; }
+  .draft-dock .primary { width: 100%; margin-bottom: 6px; }
+  .draft-dock .btns button { flex: 1; }
+
+  /* Recovery, layer files and the log matter rarely and cost a lot of room. */
+  details.more { border-top: 1px solid var(--line); margin-top: 12px;
+                 padding-top: 10px; }
+  details.more + details.more { margin-top: 0; }
+  details.more > summary { cursor: pointer; list-style: none; padding: 3px 0;
+                           font-size: 11px; font-weight: 600; color: var(--muted);
+                           text-transform: uppercase; letter-spacing: 0.09em; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: "\25B8\00a0"; }
+  details.more[open] > summary::before { content: "\25BE\00a0"; }
+  details.more > summary:focus-visible { outline: 2px solid var(--accent);
+                                         outline-offset: 2px; }
+  details.more > *:not(summary) { margin-top: 8px; }
+
+  /* A destructive button should look different before it is clicked, not
+     only read differently. */
+  button.danger { color: #a9242d; border-color: #a9242d59; }
+  button.danger:hover { border-color: #a9242d; }
+  button.wide { width: 100%; }
 </style>
 
 <header>
@@ -93,14 +170,14 @@
   <span class="sub" id="msub">drag to orbit — drop a compiled <code>*_viewer.json</code> anywhere to load it</span>
 </header>
 <main>
-  <div id="stage"><canvas id="cv"></canvas>
+  <div id="stage"><canvas id="cv"></canvas><canvas id="gizmo" aria-hidden="true"></canvas>
       <div id="dropHint">Drop a compiled <b>&nbsp;*_viewer.json&nbsp;</b> here<br>
       (produced by <code>&nbsp;python3 -m wam.cli model.wam&nbsp;</code>)</div>
     </div>
   <aside>
     <div class="group">
       <h2>Model</h2>
-      <div class="btns"><button id="openBtn">Open model JSON…</button></div>
+      <div class="btns"><button id="openBtn" data-tooltip="Open a compiled WAM viewer JSON file.">Open model JSON…</button></div>
       <input type="file" id="fileInput" accept=".json" style="display:none">
     </div>
     <div class="group">
@@ -109,13 +186,89 @@
     </div>
     <div class="group">
       <h2>Display</h2>
-      <label class="check"><input type="checkbox" id="spin"> Turntable</label>
-      <label class="check"><input type="checkbox" id="wire"> Wireframe</label>
-      <label class="check"><input type="checkbox" id="skel"> Skeleton</label>
+      <label class="check" data-tooltip="Rotate the model automatically for a quick silhouette check."><input type="checkbox" id="spin"> Turntable</label>
+      <label class="check" data-tooltip="Show every mesh edge without changing the model."><input type="checkbox" id="wire"> Wireframe</label>
+      <label class="check" data-tooltip="Show the octahedral bones and joints of the rig."><input type="checkbox" id="skel"> Armature</label>
+      <label class="check" data-tooltip="Keep armature bones visible through the mesh."><input type="checkbox" id="xray"> Armature through mesh</label>
+      <div class="edit-row"><input id="backgroundColor" type="color" aria-label="Background colour" data-tooltip="Choose a display-only background colour. It is never saved in an edit layer."><button id="resetBackground" data-tooltip="Restore the background colour authored by the WAM model.">Reset background</button></div>
+    </div>
+    <div class="group">
+      <h2>Edit mode</h2>
+      <div class="btns"><button id="editToggle" class="wide" data-tooltip="Toggle local, non-destructive geometry editing. Right-drag still orbits the camera.">Enter edit mode</button></div>
+      <div class="btns" style="margin-top:6px"><button id="recenterCamera" class="wide" data-tooltip="Recalculate the camera frame around the current edited model.">Recenter model</button></div>
+    </div>
+    <div class="group edit" id="editPanel" data-gizmo="move" data-mirror="off" hidden>
+      <div class="edit-sec">
+        <h2>Selection</h2>
+        <div class="edit-status" id="editStatus">Click a part or face.</div>
+        <div class="edit-label">Geometry — grouped by bone</div>
+        <select id="geometrySelect" aria-label="Selected geometry" data-tooltip="Choose a geometry attached to a bone. Canvas selection keeps this menu in sync."></select>
+        <div class="edit-label">Click selects a whole</div>
+        <div class="seg" role="group" aria-label="Selection mode"><button id="selectObject" data-tooltip="Select a whole geometry for transforms, object colour, hiding, or mirror pairing.">Object</button><button id="selectFace" data-tooltip="Select one visible triangle for inspection or hiding. This cancels an armed mirror picker.">Face</button></div>
+      </div>
+      <div class="edit-sec">
+        <h2>Transform</h2>
+        <div class="seg" role="group" aria-label="Transform tool"><button id="gizmoMove" class="on" data-tooltip="Move along World or Local X, Y, or Z handles. Shortcut: W.">Move</button><button id="gizmoRotate" data-tooltip="Rotate around World or Local X, Y, or Z rings. Shortcut: E.">Rotate</button><button id="gizmoScale" data-tooltip="Scale along World or Local X, Y, or Z handles. Shortcut: R.">Scale</button></div>
+        <label class="edit-label" for="rotationSpace">Orientation</label>
+        <select id="rotationSpace" aria-label="Transform orientation" data-tooltip="World uses model axes. Local follows the selected geometry's dominant bone frame for Move, Rotate, and Scale; the frame is stored in the edit layer."><option value="world">World</option><option value="local">Local (bone)</option></select>
+        <div class="xform xform-move">
+          <div class="edit-label">Move X / Y / Z</div>
+          <div class="edit-grid"><input id="moveX" type="number" step="0.01" value="0" aria-label="move x" data-tooltip="Relative world X movement. The value previews locally before saving."><input id="moveY" type="number" step="0.01" value="0" aria-label="move y" data-tooltip="Relative world Y movement. The value previews locally before saving."><input id="moveZ" type="number" step="0.01" value="0" aria-label="move z" data-tooltip="Relative world Z movement. The value previews locally before saving."></div>
+        </div>
+        <div class="xform xform-rotate">
+          <div class="edit-label" id="rotationLabel">Rotate World X / Y / Z (degrees)</div>
+          <div class="edit-grid"><input id="rotX" type="number" step="1" value="0" aria-label="rotate x" data-tooltip="Relative rotation around world X in degrees."><input id="rotY" type="number" step="1" value="0" aria-label="rotate y" data-tooltip="Relative rotation around world Y in degrees."><input id="rotZ" type="number" step="1" value="0" aria-label="rotate z" data-tooltip="Relative rotation around world Z in degrees."></div>
+        </div>
+        <div class="xform xform-scale">
+          <div class="edit-label">Scale X / Y / Z</div>
+          <div class="edit-grid"><input id="scaleX" type="number" step="0.05" min="0.01" value="1" aria-label="scale x" data-tooltip="Relative scale along world X. Values below 0.01 are refused."><input id="scaleY" type="number" step="0.05" min="0.01" value="1" aria-label="scale y" data-tooltip="Relative scale along world Y. Values below 0.01 are refused."><input id="scaleZ" type="number" step="0.05" min="0.01" value="1" aria-label="scale z" data-tooltip="Relative scale along world Z. Values below 0.01 are refused."></div>
+        </div>
+        <label class="check" data-tooltip="Reflect a move, rotation, or scale to the selected mirror target. Colours stay asymmetric."><input type="checkbox" id="mirrorTransform"> Mirror X — transforms</label>
+        <div class="mirror-only">
+          <div class="edit-row"><select id="mirrorTarget" aria-label="Mirror target" data-tooltip="Choose the geometry that receives the reflected transform." disabled></select><button id="pickMirror" type="button" data-tooltip="Pick a source and then its mirror target directly in the model." disabled>Pick mirror pair</button></div>
+          <p class="hint" id="mirrorHelp">Enable Mirror X, then pick a source and its target for a symmetrical transform.</p>
+        </div>
+        <label class="check" data-tooltip="Synchronize the armature only when this geometry exclusively owns its displayed bones. Shared body bones always remain mesh-only."><input type="checkbox" id="syncRigTransform"> Sync isolated rig</label>
+        <div class="btns" style="margin-top:8px"><button id="applyTransform" class="wide" data-tooltip="Keep the current transform preview as a pending draft correction.">Add transform to draft</button></div>
+        <p class="hint">Transforms move a whole part. In Face mode, use colour or hide.</p>
+      </div>
+      <div class="edit-sec">
+        <h2>Colour and geometry</h2>
+        <div class="edit-row"><input id="editColor" type="color" value="#c98a4b" aria-label="Active edit colour" data-tooltip="Choose the active colour for object paint, face paint, and manual primitives."><button id="paintPart" data-tooltip="Add a pending recolour for the selected whole geometry.">Colour object</button><button id="paintFace" data-tooltip="Toggle a brush: left-click or drag across visible faces to add one paint stroke to the draft.">Paint faces</button></div>
+        <p class="hint" id="paintHelp">Paint faces: left-click or drag across visible faces. Esc exits the brush.</p>
+        <div class="edit-row"><button id="hidePart" class="danger" data-tooltip="Add a pending non-destructive hide for the selected whole geometry.">Hide object</button><button id="hideFace" class="danger" data-tooltip="Add a pending non-destructive hide for the selected face.">Hide face</button></div>
+        <div class="edit-label">Add a primitive</div>
+        <div class="edit-row"><select id="primitive" aria-label="Manual primitive type" data-tooltip="Choose the shape to attach to the selected geometry's dominant bone."><option value="box">Box</option><option value="sphere">Sphere</option><option value="cylinder">Cylinder</option><option value="cone">Cone</option></select><button id="addPrimitive" data-tooltip="Add the chosen primitive as a pending correction.">Add</button></div>
+        <label class="check" data-tooltip="Create a linked primitive on the other side of the X centreline."><input type="checkbox" id="primitiveMirror"> Add mirror</label>
+      </div>
+      <div class="edit-sec draft-dock">
+        <h2>Draft</h2>
+        <div class="edit-status" id="draftStatus" style="margin-bottom:9px">No pending corrections.</div>
+        <button id="saveAllChanges" class="primary" data-tooltip="Commit every pending correction. Connected mode also saves beside the WAM source and rebuilds its outputs." disabled>Save all changes</button>
+        <div class="btns"><button id="undoEdit" data-tooltip="Undo the latest editor state, including pending draft and transform sessions.">Undo</button><button id="redoEdit" data-tooltip="Restore the latest undone editor state.">Redo</button><button id="discardDraft" class="danger" data-tooltip="Discard only pending draft corrections. Previously saved changes remain.">Discard</button></div>
+      </div>
+      <details class="more">
+        <summary>Save &amp; recovery</summary>
+        <div class="edit-status" id="diskSaveStatus">Checking whether this viewer has a connected project save.</div>
+        <div class="edit-status" id="recoveryStatus">Local recovery is checked when a model opens.</div>
+        <div class="btns"><button id="forgetRecovery" class="danger wide" data-tooltip="Forget this model's browser-local recovery. The current view stays open, but reload will start clean." disabled>Forget local recovery</button></div>
+      </details>
+      <details class="more">
+        <summary>Edit layer file</summary>
+        <div class="btns"><button id="downloadEdits" class="wide" data-tooltip="Download the portable .wamedit.json file after saving all changes.">Download edit layer (.wamedit.json)</button></div>
+        <div class="btns"><button id="loadEdits" class="wide" data-tooltip="Load a compatible .wamedit.json file and replace this model's local recovery.">Load edit layer file…</button></div>
+        <div class="btns"><button id="copyBrief" class="wide" data-tooltip="Copy an English summary of saved corrections to share with Codex.">Copy summary</button></div>
+      </details>
+      <details class="more">
+        <summary>Log</summary>
+        <div class="edit-log" id="editLog" aria-live="polite">Log is empty.</div>
+        <div class="btns"><button id="copyLog" data-tooltip="Copy the temporary English session log for troubleshooting.">Copy log</button><button id="clearLog" data-tooltip="Clear the temporary session log. It never affects your edits.">Clear</button></div>
+      </details>
+      <input type="file" id="editFile" accept=".json,.wamedit.json" style="display:none">
     </div>
     <div class="group">
       <h2>Palette</h2>
-      <div class="swatches" id="swatches"></div>
+      <div class="swatches" id="swatches" aria-label="Clickable model palette"></div>
     </div>
     <div class="group">
       <h2>Stats</h2>
@@ -124,16 +277,21 @@
     <p class="hint">Authored in WAM, a text language for LLM-writable models: the mesh, rig, and animations compile from ~130 lines of source.</p>
   </aside>
 </main>
+<div id="viewerTooltip" role="tooltip" aria-hidden="true"></div>
 
 <script>
 "use strict";
 const EMBEDDED = null /*__DATA__*/;
 
 const cv = document.getElementById('cv');
+const gizmoCv = document.getElementById('gizmo');
+const gizmo2d = gizmoCv.getContext('2d');
 const gl = cv.getContext('webgl', {antialias: true});
 const spinBox=document.getElementById('spin');
 const wireBox=document.getElementById('wire');
 const skelBox=document.getElementById('skel');
+const xrayBox=document.getElementById('xray');
+const backgroundInput=document.getElementById('backgroundColor');
 spinBox.checked=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- math ----
@@ -226,6 +384,31 @@ void main(){ gl_Position = uMVP * vec4(aPos, 1.0); }`;
 const LFS = `
 precision mediump float; uniform vec4 uColor;
 void main(){ gl_FragColor = uColor; }`;
+const HVS = `
+attribute vec2 aPos; varying vec2 vUV;
+void main(){ vUV=(aPos+1.0)*0.5; gl_Position=vec4(aPos,0.0,1.0); }`;
+const HFS = `
+precision mediump float;
+varying vec2 vUV; uniform sampler2D uMask; uniform vec2 uTexel; uniform vec4 uHaloColor;
+void main(){
+  float centre=texture2D(uMask,vUV).a, neighbour=0.0;
+  for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
+    if(x!=0 || y!=0) neighbour=max(neighbour,texture2D(uMask,vUV+vec2(float(x),float(y))*uTexel).a);
+  }
+  // The second sample ring makes a visible two-pixel Blender-like halo while
+  // the source mesh keeps every authored material and texture untouched.
+  for(int y=-2;y<=2;y+=2) for(int x=-2;x<=2;x+=2){
+    if(x!=0 || y!=0) neighbour=max(neighbour,0.62*texture2D(uMask,vUV+vec2(float(x),float(y))*uTexel).a);
+  }
+  float halo=neighbour*(1.0-centre);
+  gl_FragColor=vec4(uHaloColor.rgb,halo*uHaloColor.a);
+}`;
+const PVS = `
+attribute vec3 aPos; uniform mat4 uMVP;
+void main(){ gl_Position = uMVP * vec4(aPos, 1.0); }`;
+const PFS = `
+precision mediump float; uniform vec4 uPickColor;
+void main(){ gl_FragColor = uPickColor; }`;
 
 function makeProg(vs, fs){
   function sh(type, src){
@@ -240,7 +423,7 @@ function makeProg(vs, fs){
   if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   return p;
 }
-const prog=makeProg(VS,FS), lprog=makeProg(LVS,LFS);
+const prog=makeProg(VS,FS), lprog=makeProg(LVS,LFS), haloProg=makeProg(HVS,HFS), pickProg=makeProg(PVS,PFS);
 const aPos=gl.getAttribLocation(prog,'aPos'), aNrm=gl.getAttribLocation(prog,'aNrm'),
       aCol=gl.getAttribLocation(prog,'aCol'), aUV=gl.getAttribLocation(prog,'aUV'),
       aPBR=gl.getAttribLocation(prog,'aPBR');
@@ -253,10 +436,23 @@ const uDetail=gl.getUniformLocation(prog,'uDetail'), uUseDetail=gl.getUniformLoc
 const glDetail=gl.createTexture();
 const laPos=gl.getAttribLocation(lprog,'aPos');
 const luMVP=gl.getUniformLocation(lprog,'uMVP'), luColor=gl.getUniformLocation(lprog,'uColor');
+const haPos=gl.getAttribLocation(haloProg,'aPos');
+const huMask=gl.getUniformLocation(haloProg,'uMask'), huTexel=gl.getUniformLocation(haloProg,'uTexel'), huColor=gl.getUniformLocation(haloProg,'uHaloColor');
+const paPos=gl.getAttribLocation(pickProg,'aPos');
+const puMVP=gl.getUniformLocation(pickProg,'uMVP'), puColor=gl.getUniformLocation(pickProg,'uPickColor');
+// Source #ff9800 matches Blender's active edit accent.  A requested mirror
+// target uses #ff5a36, so it is visible without overwriting either material.
+const HALO_SOURCE=[1.0,0.596,0.0,0.96], HALO_MIRROR=[1.0,0.353,0.212,0.96];
 const bPos=gl.createBuffer(), bNrm=gl.createBuffer(), bCol=gl.createBuffer(),
       bUV=gl.createBuffer(), bEdge=gl.createBuffer(), bSkel=gl.createBuffer(),
-      bPBR=gl.createBuffer();
+      bPBR=gl.createBuffer(), bSelection=gl.createBuffer(), bHaloQuad=gl.createBuffer();
 const glTex=gl.createTexture();
+const selectionMask=gl.createTexture(), selectionFbo=gl.createFramebuffer();
+// Picking is rendered only on click.  Its depth buffer resolves overlapping
+// geometry exactly as the visible WebGL model, unlike the former 2D test.
+const pickTexture=gl.createTexture(), pickFbo=gl.createFramebuffer(), pickDepth=gl.createRenderbuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,bHaloQuad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 1,-1, -1,1, 1,1]),gl.STATIC_DRAW);
 gl.enable(gl.DEPTH_TEST);
 gl.depthFunc(gl.LEQUAL);
 gl.disable(gl.CULL_FACE);
@@ -266,8 +462,219 @@ let M = null;          // everything derived from a loaded model
 let curAnim=null, animClock=0;
 let yaw=0.55, pitch=0.16, zoomf=1.0;
 const FOV=Math.PI*28/180;
+const camera={center:null, dist:0};
 
-function loadModel(DATA){
+// The editor never changes the embedded WAM source.  ``baseline`` is the
+// generated mesh we loaded, and ``ops`` is the only mutable user document.
+const editor={enabled:false, selection:null, selectMode:'object', baseline:null,
+              baseOps:[], ops:[], draft:[], undo:[], redo:[], nextPrimitive:1,
+              mirrorTarget:'', mirrorPickPhase:'none', transformPreview:null,
+              transformSessions:{},
+              paintBrush:{active:false,stroke:null}, log:[],
+              saving:false,
+              recovery:{store:undefined,key:null,savedAt:null,hasSaved:false,restored:false,error:''}};
+// Gizmo drags preview a transform locally while the numeric form remains the
+// source of truth.  The preview joins ``draft`` only after an explicit Apply.
+const transformGizmo={mode:'move', drag:null, hover:null};
+let viewerBackground=null; // Display-only override: never enters a WAM edit layer.
+const clone=(value)=>JSON.parse(JSON.stringify(value));
+const RECOVERY_PREFIX='wam.viewer.local-recovery.v2:';
+const RECOVERY_VERSION=2;
+const LEGACY_RECOVERY_PREFIX='wam.viewer.local-recovery.v1:';
+
+// The standalone page remains read-only by design.  The launcher injects this
+// short-lived loopback capability before the page script runs; no file path is
+// ever accepted from browser JavaScript.
+function editorBridge(){
+  const bridge=window.__WAM_EDITOR_BRIDGE__;
+  return bridge&&bridge.schemaVersion===1&&typeof bridge.saveUrl==='string'&&
+    typeof bridge.viewerUrl==='string'&&typeof bridge.token==='string'?bridge:null;
+}
+function bridgeLayerName(){
+  const bridge=editorBridge(),name=bridge&&bridge.sourceName;
+  return typeof name==='string'?name.replace(/\.wam$/i,'.wamedit.json'):'the WAM edit layer';
+}
+function updateSaveBoundary(){
+  const button=document.getElementById('saveAllChanges'),node=document.getElementById('diskSaveStatus');
+  if(!button||!node)return;
+  const bridge=editorBridge();
+  if(bridge){
+    button.textContent=editor.saving?'Saving & rebuilding…':'Save all changes & rebuild';
+    button.dataset.tooltip='Save the validated edit layer beside the WAM source, then strictly rebuild the current HTML, glTF, PNGs, and manifests.';
+    node.textContent='Connected save: '+bridgeLayerName()+' is written beside the WAM source, then the current outputs are rebuilt.';
+    return;
+  }
+  button.textContent='Save all changes (browser only)';
+  button.dataset.tooltip='Commit corrections to browser-local recovery only. Use Download edit layer for a portable file, or launch the connected editor to save beside the WAM source.';
+  node.textContent='Browser-only viewer: this page cannot write beside the WAM source. Launch Launch-Latest-Version.cmd edit <model.wam> for project save and rebuild.';
+}
+
+// Local recovery is deliberately separate from the portable .wamedit.json.
+// It is keyed by the source hash, so edits can never leak to another WAM model.
+function recoverySource(DATA=editor.baseline){
+  const source=DATA&&DATA.editSource;
+  return source&&typeof source.sha256==='string'&&/^[0-9a-f]{64}$/i.test(source.sha256)?source:null;
+}
+function recoveryKey(DATA=editor.baseline){
+  const source=recoverySource(DATA);
+  return source?RECOVERY_PREFIX+source.sha256.toLowerCase():null;
+}
+function baseLayerSignature(){return JSON.stringify(editor.baseOps);}
+function recoveryStore(){
+  if(editor.recovery.store!==undefined)return editor.recovery.store;
+  try{
+    const store=window.localStorage,probe=RECOVERY_PREFIX+'probe';
+    store.setItem(probe,'1');store.removeItem(probe);editor.recovery.store=store;
+  }catch(error){editor.recovery.store=null;editor.recovery.error='Browser-local storage is unavailable.';}
+  return editor.recovery.store;
+}
+function recoveryTime(iso){
+  try{return new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(iso));}
+  catch(error){return iso||'an unknown time';}
+}
+function setRecoveryStatus(message,tone=''){
+  const node=document.getElementById('recoveryStatus');if(!node)return;
+  node.textContent=message;node.classList.remove('recovery-ok','recovery-warning');
+  if(tone)node.classList.add('recovery-'+tone);
+}
+function updateRecoveryControls(){
+  const forget=document.getElementById('forgetRecovery');if(!forget)return;
+  forget.disabled=!editor.recovery.key||!editor.recovery.hasSaved;
+}
+function recoverySnapshot(){
+  const source=recoverySource();
+  if(!source)throw new Error('This viewer JSON has no WAM source fingerprint. Recompile the .wam with the current WAM compiler first.');
+  return {recoveryVersion:RECOVERY_VERSION,source:clone(source),baseLayerSignature:baseLayerSignature(),savedAt:new Date().toISOString(),
+          ops:clone(editor.ops),draft:clone(editor.draft),transformSessions:clone(editor.transformSessions),
+          undo:clone(editor.undo),redo:clone(editor.redo)};
+}
+function validateRecoverySnapshot(snapshot){
+  const source=recoverySource();
+  if(!snapshot||![1,RECOVERY_VERSION].includes(snapshot.recoveryVersion)||!snapshot.source||snapshot.source.sha256!==source.sha256)throw new Error('The saved recovery belongs to a different WAM source or version.');
+  if(snapshot.baseLayerSignature!==baseLayerSignature())throw new Error('The saved recovery was made against a different compiled edit layer.');
+  if(!Array.isArray(snapshot.ops)||!Array.isArray(snapshot.draft))throw new Error('The saved recovery has invalid correction lists.');
+  const D=clone(editor.baseline);
+  snapshot.ops.concat(snapshot.draft).forEach(op=>applyEditOp(D,op));
+  if(snapshot.recoveryVersion===1&&snapshot.transformPreview){snapshot.transformSessions={[snapshot.transformPreview.part]:{operations:[],preview:snapshot.transformPreview,form:null,orientation:snapshot.transformPreview.rotationSpace||'world'}};}
+  if(snapshot.transformSessions!==undefined&&(!snapshot.transformSessions||Array.isArray(snapshot.transformSessions)))throw new Error('The saved recovery has invalid transform sessions.');
+  Object.values(snapshot.transformSessions||{}).forEach(session=>{
+    (session&&Array.isArray(session.operations)?session.operations:[]).concat(session&&session.preview?[session.preview]:[]).forEach(op=>{
+      if(!transformHasEffect(op))throw new Error('The saved transform session has no usable change.');applyEditOp(D,op);
+    });
+  });
+}
+function updateNextPrimitive(){
+  const ids=editor.ops.concat(editor.draft).map(op=>op.type==='add_primitive'?op.id:'').filter(Boolean);
+  const highest=ids.reduce((max,id)=>{const match=/^fix(\d+)$/i.exec(id);return match?Math.max(max,Number(match[1])):max;},0);
+  editor.nextPrimitive=highest+1;
+}
+function checkpointRecovery(reason='changes'){
+  const key=recoveryKey(),store=recoveryStore();editor.recovery.key=key;
+  if(!key){editor.recovery.hasSaved=false;setRecoveryStatus('Local recovery needs a WAM source fingerprint. Recompile this model first.','warning');updateRecoveryControls();return false;}
+  if(!store){editor.recovery.hasSaved=false;setRecoveryStatus('Local recovery is unavailable in this browser. Download the edit layer for a portable backup.','warning');updateRecoveryControls();return false;}
+  try{
+    const snapshot=recoverySnapshot();store.setItem(key,JSON.stringify(snapshot));
+    editor.recovery.savedAt=snapshot.savedAt;editor.recovery.hasSaved=true;editor.recovery.restored=false;editor.recovery.error='';
+    setRecoveryStatus('Saved locally '+recoveryTime(snapshot.savedAt)+'. '+reason+'.','ok');updateRecoveryControls();return true;
+  }catch(error){editor.recovery.error=error.message;setRecoveryStatus('Local recovery could not be saved. Download the edit layer for a portable backup.','warning');updateRecoveryControls();return false;}
+}
+function restoreRecovery(){
+  const key=recoveryKey(),store=recoveryStore();editor.recovery.key=key;editor.recovery.savedAt=null;editor.recovery.hasSaved=false;editor.recovery.restored=false;
+  if(!key){setRecoveryStatus('Local recovery needs a WAM source fingerprint. Recompile this model first.','warning');updateRecoveryControls();return false;}
+  if(!store){setRecoveryStatus('Local recovery is unavailable in this browser. Download the edit layer for a portable backup.','warning');updateRecoveryControls();return false;}
+  let raw=store.getItem(key),legacy=false;
+  if(!raw){raw=store.getItem(LEGACY_RECOVERY_PREFIX+recoverySource().sha256.toLowerCase());legacy=!!raw;}
+  if(!raw){setRecoveryStatus('No local recovery exists for this model yet.','');updateRecoveryControls();return false;}
+  editor.recovery.hasSaved=true;
+  try{
+    const snapshot=JSON.parse(raw);validateRecoverySnapshot(snapshot);
+    editor.ops=clone(snapshot.ops);editor.draft=clone(snapshot.draft);editor.transformSessions=clone(snapshot.transformSessions||{});editor.transformPreview=null;
+    editor.undo=Array.isArray(snapshot.undo)?clone(snapshot.undo):[];editor.redo=Array.isArray(snapshot.redo)?clone(snapshot.redo):[];
+    editor.recovery.savedAt=snapshot.savedAt;editor.recovery.restored=true;updateNextPrimitive();
+    setRecoveryStatus('Recovered local changes saved '+recoveryTime(snapshot.savedAt)+(legacy?' and migrated to the current browser recovery.':'.'),'ok');
+    if(legacy)checkpointRecovery('Legacy local recovery migrated');updateRecoveryControls();return true;
+  }catch(error){editor.recovery.error=error.message;setRecoveryStatus('Local recovery could not be restored. It was left untouched; use Forget local recovery or download a valid edit layer.','warning');updateRecoveryControls();return false;}
+}
+function forgetRecovery(){
+  const key=editor.recovery.key||recoveryKey(),store=recoveryStore();
+  if(!key||!store)return;
+  if(!confirm('Forget this model\'s browser-local recovery? The current edit session stays open, but reloading will start from the saved source.'))return;
+  try{store.removeItem(key);editor.recovery.savedAt=null;editor.recovery.hasSaved=false;editor.recovery.restored=false;setRecoveryStatus('Local recovery forgotten. The current edit session is still open.','');updateRecoveryControls();logEditor('Local recovery forgotten.');}
+  catch(error){setRecoveryStatus('Local recovery could not be removed.','warning');}
+}
+
+const viewerTooltip=document.getElementById('viewerTooltip');let activeTooltipTarget=null;
+function positionTooltip(target){
+  const rect=target.getBoundingClientRect(),tip=viewerTooltip.getBoundingClientRect();
+  const left=Math.max(8,Math.min(window.innerWidth-tip.width-8,rect.left+(rect.width-tip.width)/2));
+  const top=rect.bottom+8+tip.height<window.innerHeight?rect.bottom+8:Math.max(8,rect.top-tip.height-8);
+  viewerTooltip.style.left=Math.round(left)+'px';viewerTooltip.style.top=Math.round(top)+'px';
+}
+function showTooltip(target){
+  const text=target&&target.dataset&&target.dataset.tooltip;if(!text)return;
+  activeTooltipTarget=target;viewerTooltip.textContent=text;viewerTooltip.setAttribute('aria-hidden','false');viewerTooltip.classList.add('show');
+  positionTooltip(target);
+}
+function hideTooltip(target){
+  if(target&&target!==activeTooltipTarget)return;
+  activeTooltipTarget=null;viewerTooltip.classList.remove('show');viewerTooltip.setAttribute('aria-hidden','true');
+}
+document.addEventListener('pointerover',event=>{const target=event.target.closest&&event.target.closest('[data-tooltip]');if(target)showTooltip(target);});
+document.addEventListener('pointerout',event=>{const target=event.target.closest&&event.target.closest('[data-tooltip]');if(target&&!target.contains(event.relatedTarget))hideTooltip(target);});
+document.addEventListener('focusin',event=>{const target=event.target.closest&&event.target.closest('[data-tooltip]');if(target)showTooltip(target);});
+document.addEventListener('focusout',event=>{const target=event.target.closest&&event.target.closest('[data-tooltip]');if(target)hideTooltip(target);});
+window.addEventListener('resize',()=>{if(activeTooltipTarget)positionTooltip(activeTooltipTarget);});
+function renderEditorLog(){
+  const node=document.getElementById('editLog');if(!node)return;
+  node.textContent=editor.log.length?editor.log.join('\n'):'Log is empty.';
+  node.scrollTop=node.scrollHeight;
+}
+function logEditor(message){
+  const time=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  editor.log.push('['+time+'] '+message);
+  if(editor.log.length>200)editor.log.splice(0,editor.log.length-200);
+  renderEditorLog();
+}
+function reportEditorError(message){
+  logEditor('Error: '+message);updateEditStatus(message);alert(message);
+}
+function copyEditorLog(){
+  // Record the copy before taking the snapshot so a shared diagnostic has a
+  // complete chronological trail. The log remains session-only.
+  logEditor('Log copied.');
+  const text=editor.log.length?editor.log.join('\n'):'Log is empty.';
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(()=>updateEditStatus('Log copied.')).catch(()=>prompt('Copy this log:',text));
+  else prompt('Copy this log:',text);
+}
+function clearEditorLog(){editor.log=[];renderEditorLog();updateEditStatus('Log cleared.');}
+
+function rgbHex(rgb){return '#'+rgb.map(value=>Math.max(0,Math.min(255,Math.round(value*255))).toString(16).padStart(2,'0')).join('');}
+function syncPaletteSelection(){
+  const input=document.getElementById('editColor');if(!input)return;
+  const active=input.value.toLowerCase();
+  document.querySelectorAll('[data-palette-colour]').forEach(button=>button.classList.toggle('on',button.dataset.paletteColour===active));
+}
+function choosePaletteColour(hex,name){
+  const input=document.getElementById('editColor');input.value=hex;syncPaletteSelection();
+  updateEditStatus('Active paint colour: '+name+' '+hex+'.');logEditor('Palette colour selected: '+name+' '+hex+'.');
+}
+function renderPalette(DATA){
+  const sw=document.getElementById('swatches');sw.innerHTML='';
+  // Always expose authored colours rather than transient edit_* materials,
+  // so palette choices keep the character's original names and meaning.
+  const mats=(editor.baseline&&editor.baseline.mats)||DATA.mats||[];
+  mats.forEach(mt=>{
+    const hex=rgbHex(mt.rgb),button=document.createElement('button');button.type='button';button.className='swatch';
+    button.dataset.paletteColour=hex;button.dataset.tooltip='Use '+mt.name+' '+hex+' as the active paint and primitive colour.';
+    button.setAttribute('aria-label','Use '+mt.name+' '+hex+' as active edit colour.');
+    const i=document.createElement('i');i.style.background=hex;
+    button.appendChild(i);button.appendChild(document.createTextNode(mt.name+' '+hex));
+    button.onclick=()=>choosePaletteColour(hex,mt.name);sw.appendChild(button);
+  });
+  syncPaletteSelection();
+}
+
+function loadModel(DATA,preserveCamera=false){
   const NV = DATA.verts.length / 3;
   const NT = DATA.tris.length / 3;
   const NB = DATA.bones.length;
@@ -310,18 +717,27 @@ function loadModel(DATA){
   gl.bindBuffer(gl.ARRAY_BUFFER,bPos); gl.bufferData(gl.ARRAY_BUFFER,fpos,gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER,bNrm); gl.bufferData(gl.ARRAY_BUFFER,fnrm,gl.DYNAMIC_DRAW);
 
+  const defaultDist=radius*1.25/Math.tan(FOV/2);
   M = {
-    DATA, NV, NT, NB, center, radius,
-    dist: radius*1.25/Math.tan(FOV/2),
-    fpos, fnrm,
+    DATA, NV, NT, NB, center, radius, bounds:{min:bbMin,max:bbMax}, defaultDist,
+    fpos, fnrm, baseColor:new Float32Array(fcol),
     posed: new Float64Array(NV*3),
     G: new Float64Array(NB*12),
     edges, NE: edges.length/2,
     epos: new Float32Array(edges.length*3),
-    spos: new Float32Array(NB*6),
+    // 12 outline edges per octahedral bone, two endpoints per edge.
+    spos: new Float32Array(Math.max(1,NB)*72),
+    selectionPos: new Float32Array(NT*9),
     texReady: 0,
   };
-  curAnim = null; animClock = 0; zoomf = 1.0;
+  curAnim = null; animClock = 0;
+  // A preview may replace the generated mesh, but it must never overwrite a
+  // user-controlled camera.  Only loading a model or explicit recentering
+  // creates a new frame.
+  if(!preserveCamera||!camera.center){camera.center=center.slice();camera.dist=defaultDist;zoomf=1.0;}
+  // A click can occur before the next animation frame after Apply.  Seed rest
+  // pose vertices now so the depth picker never reads an empty old buffer.
+  composeBones(()=>IDENT);skinVerts();
 
   if(DATA.tex){
     const im=new Image();
@@ -360,7 +776,7 @@ function loadModel(DATA){
   animBtns.innerHTML='';
   function mkBtn(label,anim){
     const b=document.createElement('button');
-    b.textContent=label;
+    b.textContent=label;b.dataset.tooltip=anim?'Play the '+label+' animation.':'Return the model to its rest pose.';
     b.onclick=()=>{
       curAnim=anim; animClock=0;
       [...animBtns.children].forEach(x=>x.classList.toggle('on',x===b));
@@ -370,19 +786,577 @@ function loadModel(DATA){
   }
   mkBtn('Rest',null).classList.add('on');
   (DATA.anims||[]).forEach(a=>mkBtn(a.name[0].toUpperCase()+a.name.slice(1),a));
-  const sw=document.getElementById('swatches');
-  sw.innerHTML='';
-  DATA.mats.forEach(mt=>{
-    const d=document.createElement('div'); d.className='swatch';
-    const i=document.createElement('i');
-    i.style.background='rgb('+mt.rgb.map(v=>Math.round(v*255)).join(',')+')';
-    d.appendChild(i); d.appendChild(document.createTextNode(mt.name));
-    sw.appendChild(d);
-  });
+  renderPalette(DATA);
   document.getElementById('stats').innerHTML=
     '<b>'+NV+'</b> vertices<br><b>'+NT+'</b> triangles<br><b>'+NB+'</b> bones<br>'+
     '<b>'+(DATA.anims||[]).length+'</b> animations<br>'+
     'painted <b>'+(DATA.tex?'atlas':(DATA.vcols?'vertex':'off'))+'</b>';
+}
+
+// ---- non-destructive edit layer -----------------------------------------
+function partMeta(D,id){ return (D.parts||[]).find(p=>p.id===id); }
+function partFaces(D,id){
+  const rows=[];
+  (D.triPart||[]).forEach((owner,index)=>{if(owner===id)rows.push(index);});
+  return rows;
+}
+function partVertices(D,id){
+  const used=new Set();
+  partFaces(D,id).forEach(face=>{for(let k=0;k<3;k++)used.add(D.tris[face*3+k]);});
+  if(!used.size) throw new Error('The selected part has no editable faces.');
+  return [...used];
+}
+function point(D,index){ return [D.verts[index*3],D.verts[index*3+1],D.verts[index*3+2]]; }
+function setPoint(D,index,p){ D.verts[index*3]=p[0];D.verts[index*3+1]=p[1];D.verts[index*3+2]=p[2]; }
+function averagePoints(D,indices){
+  const total=[0,0,0]; indices.forEach(index=>{const p=point(D,index);for(let a=0;a<3;a++)total[a]+=p[a];});
+  return total.map(v=>v/indices.length);
+}
+function faceIndex(D,part,local){
+  const rows=partFaces(D,part);
+  if(!Number.isInteger(local)||local<0||local>=rows.length) throw new Error('That face no longer exists on '+part+'.');
+  return rows[local];
+}
+function partBoneIndex(D,part){
+  const meta=partMeta(D,part);
+  if(meta&&typeof meta.bone==='string'){
+    const known=D.bones.findIndex(bone=>bone.n===meta.bone);if(known>=0)return known;
+  }
+  if(meta&&Number.isInteger(meta.bone)&&meta.bone>=0&&meta.bone<D.bones.length)return meta.bone;
+  const votes={};
+  try{partVertices(D,part).forEach(index=>{
+    const skin=D.skin[index]||[-1,0,-1];votes[skin[0]]=(votes[skin[0]]||0)+(skin[1]||0);
+    if(skin[2]>=0)votes[skin[2]]=(votes[skin[2]]||0)+(1-(skin[1]||0));
+  });}catch(ignore){return -1;}
+  const best=Object.entries(votes).sort((a,b)=>b[1]-a[1])[0];return best?Number(best[0]):-1;
+}
+function bonePath(D,index){
+  const names=[],seen=new Set();
+  while(index>=0&&index<D.bones.length&&!seen.has(index)){
+    seen.add(index);names.push(D.bones[index].n);index=D.bones[index].p;
+  }
+  return names.reverse().join(' › ');
+}
+function geometryGroups(D,excluded){
+  const byBone=new Map(),other=[];
+  (D.parts||[]).forEach(meta=>{
+    if(excluded&&excluded.has(meta.id)||!partFaces(D,meta.id).length)return;
+    const bone=partBoneIndex(D,meta.id);
+    if(bone>=0){if(!byBone.has(bone))byBone.set(bone,[]);byBone.get(bone).push(meta.id);}
+    else other.push(meta.id);
+  });
+  const groups=[];
+  D.bones.forEach((bone,index)=>{if(byBone.has(index))groups.push({label:bonePath(D,index),parts:byBone.get(index).sort()});});
+  if(other.length)groups.push({label:'Other geometry',parts:other.sort()});
+  return groups;
+}
+function appendGeometryGroups(select,D,excluded){
+  geometryGroups(D,excluded).forEach(group=>{
+    const element=document.createElement('optgroup');element.label=group.label;
+    group.parts.forEach(part=>{const option=document.createElement('option');option.value=part;option.textContent=part;element.appendChild(option);});
+    select.appendChild(element);
+  });
+}
+function setPlaceholder(select,label){
+  const option=document.createElement('option');option.value='';option.textContent=label;select.appendChild(option);
+}
+function syncGeometryMenus(){
+  if(!M)return;
+  const D=M.DATA,source=document.getElementById('geometrySelect'),target=document.getElementById('mirrorTarget');
+  const selected=editor.selection&&partMeta(D,editor.selection.part)?editor.selection.part:null;
+  source.innerHTML='';setPlaceholder(source,'Choose geometry…');appendGeometryGroups(source,D,new Set());source.value=selected||'';
+  target.innerHTML='';
+  if(!selected){setPlaceholder(target,'Select geometry first.');target.disabled=true;updateMirrorControls();return;}
+  const automatic=automaticMirrorPart(D,selected);
+  setPlaceholder(target,'Choose mirror target…');
+  if(automatic){const option=document.createElement('option');option.value='__auto__';option.textContent='Automatic: '+automatic;target.appendChild(option);}
+  appendGeometryGroups(target,D,new Set([selected,automatic].filter(Boolean)));
+  const requested=editor.mirrorTarget;
+  const fallback=automatic?'__auto__':'';
+  const valid=[...target.options].some(option=>option.value===requested);
+  target.value=valid?requested:fallback;editor.mirrorTarget=target.value;
+  updateMirrorControls();
+}
+function updateMirrorControls(){
+  const target=document.getElementById('mirrorTarget'),picker=document.getElementById('pickMirror'),help=document.getElementById('mirrorHelp');
+  const selected=editor.selection&&M&&partMeta(M.DATA,editor.selection.part),mirrorEnabled=document.getElementById('mirrorTransform').checked;
+  const active=!!selected&&mirrorEnabled&&editor.selection.face===null;
+  // The target row and its help text are meaningless until Mirror X is on.
+  document.getElementById('editPanel').dataset.mirror=mirrorEnabled?'on':'off';
+  if(!mirrorEnabled)editor.mirrorPickPhase='none';
+  target.disabled=!active;picker.disabled=!mirrorEnabled;picker.textContent=active?'Pick mirror target':'Pick mirror pair';
+  picker.classList.toggle('on',editor.mirrorPickPhase!=='none');
+  if(editor.mirrorPickPhase==='source')help.textContent='Mirror pair picker active: click the source geometry. Esc cancels.';
+  else if(editor.mirrorPickPhase==='target')help.textContent='Mirror target picker active: click the target geometry. Esc cancels.';
+  else if(!mirrorEnabled)help.textContent='Mirror applies only to Move, Rotate, and Scale.';
+  else if(!selected)help.textContent='Pick mirror pair to choose a source and target in the model.';
+  else if(editor.selection.face!==null)help.textContent='Pick mirror pair to choose a whole-object source.';
+  else if(!target.value)help.textContent='Choose a mirror target: no geometry will be guessed.';
+  else help.textContent='The target receives the reflected transform without changing its colour or shape.';
+}
+function sameSelection(part,face){
+  return !!editor.selection&&editor.selection.part===part&&editor.selection.face===face;
+}
+function selectGeometry(part,face=null){
+  if(!M||!partMeta(M.DATA,part))return false;
+  const unchanged=sameSelection(part,face),samePart=!!editor.selection&&editor.selection.part===part;
+  // Clicking the active source must not discard a manually picked target or
+  // disarm the pair picker. Only a genuinely different normal selection starts anew.
+  if(!unchanged){
+    if(!samePart)storeTransformSession();
+    editor.selection={part,face};editor.mirrorTarget=face===null&&automaticMirrorPart(M.DATA,part)?'__auto__':'';editor.mirrorPickPhase='none';
+    // Draft sessions are per geometry.  Switching selection restores that
+    // geometry's local preview instead of silently dropping another edit.
+    if(!samePart)restoreTransformSession(face===null?part:null);
+  }
+  updateSelectionHighlight();syncGeometryMenus();updateRotationSpaceControls();updateEditStatus();
+  logEditor(unchanged?'Selection retained: '+part+'.':face===null?'Selected: '+part+'.':'Selected: face '+face+' of '+part+'.');return true;
+}
+function startMirrorPicker(){
+  if(!document.getElementById('mirrorTransform').checked){reportEditorError('Enable Mirror X before using the target picker.');return;}
+  if(editor.selection&&editor.selection.face===null){
+    editor.mirrorPickPhase='target';updateMirrorControls();updateEditStatus('Mirror target picker active: click another geometry.');logEditor('Mirror target picker armed for '+editor.selection.part+'.');return;
+  }
+  // Mirror transforms are whole-part operations.  Starting from face mode
+  // deliberately clears that transient face selection before the source pick.
+  if(editor.selectMode!=='object')setSelectMode('object');
+  if(editor.selection&&editor.selection.face!==null){editor.selection=null;editor.mirrorTarget='';updateSelectionHighlight();}
+  editor.mirrorPickPhase='source';syncGeometryMenus();updateEditStatus('Mirror pair picker active: click the source geometry.');logEditor('Mirror pair picker armed: choose source geometry.');
+}
+function stopMirrorPicker(message){
+  if(editor.mirrorPickPhase==='none')return;
+  editor.mirrorPickPhase='none';updateMirrorControls();if(message){updateEditStatus(message);logEditor(message);}
+}
+function chooseMirrorSource(part){
+  if(!partMeta(M.DATA,part)){const message='No editable geometry is under this click.';updateEditStatus(message);logEditor('Mirror source picker refused: '+message);return false;}
+  // This path does not call selectGeometry because normal selection clears an
+  // armed picker. A source click must advance directly to the target stage.
+  storeTransformSession();
+  editor.selection={part,face:null};editor.mirrorTarget=automaticMirrorPart(M.DATA,part)?'__auto__':'';editor.mirrorPickPhase='target';editor.transformPreview=null;resetTransformInputs();
+  restoreTransformSession(part);checkpointRecovery('Mirror source session restored');
+  updateSelectionHighlight();syncGeometryMenus();updateRotationSpaceControls();updateEditStatus('Mirror source: '+part+'. Click its target geometry.');logEditor('Mirror source selected: '+part+'. Choose target geometry.');
+  return true;
+}
+function chooseMirrorTarget(part){
+  const source=selectedPart();
+  if(part===source){const message='Mirror source retained. Choose a different target or press Esc.';updateEditStatus(message);logEditor('Target picker ignored source '+source+'.');return false;}
+  if(!partMeta(M.DATA,part)){const message='No editable geometry is under this click.';updateEditStatus(message);logEditor('Target picker refused: '+message);return false;}
+  editor.mirrorTarget=automaticMirrorPart(M.DATA,source)===part?'__auto__':part;
+  editor.mirrorPickPhase='none';syncGeometryMenus();
+  updateEditStatus('Mirror target: '+part+'. Source remains '+source+'.');logEditor('Mirror target selected: '+source+' → '+part+'.');
+  return true;
+}
+function mirrorTransformSettings(D,part){
+  if(!document.getElementById('mirrorTransform').checked)return {mirror:false};
+  const raw=document.getElementById('mirrorTarget').value;
+  const target=raw==='__auto__'?automaticMirrorPart(D,part):raw;
+  if(!target)throw new Error('Choose a mirror target before transforming this geometry.');
+  return {mirror:true,mirrorPart:target};
+}
+function automaticMirrorPart(D,part){
+  let other;
+  if(part.endsWith('.l'))other=part.slice(0,-2)+'.r';
+  else if(part.endsWith('.r'))other=part.slice(0,-2)+'.l';
+  else if(part.endsWith('_l'))other=part.slice(0,-2)+'_r';
+  else if(part.endsWith('_r'))other=part.slice(0,-2)+'_l';
+  else if(part.endsWith('.mirror'))other=part.slice(0,-7);
+  else other=part+'.mirror';
+  return partMeta(D,other)?other:null;
+}
+function mirrorTargets(D,part,enabled,explicit){
+  const meta=partMeta(D,part);
+  if(!meta) throw new Error('Unknown part: '+part);
+  if(explicit!==undefined){
+    if(!enabled)throw new Error('A mirror target requires Mirror X.');
+    if(typeof explicit!=='string'||!explicit)throw new Error('Choose a mirror target.');
+    if(explicit===part)throw new Error('The mirror target must differ from the selected geometry.');
+    if(!partMeta(D,explicit))throw new Error('Unknown mirror target: '+explicit);
+    return [part,explicit];
+  }
+  if(!enabled) return [part];
+  const automatic=meta.mirror||automaticMirrorPart(D,part);
+  if(!automatic || !partMeta(D,automatic)){
+    throw new Error('This part has no automatic pair. Choose a mirror target or disable Mirror X.');
+  }
+  return [part,automatic];
+}
+function matIndex(D,hex){
+  if(!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error('Choose a #rrggbb colour.');
+  const name='edit_'+hex.slice(1).toLowerCase();
+  let index=D.mats.findIndex(m=>m.name===name);
+  if(index<0){
+    index=D.mats.length;
+    D.mats.push({name,rgb:[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255)});
+  }
+  return index;
+}
+function eulerMatrix(deg){
+  const rad=deg.map(v=>Number(v)*Math.PI/180), [x,y,z]=rad;
+  const cx=Math.cos(x),sx=Math.sin(x),cy=Math.cos(y),sy=Math.sin(y),cz=Math.cos(z),sz=Math.sin(z);
+  return [[cy*cz,cz*sx*sy-cx*sz,sx*sz+cx*cz*sy],
+          [cy*sz,cx*cz+sx*sy*sz,cx*sy*sz-cz*sx],[-sy,cy*sx,cx*cy]];
+}
+function mul3(R,p){ return [R[0][0]*p[0]+R[0][1]*p[1]+R[0][2]*p[2],R[1][0]*p[0]+R[1][1]*p[1]+R[1][2]*p[2],R[2][0]*p[0]+R[2][1]*p[1]+R[2][2]*p[2]]; }
+function dot3(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function cross3(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function unit3(vector){
+  if(!Array.isArray(vector)||vector.length!==3||!vector.every(Number.isFinite))throw new Error('Local rotation needs a valid dominant-bone frame.');
+  const length=Math.hypot(...vector);if(length<1e-6)throw new Error('Local rotation needs a non-zero dominant-bone frame.');
+  return vector.map(value=>value/length);
+}
+function matrixFromAxes(axes){return [[axes[0][0],axes[1][0],axes[2][0]],[axes[0][1],axes[1][1],axes[2][1]],[axes[0][2],axes[1][2],axes[2][2]]];}
+function transpose3(matrix){return [[matrix[0][0],matrix[1][0],matrix[2][0]],[matrix[0][1],matrix[1][1],matrix[2][1]],[matrix[0][2],matrix[1][2],matrix[2][2]]];}
+function mulMat3(left,right){return left.map(row=>right[0].map((_,column)=>row[0]*right[0][column]+row[1]*right[1][column]+row[2]*right[2][column]));}
+function validateTransformBasis(value,label='transform'){
+  if(!Array.isArray(value)||value.length!==3)throw new Error('Local '+label+' needs three basis axes.');
+  const axes=value.map(unit3);
+  if(Math.abs(dot3(axes[0],axes[1]))>1e-4||Math.abs(dot3(axes[0],axes[2]))>1e-4||Math.abs(dot3(axes[1],axes[2]))>1e-4)throw new Error('Local '+label+' basis axes must be orthogonal.');
+  if(dot3(cross3(axes[0],axes[1]),axes[2])<.9999)throw new Error('Local '+label+' basis must be right-handed.');
+  return axes;
+}
+function localRotationAxes(D,part){
+  const index=partBoneIndex(D,part),bone=D.bones[index];if(!bone)return null;
+  try{
+    // WAM bones carry a deliberate rest frame: X=side, Y=up, Z=along.
+    // That right-handed basis is the part-local frame shown by the rotate gizmo.
+    return validateTransformBasis([bone.side,bone.up,[bone.t[0]-bone.h[0],bone.t[1]-bone.h[1],bone.t[2]-bone.h[2]]]);
+  }catch(error){return null;}
+}
+function transformFrame(op,spaceKey,basisKey,label){
+  const space=op[spaceKey]===undefined?'world':op[spaceKey],basis=op[basisKey];
+  if(space==='world'){
+    if(basis!==undefined)throw new Error(basisKey+' is only supported by local '+label+'.');
+    return [[1,0,0],[0,1,0],[0,0,1]];
+  }
+  if(space!=='local')throw new Error(spaceKey+' must be world or local.');
+  return matrixFromAxes(validateTransformBasis(basis,label));
+}
+function transformRotationMatrix(op){
+  const frame=transformFrame(op,'rotationSpace','rotationBasis','rotation');
+  return mulMat3(frame,mulMat3(eulerMatrix(op.rotation||[0,0,0]),transpose3(frame)));
+}
+function mirrorRotation(R){
+  // S*R*S reflects an orientation through X=0 without guessing Euler signs.
+  const s=[-1,1,1]; return R.map((row,r)=>row.map((v,c)=>s[r]*v*s[c]));
+}
+function transformPart(D,part,op,reflected,ownPivot){
+  const ids=partVertices(D,part), localCenter=averagePoints(D,ids), pivot=op.pivot ? op.pivot.slice() : localCenter;
+  const translationFrame=transformFrame(op,'translationSpace','translationBasis','translation');
+  const scaleFrame=transformFrame(op,'scaleSpace','scaleBasis','scale');
+  let translation=mul3(translationFrame,(op.translation||[0,0,0]).slice()), matrix=transformRotationMatrix(op);
+  const scale=op.scale||[1,1,1];
+  if(!translation.every(Number.isFinite)||!pivot.every(Number.isFinite)||!scale.every(v=>Number.isFinite(v)&&v>0)) throw new Error('Transform values must be finite, with positive scale.');
+  const scaleMatrix=mulMat3(scaleFrame,mulMat3([[scale[0],0,0],[0,scale[1],0],[0,0,scale[2]]],transpose3(scaleFrame)));
+  matrix=mulMat3(matrix,scaleMatrix);
+  if(reflected){
+    if(ownPivot){pivot[0]=localCenter[0];pivot[1]=localCenter[1];pivot[2]=localCenter[2];}
+    else pivot[0]*=-1;
+    translation[0]*=-1; matrix=mirrorRotation(matrix);
+  }
+  ids.forEach(index=>{
+    const p=point(D,index), local=[p[0]-pivot[0],p[1]-pivot[1],p[2]-pivot[2]];
+    const q=mul3(matrix,local); setPoint(D,index,[q[0]+pivot[0]+translation[0],q[1]+pivot[1]+translation[1],q[2]+pivot[2]+translation[2]]);
+  });
+  return {pivot,matrix,translation};
+}
+function transformPointBy(affine,point){
+  const local=[point[0]-affine.pivot[0],point[1]-affine.pivot[1],point[2]-affine.pivot[2]],q=mul3(affine.matrix,local);
+  return [q[0]+affine.pivot[0]+affine.translation[0],q[1]+affine.pivot[1]+affine.translation[1],q[2]+affine.pivot[2]+affine.translation[2]];
+}
+function syncRigPart(D,part,affine){
+  const meta=partMeta(D,part),names=meta&&meta.rigBones;
+  if(!Array.isArray(names)||!names.length)throw new Error('This geometry uses shared bones; its mesh can be edited but its rig cannot be moved safely.');
+  names.forEach(name=>{
+    const bone=D.bones.find(item=>item.n===name);if(!bone)throw new Error('The isolated rig bone is missing: '+name);
+    const head=transformPointBy(affine,bone.h),tail=transformPointBy(affine,bone.t),direction=unit3([tail[0]-head[0],tail[1]-head[1],tail[2]-head[2]]);
+    let side=mul3(affine.matrix,bone.side),projection=dot3(side,direction);
+    side=unit3([side[0]-projection*direction[0],side[1]-projection*direction[1],side[2]-projection*direction[2]]);
+    const up=unit3(cross3(direction,side));
+    bone.h=head;bone.t=tail;bone.side=side;bone.up=up;
+  });
+}
+function renumberFaces(D){
+  const counts={}; D.triFace=D.triPart.map(part=>{const n=counts[part]||0;counts[part]=n+1;return n;});
+  (D.parts||[]).forEach(part=>part.faces=counts[part.id]||0);
+}
+function filterFaces(D,hidden){
+  const keep=[]; for(let i=0;i<D.triMat.length;i++)if(!hidden.has(i))keep.push(i);
+  D.tris=keep.flatMap(i=>D.tris.slice(i*3,i*3+3));
+  D.triMat=keep.map(i=>D.triMat[i]); D.triPart=keep.map(i=>D.triPart[i]);
+  renumberFaces(D);
+}
+function primitiveGeometry(kind){
+  if(kind==='box') return {v:[[-.5,-.5,-.5],[.5,-.5,-.5],[.5,.5,-.5],[-.5,.5,-.5],[-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5]],f:[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,0,7],[3,0,4],[3,4,7]]};
+  const sides=8, vertices=[[0,.5,0],[0,-.5,0]], faces=[];
+  if(kind==='sphere'){
+    const rings=4;
+    for(let ring=1;ring<rings;ring++)for(let side=0;side<sides;side++){const th=Math.PI*ring/rings,ph=2*Math.PI*side/sides;vertices.push([.5*Math.sin(th)*Math.cos(ph),.5*Math.cos(th),.5*Math.sin(th)*Math.sin(ph)]);}
+    for(let side=0;side<sides;side++){const next=(side+1)%sides;faces.push([0,2+next,2+side],[1,2+(rings-2)*sides+side,2+(rings-2)*sides+next]);}
+    for(let ring=0;ring<rings-2;ring++){const a=2+ring*sides,b=a+sides;for(let side=0;side<sides;side++){const next=(side+1)%sides;faces.push([a+side,a+next,b+next],[a+side,b+next,b+side]);}}
+    return {v:vertices,f:faces};
+  }
+  for(let y of [-.5,.5]) if(kind!=='cone'||y<0) for(let side=0;side<sides;side++){const ph=2*Math.PI*side/sides;vertices.push([.5*Math.cos(ph),y,.5*Math.sin(ph)]);}
+  const bottom=2, top=kind==='cone'?null:bottom+sides;
+  for(let side=0;side<sides;side++){const next=(side+1)%sides;faces.push([0,bottom+side,bottom+next]);if(top===null)faces.push([bottom+side,1,bottom+next]);else faces.push([bottom+side,top+side,top+next],[bottom+side,top+next,bottom+next],[1,top+next,top+side]);}
+  return {v:vertices,f:faces};
+}
+function appendPrimitive(D,op,reflected){
+  const shape=primitiveGeometry(op.primitive), start=D.verts.length/3, center=op.center.slice(), scale=op.scale.slice();
+  const bone=typeof op.bone==='string'?D.bones.findIndex(item=>item.n===op.bone):op.bone;
+  if(!Number.isInteger(bone)||bone<0||bone>=D.bones.length)throw new Error('The primitive references an unknown bone.');
+  if(reflected) center[0]*=-1;
+  const R=reflected?mirrorRotation(eulerMatrix(op.rotation||[0,0,0])):eulerMatrix(op.rotation||[0,0,0]);
+  shape.v.forEach(v=>{const p=mul3(R,[v[0]*scale[0],v[1]*scale[1],v[2]*scale[2]]);D.verts.push(p[0]+center[0],p[1]+center[1],p[2]+center[2]);D.skin.push([bone,1,-1]);if(D.uv)D.uv.push(.5,.5);});
+  const id='manual:'+op.id+(reflected?'.mirror':'');
+  if(partMeta(D,id)) throw new Error('Duplicate manual primitive: '+op.id);
+  const material=matIndex(D,op.color);
+  shape.f.forEach(face=>{const f=reflected?[face[0],face[2],face[1]]:face;D.tris.push(start+f[0],start+f[1],start+f[2]);D.triMat.push(material);D.triPart.push(id);});
+  D.parts.push({id,mirror:reflected?'manual:'+op.id:'manual:'+op.id+'.mirror',bone:D.bones[bone].n,faces:shape.f.length});renumberFaces(D);
+}
+function applyEditOp(D,op){
+  const kind=op.type, mirrored=!!op.mirror;
+  // Texture atlases and vertex colours cannot carry a face-local override.
+  // The compiler makes the same deliberate material-only choice for --edits.
+  delete D.tex; delete D.uv; delete D.vcols;
+  if(['transform','paint_part','paint_faces','hide_part','hide_faces'].includes(kind)){
+    const hasExplicit=Object.prototype.hasOwnProperty.call(op,'mirrorPart');
+    if(hasExplicit&&kind!=='transform')throw new Error('mirrorPart is only supported by transform.');
+    const targets=mirrorTargets(D,op.part,mirrored,hasExplicit?op.mirrorPart:undefined);
+    if(kind==='transform') targets.forEach((part,index)=>{
+      const affine=transformPart(D,part,op,mirrored&&index===1,hasExplicit&&index===1);
+      if(op.syncRig===true)syncRigPart(D,part,affine);
+      else if(op.syncRig!==undefined&&op.syncRig!==false)throw new Error('syncRig must be true or false.');
+    });
+    else if(kind==='paint_part'){const material=matIndex(D,op.color);targets.forEach(part=>partFaces(D,part).forEach(face=>D.triMat[face]=material));}
+    else if(kind==='paint_faces'){const material=matIndex(D,op.color);targets.forEach(part=>(op.faces||[]).forEach(local=>D.triMat[faceIndex(D,part,local)]=material));}
+    else {const hidden=new Set();targets.forEach(part=>{const rows=partFaces(D,part);if(kind==='hide_part')rows.forEach(face=>hidden.add(face));else (op.faces||[]).forEach(local=>hidden.add(faceIndex(D,part,local)));});filterFaces(D,hidden);}
+  } else if(kind==='add_primitive'){
+    if(!op.id || !op.primitive || (typeof op.bone!=='string'&&!Number.isInteger(op.bone))) throw new Error('The manual primitive is incomplete.');
+    appendPrimitive(D,op,false); if(mirrored)appendPrimitive(D,op,true);
+  } else throw new Error('Unknown edit operation: '+kind);
+}
+function selectedTransformPart(){return editor.selection&&editor.selection.face===null?editor.selection.part:null;}
+function sessionFor(part,create=false){
+  if(!part)return null;
+  if(!editor.transformSessions[part]&&create)editor.transformSessions[part]={operations:[],preview:null,form:null,orientation:'world'};
+  return editor.transformSessions[part]||null;
+}
+function storeTransformSession(){
+  const part=selectedTransformPart(),session=sessionFor(part,true);if(!session)return;
+  session.preview=editor.transformPreview?clone(editor.transformPreview):null;
+  if(!Array.isArray(session.operations))session.operations=[];
+  session.form=transformFormValues();session.orientation=document.getElementById('rotationSpace').value;
+  if(!session.preview&&!(session.operations&&session.operations.length)&&!transformHasEffect({translation:session.form.translation,rotation:session.form.rotation,scale:session.form.scale}))delete editor.transformSessions[part];
+}
+function restoreTransformSession(part){
+  const session=sessionFor(part,false);editor.transformPreview=session&&session.preview?clone(session.preview):null;
+  if(session&&session.form){showTransformDelta(session.form);document.getElementById('rotationSpace').value=session.orientation==='local'?'local':'world';}
+  else resetTransformInputs();
+}
+function allTransformPreviews(){return Object.values(editor.transformSessions).flatMap(session=>[
+  ...((session&&Array.isArray(session.operations))?session.operations:[]),...(session&&session.preview?[session.preview]:[])
+]);}
+function hasTransformSessions(){return allTransformPreviews().length>0;}
+function editorSnapshot(){return {ops:clone(editor.ops),draft:clone(editor.draft),transformSessions:clone(editor.transformSessions)};}
+function restoreEditorSnapshot(snapshot){
+  editor.ops=clone(snapshot.ops);editor.draft=clone(snapshot.draft);editor.transformSessions=clone(snapshot.transformSessions||{});
+  restoreTransformSession(selectedTransformPart());refreshPreview();
+}
+function recordEditorHistory(before){
+  editor.undo.push(clone(before));if(editor.undo.length>100)editor.undo.shift();editor.redo=[];
+  if(document.getElementById('undoEdit'))updateDraftControls();
+}
+function committedPreviewData(){
+  const D=clone(editor.baseline);
+  // Pending corrections are visible locally, but exported layers contain only
+  // ``ops`` after the user explicitly applies the whole draft.
+  editor.ops.concat(editor.draft).forEach(op=>applyEditOp(D,op));
+  return D;
+}
+function brushOperations(stroke=editor.paintBrush.stroke){
+  if(!stroke)return [];
+  return Object.entries(stroke.faces).filter(([,faces])=>faces.length).map(([part,faces])=>({
+    type:'paint_faces',part,faces:faces.slice(),color:stroke.color,mirror:false,
+  }));
+}
+function previewData(){
+  const D=committedPreviewData();
+  // These states are strictly visual drafts. They deliberately run after the
+  // saved draft and never reach currentLayer() until an explicit Apply action.
+  allTransformPreviews().forEach(op=>applyEditOp(D,op));
+  brushOperations().forEach(op=>applyEditOp(D,op));
+  return D;
+}
+function updateEditStatus(message){
+  const node=document.getElementById('editStatus');
+  if(message){node.textContent=message;return;}
+  const s=editor.selection;
+  node.textContent=!s?'Click a '+(editor.selectMode==='face'?'face':'part')+'.':(s.face===null?'Part: '+s.part:'Face '+s.face+' of '+s.part);
+}
+function updateSelectionHighlight(){
+  if(!M)return;
+  // The halo is drawn in a later mask pass.  Re-uploading the original colour
+  // buffer here guarantees selection never mutates the author's materials.
+  gl.bindBuffer(gl.ARRAY_BUFFER,bCol);gl.bufferData(gl.ARRAY_BUFFER,M.baseColor,gl.STATIC_DRAW);
+}
+function updateDraftControls(){
+  const count=editor.draft.length,node=document.getElementById('draftStatus');
+  const sessions=allTransformPreviews().length,transient=!!sessions||!!editor.paintBrush.stroke;
+  const hasSaveable=count||sessions||editor.ops.length;
+  node.textContent=(count||sessions)?'Draft: '+count+' pending correction'+(count===1?'':'s')+(sessions?' plus '+sessions+' transform session'+(sessions===1?'':'s'):'')+'. Use Save all changes to commit it locally.':'No pending corrections.';
+  document.getElementById('saveAllChanges').disabled=!hasSaveable||!!editor.paintBrush.stroke||editor.saving;
+  document.getElementById('discardDraft').disabled=!count&&!sessions;
+  document.getElementById('undoEdit').disabled=!editor.undo.length;
+  document.getElementById('redoEdit').disabled=!editor.redo.length;
+  ['downloadEdits','copyBrief'].forEach(id=>{const button=document.getElementById(id);button.disabled=!!count||transient;button.dataset.tooltip=count?'Use Save all changes before downloading or copying the edit layer.':transient?'Save all changes or cancel the temporary preview before downloading or copying the edit layer.':id==='downloadEdits'?'Download the portable .wamedit.json file.':'Copy an English summary of saved corrections to share with Codex.';});
+  updateRecoveryControls();
+  updateSaveBoundary();
+}
+function refreshPreview(){ try{loadModel(previewData(),true);updateSelectionHighlight();syncGeometryMenus();syncPaletteSelection();updateRotationSpaceControls();updateDraftControls();updatePaintControls();updateEditStatus();}catch(error){updateEditStatus('Edit error: '+error.message);throw error;} }
+function queueDraftOperations(operations,summary){
+  if(!operations.length)return false;
+  const history=editorSnapshot(),before=clone(editor.draft);editor.draft.push(...operations.map(clone));
+  try{refreshPreview();}catch(error){editor.draft=before;refreshPreview();reportEditorError(error.message);return false;}
+  updateEditStatus('Correction added to the draft. Use Save all changes to commit it locally.');
+  recordEditorHistory(history);
+  logEditor('Draft: '+summary+'.');
+  checkpointRecovery('Draft checkpoint updated');
+  return true;
+}
+function queueDraft(op){return queueDraftOperations([op],op.type+' '+(op.part||op.id));}
+function clearTransformPreview(message){
+  const part=selectedTransformPart(),session=sessionFor(part,false);if(!editor.transformPreview&&!session)return false;
+  editor.transformPreview=null;if(session)session.preview=null;resetTransformInputs();refreshPreview();
+  if(message){updateEditStatus(message);logEditor(message);checkpointRecovery('Transform preview cleared');}
+  return true;
+}
+function parkCurrentTransformPreview(){
+  const part=selectedTransformPart(),session=sessionFor(part,true);
+  if(editor.transformPreview&&transformHasEffect(editor.transformPreview))session.operations.push(clone(editor.transformPreview));
+  editor.transformPreview=null;session.preview=null;
+}
+function buildTransformPreview(){
+  if(!editor.selection||editor.selection.face!==null)throw new Error('Select the whole object before transforming it.');
+  const D=committedPreviewData(),part=selectedPart();
+  return {type:'transform',part,pivot:selectedCenter(D,part),...transformFormValues(),...transformOrientationSettings(D,part),...mirrorTransformSettings(D,part),...rigSyncSettings(D,part)};
+}
+function updateTransformPreview(){
+  try{
+    const operation=buildTransformPreview();
+    if(!transformHasEffect(operation)){
+      if(editor.transformPreview){delete editor.transformSessions[selectedTransformPart()];editor.transformPreview=null;refreshPreview();}
+      return false;
+    }
+    editor.transformPreview=operation;storeTransformSession();refreshPreview();checkpointRecovery('Transform preview checkpoint updated');
+    return true;
+  }catch(error){updateEditStatus(error.message);logEditor('Transform preview refused: '+error.message);return false;}
+}
+async function saveAllChanges(){
+  if(editor.paintBrush.stroke){reportEditorError('Finish or cancel the active paint stroke before saving.');return false;}
+  const previews=allTransformPreviews();
+  if(previews.length){
+    const previous=clone(editor.transformSessions);editor.transformSessions={};editor.transformPreview=null;
+    if(!queueDraftOperations(previews,'transform session')){editor.transformSessions=previous;restoreTransformSession(selectedTransformPart());refreshPreview();return false;}
+    resetTransformInputs();logEditor('Save all included '+previews.length+' transform session(s).');
+  }
+  if(editor.draft.length&&!applyAllDraft())return false;
+  if(!editor.ops.length){updateEditStatus('No corrections exist to save.');return false;}
+  const saved=checkpointRecovery('Save all changes complete');
+  if(!saved)return false;
+  const bridge=editorBridge();
+  if(!bridge){updateEditStatus('All saved corrections are stored in browser-local recovery. Download the edit layer for a portable backup.');logEditor('Save all refreshed browser-local recovery.');return true;}
+  let layer;
+  try{layer=currentLayer();}
+  catch(error){reportEditorError(error.message);return false;}
+  editor.saving=true;updateDraftControls();updateEditStatus('Saving '+layer.operations.length+' correction'+(layer.operations.length===1?'':'s')+' and rebuilding current outputs…');logEditor('Connected save started: '+layer.operations.length+' operation(s).');
+  try{
+    const response=await fetch(bridge.saveUrl,{method:'POST',headers:{'Content-Type':'application/json','X-WAM-Editor-Token':bridge.token},body:JSON.stringify(layer)});
+    let result;try{result=await response.json();}catch(error){throw new Error('Connected editor returned an invalid response.');}
+    if(!response.ok||!result.ok)throw new Error(result&&result.error||'Connected save failed.');
+    const store=recoveryStore(),key=recoveryKey();if(store&&key)store.removeItem(key);
+    editor.recovery.hasSaved=false;editor.recovery.savedAt=null;updateRecoveryControls();
+    updateEditStatus('Saved '+result.layer+' beside the WAM source and rebuilt current outputs. Reloading the refreshed viewer…');logEditor('Connected save completed: '+result.layer+'.');
+    setTimeout(()=>window.location.assign(bridge.viewerUrl),250);
+    return true;
+  }catch(error){reportEditorError('Connected save failed: '+error.message);logEditor('Connected save failed: '+error.message);return false;}
+  finally{editor.saving=false;updateDraftControls();}
+}
+function applyAllDraft(){
+  if(!editor.draft.length){updateEditStatus('No pending corrections to save.');logEditor('Save all ignored: draft is empty.');return false;}
+  const history=editorSnapshot(),before=clone(editor.ops),pending=clone(editor.draft);
+  editor.ops=editor.ops.concat(editor.draft);editor.draft=[];
+  try{refreshPreview();}catch(error){editor.ops=before;editor.draft=pending;refreshPreview();reportEditorError(error.message);return false;}
+  recordEditorHistory(history);
+  updateEditStatus('Saved '+pending.length+' correction'+(pending.length>1?'s':'')+' locally.');
+  logEditor('Save all: '+pending.length+' correction'+(pending.length>1?'s':'')+' committed.');
+  checkpointRecovery('Save all changes complete');
+  return true;
+}
+function discardDraft(){
+  if(!editor.draft.length&&!hasTransformSessions())return;
+  const history=editorSnapshot(),count=editor.draft.length,sessions=allTransformPreviews().length;editor.draft=[];editor.transformSessions={};editor.transformPreview=null;transformGizmo.drag=null;
+  resetTransformInputs();refreshPreview();recordEditorHistory(history);
+  updateEditStatus('Draft discarded. Previously applied corrections remain.');
+  logEditor('Draft discarded: '+count+' correction'+(count===1?'':'s')+' and '+sessions+' transform session'+(sessions===1?'': 's')+'.');
+  checkpointRecovery('Discarded draft checkpoint updated');
+}
+function openEditorModel(DATA){
+  editor.baseline=clone(DATA);editor.baseOps=clone((DATA.editLayer&&DATA.editLayer.operations)||[]);
+  const store=editor.recovery.store;
+  editor.ops=[];editor.draft=[];editor.undo=[];editor.redo=[];editor.selection=null;editor.nextPrimitive=1;editor.mirrorTarget='';editor.mirrorPickPhase='none';editor.transformPreview=null;editor.transformSessions={};editor.paintBrush={active:false,stroke:null};editor.log=[];editor.recovery={store,key:null,savedAt:null,hasSaved:false,restored:false,error:''};
+  transformGizmo.drag=null;transformGizmo.hover=null;
+  viewerBackground=null;
+  loadModel(clone(DATA));
+  const restored=restoreRecovery();
+  if(restored)refreshPreview();
+  syncBackgroundInput();syncGeometryMenus();syncPaletteSelection();updateRotationSpaceControls();updateDraftControls();updatePaintControls();updateSaveBoundary();updateEditStatus();
+  logEditor('Viewer loaded: '+(DATA.name||'WAM model')+'.');
+  if(restored)logEditor('Local recovery restored.');
+}
+function selectedPart(){if(!editor.selection)throw new Error('Select a part first.');return editor.selection.part;}
+function selectedCenter(D,part){return averagePoints(D,partVertices(D,part));}
+function selectedBone(D,part){const index=partBoneIndex(D,part);return index>=0?index:0;}
+function transformOrientationSettings(D,part){
+  if(document.getElementById('rotationSpace').value!=='local')return {};
+  const axes=localRotationAxes(D,part);
+  if(!axes)throw new Error('Local transforms are unavailable because this geometry has no valid dominant-bone frame.');
+  const basis=axes.map(axis=>axis.slice());
+  return {rotationSpace:'local',rotationBasis:basis,translationSpace:'local',translationBasis:clone(basis),scaleSpace:'local',scaleBasis:clone(basis)};
+}
+function rigSyncSettings(D,part){
+  const control=document.getElementById('syncRigTransform');if(!control.checked)return {};
+  const settings=mirrorTransformSettings(D,part),targets=mirrorTargets(D,part,settings.mirror,settings.mirrorPart);
+  if(targets.some(target=>{const meta=partMeta(D,target);return !meta||!meta.rigSyncEligible;}))throw new Error('This geometry uses shared bones; its mesh can be edited but its rig cannot be moved safely.');
+  return {syncRig:true};
+}
+function updateRotationSpaceControls(){
+  const select=document.getElementById('rotationSpace'),local=select.querySelector('option[value="local"]');
+  const part=editor.selection&&editor.selection.face===null?editor.selection.part:null;
+  const available=!!(M&&part&&localRotationAxes(M.DATA,part));
+  local.disabled=!available;
+  if(!available&&select.value==='local')select.value='world';
+  const isLocal=select.value==='local',label=document.getElementById('rotationLabel');
+  label.textContent='Rotate '+(isLocal?'Local (bone)':'World')+' X / Y / Z (degrees)';
+  document.getElementById('gizmoRotate').dataset.tooltip=isLocal?
+    'Rotate around the selected geometry\'s Local (bone) X, Y, or Z rings. Shortcut: E.':
+    'Rotate around the model\'s World X, Y, or Z rings. Shortcut: E.';
+  ['X','Y','Z'].forEach(axis=>{
+    const input=document.getElementById('rot'+axis),scope=isLocal?'local (bone)':'world';
+    input.dataset.tooltip='Relative rotation around '+scope+' '+axis+' in degrees.';
+    input.setAttribute('aria-label','rotate '+scope+' '+axis);
+    const move=document.getElementById('move'+axis),scale=document.getElementById('scale'+axis);
+    move.dataset.tooltip='Relative movement along '+scope+' '+axis+'. The value previews locally before saving.';
+    move.setAttribute('aria-label','move '+scope+' '+axis);
+    scale.dataset.tooltip='Relative scale along '+scope+' '+axis+'. Values below 0.01 are refused.';
+    scale.setAttribute('aria-label','scale '+scope+' '+axis);
+  });
+  select.dataset.tooltip=available?
+    'World uses model axes. Local follows the selected geometry\'s dominant bone frame for Move, Rotate, and Scale and is stored in the edit layer.':
+    'Select a geometry with a valid dominant bone to use Local transforms.';
+  const sync=document.getElementById('syncRigTransform'),meta=part&&M&&partMeta(M.DATA,part),mirror=document.getElementById('mirrorTransform').checked,
+        target=mirror&&(editor.mirrorTarget==='__auto__'?automaticMirrorPart(M.DATA,part):editor.mirrorTarget),targetMeta=target&&partMeta(M.DATA,target),safe=!!(meta&&meta.rigSyncEligible&&(!mirror||(targetMeta&&targetMeta.rigSyncEligible)));
+  sync.disabled=!safe;if(!safe)sync.checked=false;
+  sync.parentElement.dataset.tooltip=safe?'Synchronize exclusively owned rig bones for this transform. Shared body bones remain mesh-only.':'This geometry uses shared bones or has no isolated bone; its rig remains safely mesh-only.';
 }
 
 // ---- bones + skinning ----
@@ -438,12 +1412,51 @@ function animQuat(anim, phase, bi){
 }
 
 // ---- camera / draw ----
-let W=0,H=0;
+let W=0,H=0,cssW=0,cssH=0,gizmoDpr=1,selectionMaskW=0,selectionMaskH=0,selectionMaskReady=false,
+    pickW=0,pickH=0,pickReady=false;
+function ensureSelectionMask(){
+  if(selectionMaskW===W && selectionMaskH===H)return selectionMaskReady;
+  selectionMaskW=W;selectionMaskH=H;
+  gl.bindTexture(gl.TEXTURE_2D,selectionMask);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,selectionFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,selectionMask,0);
+  selectionMaskReady=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return selectionMaskReady;
+}
+function ensurePickTarget(){
+  if(pickW===W&&pickH===H)return pickReady;
+  pickW=W;pickH=H;
+  gl.bindTexture(gl.TEXTURE_2D,pickTexture);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,pickFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,pickTexture,0);
+  gl.bindRenderbuffer(gl.RENDERBUFFER,pickDepth);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,W,H);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,pickDepth);
+  pickReady=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindRenderbuffer(gl.RENDERBUFFER,null);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return pickReady;
+}
 function resize(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
-  W=Math.max(1,Math.round(r.width*dpr)); H=Math.max(1,Math.round(r.height*dpr));
+  cssW=r.width;cssH=r.height;gizmoDpr=dpr;
+  W=Math.max(1,Math.round(cssW*dpr)); H=Math.max(1,Math.round(cssH*dpr));
   if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+  if(gizmoCv.width!==W||gizmoCv.height!==H){gizmoCv.width=W;gizmoCv.height=H;}
+  gizmo2d.setTransform(gizmoDpr,0,0,gizmoDpr,0,0);
   gl.viewport(0,0,W,H);
+  ensureSelectionMask();
+  ensurePickTarget();
 }
 new ResizeObserver(resize).observe(cv);
 
@@ -455,12 +1468,39 @@ function cssColor(name){
   return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255];
 }
 
+function rgbHex(rgb){
+  return '#'+rgb.map(value=>Math.round(Math.max(0,Math.min(1,value))*255).toString(16).padStart(2,'0')).join('');
+}
+function modelBackground(DATA){
+  if(DATA && DATA.sky)return DATA.sky.slice();
+  if(DATA && DATA.fog)return DATA.fog.color.slice();
+  return cssColor('--canvas-bg');
+}
+function syncBackgroundInput(){
+  backgroundInput.value=rgbHex(viewerBackground || modelBackground(M&&M.DATA));
+}
+
+function cameraClipPlanes(center,dist,R){
+  const min=M.bounds.min,max=M.bounds.max,rz=[R[6],R[7],R[8]];
+  let closest=Infinity,farthest=-Infinity;
+  for(const x of [min[0],max[0]])for(const y of [min[1],max[1]])for(const z of [min[2],max[2]]){
+    const depth=dist-(rz[0]*(x-center[0])+rz[1]*(y-center[1])+rz[2]*(z-center[2]));
+    closest=Math.min(closest,depth);farthest=Math.max(farthest,depth);
+  }
+  const pad=Math.max(M.radius*.08,.01),near=Math.max(.001,closest-pad);
+  return {near,far:Math.max(near+.01,farthest+pad)};
+}
+function recenterCamera(){
+  if(!M)return;
+  camera.center=M.center.slice();camera.dist=M.defaultDist;zoomf=1.0;
+  logEditor('Camera recentered on the model.');updateEditStatus('Camera recentered.');
+}
 function buildMVP(){
-  const center = M.center, dist = M.dist * zoomf;
+  const center = camera.center||M.center, dist = (camera.dist||M.defaultDist) * zoomf;
   const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
   const R=[ cy,0,-sy,  sp*sy,cp,sp*cy,  cp*sy,-sp,cp*cy ];
   const f=1/Math.tan(FOV/2), aspect=W/H;
-  const near=dist*0.1, far=dist*4;
+  const {near,far}=cameraClipPlanes(center,dist,R);
   const A=(far+near)/(near-far), B=2*far*near/(near-far);
   const m=new Float32Array(16);
   const rx=[R[0],R[1],R[2]], ry=[R[3],R[4],R[5]], rz=[R[6],R[7],R[8]];
@@ -477,10 +1517,201 @@ function buildMVP(){
   return {m, R:Rcol, eyeW};
 }
 
+function haloTargets(){
+  const s=editor.selection;if(!M||!editor.enabled||!s)return [];
+  const targets=[{part:s.part,face:s.face,colour:HALO_SOURCE}];
+  // Face edits never propagate, so their one-face halo is intentionally the
+  // only highlight.  Object transforms may show the chosen mirror target.
+  if(s.face!==null||!document.getElementById('mirrorTransform').checked)return targets;
+  const raw=document.getElementById('mirrorTarget').value;
+  const mirror=raw==='__auto__'?automaticMirrorPart(M.DATA,s.part):raw;
+  if(mirror&&mirror!==s.part&&partMeta(M.DATA,mirror))targets.push({part:mirror,face:null,colour:HALO_MIRROR});
+  return targets;
+}
+function drawHaloMask(m,target){
+  const {NT,fpos,selectionPos}=M;
+  let count=0;
+  for(let face=0;face<NT;face++){
+    if(M.DATA.triPart[face]!==target.part||(target.face!==null&&M.DATA.triFace[face]!==target.face))continue;
+    selectionPos.set(fpos.subarray(face*9,face*9+9),count*9);
+    count++;
+  }
+  if(!count)return;
+
+  // Mask first, then dilate only its outside pixels.  This avoids the
+  // material recolour that made selected models difficult to inspect.
+  gl.bindFramebuffer(gl.FRAMEBUFFER,selectionFbo);
+  gl.viewport(0,0,W,H);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.DEPTH_TEST);gl.useProgram(lprog);gl.uniformMatrix4fv(luMVP,false,m);
+  gl.uniform4f(luColor,1,1,1,1);gl.bindBuffer(gl.ARRAY_BUFFER,bSelection);
+  gl.bufferData(gl.ARRAY_BUFFER,selectionPos.subarray(0,count*9),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(laPos);gl.vertexAttribPointer(laPos,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,count*3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);
+  gl.useProgram(haloProg);gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,selectionMask);
+  gl.uniform1i(huMask,2);gl.uniform2f(huTexel,1/W,1/H);
+  gl.uniform4fv(huColor,target.colour);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bHaloQuad);gl.enableVertexAttribArray(haPos);gl.vertexAttribPointer(haPos,2,gl.FLOAT,false,0,0);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);gl.disable(gl.BLEND);
+  gl.activeTexture(gl.TEXTURE0);gl.enable(gl.DEPTH_TEST);
+}
+function drawSelectionHalo(m){
+  if(!M || !ensureSelectionMask())return;
+  haloTargets().forEach(target=>drawHaloMask(m,target));
+}
+
+const GIZMO_AXES=[
+  {id:0,name:'X',world:[1,0,0],colour:'#ef4444',ring:[[0,1,0],[0,0,1]]},
+  {id:1,name:'Y',world:[0,1,0],colour:'#55b96a',ring:[[1,0,0],[0,0,1]]},
+  {id:2,name:'Z',world:[0,0,1],colour:'#4c91ef',ring:[[1,0,0],[0,1,0]]},
+];
+function addScaled(point,axis,amount){return [point[0]+axis[0]*amount,point[1]+axis[1]*amount,point[2]+axis[2]*amount];}
+function activeGizmoAxes(){
+  const part=editor.selection&&editor.selection.face===null?editor.selection.part:null;
+  const local=document.getElementById('rotationSpace').value==='local'&&M&&part?
+    localRotationAxes(M.DATA,part):null;
+  return GIZMO_AXES.map((axis,index)=>{
+    if(!local)return axis;
+    return {...axis,world:local[index],ring:[local[(index+1)%3],local[(index+2)%3]]};
+  });
+}
+function gizmoInfo(){
+  if(!M || !editor.enabled || !editor.selection || editor.selection.face!==null)return null;
+  let pivot;
+  try{pivot=selectedCenter(M.DATA,editor.selection.part);}catch(ignore){return null;}
+  const rect=cv.getBoundingClientRect(),matrix=buildMVP().m,origin=projectPoint(matrix,pivot,rect);
+  if(!origin)return null;
+  const worldScale=Math.max(M.radius*.34,(M.DATA.height||1)*.055);
+  const axes=activeGizmoAxes().map(axis=>({axis,start:origin,end:projectPoint(matrix,addScaled(pivot,axis.world,worldScale),rect)})).filter(item=>item.end);
+  return {pivot,origin,axes,worldScale,matrix,rect};
+}
+function gizmoLocal(info,point){return {x:point.x-info.rect.left,y:point.y-info.rect.top};}
+function drawGizmo(){
+  gizmo2d.clearRect(0,0,cssW,cssH);
+  const info=gizmoInfo();if(!info)return;
+  const origin=gizmoLocal(info,info.origin),ctx=gizmo2d;
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  if(transformGizmo.mode==='rotate'){
+    for(const item of info.axes){
+      const points=[];
+      for(let step=0;step<=40;step++){
+        const angle=Math.PI*2*step/40,ring=item.axis.ring;
+        const point=addScaled(addScaled(info.pivot,ring[0],Math.cos(angle)*info.worldScale*.82),ring[1],Math.sin(angle)*info.worldScale*.82);
+        const projected=projectPoint(info.matrix,point,info.rect);if(projected)points.push(gizmoLocal(info,projected));
+      }
+      if(points.length<2)continue;
+      ctx.strokeStyle=item.axis.colour;ctx.globalAlpha=(transformGizmo.hover===item.axis.id) ? 0.98 : 0.82;ctx.lineWidth=transformGizmo.hover===item.axis.id?4:2.5;
+      ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);points.slice(1).forEach(point=>ctx.lineTo(point.x,point.y));ctx.stroke();
+    }
+  }else{
+    for(const item of info.axes){
+      const end=gizmoLocal(info,item.end),active=transformGizmo.hover===item.axis.id;
+      ctx.strokeStyle=item.axis.colour;ctx.globalAlpha=active ? 0.98 : 0.88;ctx.lineWidth=active?4:3;
+      ctx.beginPath();ctx.moveTo(origin.x,origin.y);ctx.lineTo(end.x,end.y);ctx.stroke();
+      if(transformGizmo.mode==='scale'){
+        ctx.fillStyle=item.axis.colour;ctx.fillRect(end.x-5,end.y-5,10,10);
+      }else{
+        const dx=end.x-origin.x,dy=end.y-origin.y,length=Math.hypot(dx,dy)||1,ux=dx/length,uy=dy/length;
+        ctx.fillStyle=item.axis.colour;ctx.beginPath();ctx.moveTo(end.x,end.y);ctx.lineTo(end.x-13*ux+6*uy,end.y-13*uy-6*ux);ctx.lineTo(end.x-13*ux-6*uy,end.y-13*uy+6*ux);ctx.closePath();ctx.fill();
+      }
+      ctx.globalAlpha=1;ctx.fillStyle=item.axis.colour;ctx.font='12px system-ui';ctx.fillText(item.axis.name,end.x+7,end.y-7);
+    }
+  }
+  ctx.fillStyle='#fff8ee';ctx.strokeStyle='#201914';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(origin.x,origin.y,5,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
+}
+function pointSegmentDistance(point,a,b){
+  const dx=b.x-a.x,dy=b.y-a.y,length=dx*dx+dy*dy||1;
+  const t=Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/length));
+  return Math.hypot(point.x-(a.x+t*dx),point.y-(a.y+t*dy));
+}
+function gizmoHit(event){
+  const info=gizmoInfo();if(!info)return null;
+  const point={x:event.clientX,y:event.clientY};let best=null;
+  if(transformGizmo.mode==='rotate'){
+    for(const item of info.axes){
+      let previous=null;
+      for(let step=0;step<=40;step++){
+        const angle=Math.PI*2*step/40,ring=item.axis.ring;
+        const world=addScaled(addScaled(info.pivot,ring[0],Math.cos(angle)*info.worldScale*.82),ring[1],Math.sin(angle)*info.worldScale*.82);
+        const current=projectPoint(info.matrix,world,info.rect);if(!current){previous=null;continue;}
+        if(previous){const distance=pointSegmentDistance(point,previous,current);if(distance<12&&(!best||distance<best.distance))best={info,axis:item.axis,distance};}
+        previous=current;
+      }
+    }
+  }else{
+    for(const item of info.axes){
+      const distance=pointSegmentDistance(point,info.origin,item.end);
+      if(distance<14&&(!best||distance<best.distance))best={info,axis:item.axis,distance};
+    }
+  }
+  return best;
+}
+function resetTransformInputs(){
+  ['moveX','moveY','moveZ','rotX','rotY','rotZ'].forEach(id=>document.getElementById(id).value='0');
+  ['scaleX','scaleY','scaleZ'].forEach(id=>document.getElementById(id).value='1');
+}
+function transformFormValues(){
+  return {translation:['moveX','moveY','moveZ'].map(numberValue),rotation:['rotX','rotY','rotZ'].map(numberValue),scale:['scaleX','scaleY','scaleZ'].map(numberValue)};
+}
+function showTransformDelta(operation){
+  operation.translation.forEach((value,index)=>document.getElementById(['moveX','moveY','moveZ'][index]).value=value.toFixed(3));
+  operation.rotation.forEach((value,index)=>document.getElementById(['rotX','rotY','rotZ'][index]).value=value.toFixed(1));
+  operation.scale.forEach((value,index)=>document.getElementById(['scaleX','scaleY','scaleZ'][index]).value=value.toFixed(3));
+}
+function setGizmoMode(mode){
+  transformGizmo.mode=mode;transformGizmo.hover=null;
+  [['move','gizmoMove'],['rotate','gizmoRotate'],['scale','gizmoScale']].forEach(([value,id])=>document.getElementById(id).classList.toggle('on',value===mode));
+  // Reveal only the active tool's number fields. All nine stay in the DOM, so
+  // every reader of the transform form still sees all three operations.
+  document.getElementById('editPanel').dataset.gizmo=mode;
+  updateRotationSpaceControls();
+  const local=document.getElementById('rotationSpace').value==='local';
+  const space=local?'Local (bone)':'World';
+  updateEditStatus(mode==='move'?'Move gizmo: drag a '+space+' X/Y/Z axis.':mode==='rotate'?'Rotate gizmo: drag a '+space+' coloured ring.':'Scale gizmo: drag a '+space+' X/Y/Z axis.');
+}
+function beginGizmoDrag(hit,event){
+  let operation,form;
+  try{operation=buildTransformPreview();form=transformFormValues();}catch(error){updateEditStatus(error.message);alert(error.message);return false;}
+  transformGizmo.drag={pointerId:event.pointerId,axis:hit.axis,info:hit.info,start:{x:event.clientX,y:event.clientY},operation,
+                        startForm:clone(form),startPreview:clone(editor.transformPreview),startHistory:editorSnapshot(),startAngle:Math.atan2(event.clientY-hit.info.origin.y,event.clientX-hit.info.origin.x)};
+  cv.setPointerCapture(event.pointerId);spinBox.checked=false;
+  return true;
+}
+function updateGizmoDrag(event){
+  const drag=transformGizmo.drag;if(!drag)return;
+  const axis=drag.axis,op=drag.operation,base=drag.startForm;
+  if(transformGizmo.mode==='rotate'){
+    const current=Math.atan2(event.clientY-drag.info.origin.y,event.clientX-drag.info.origin.x);
+    let radians=current-drag.startAngle;while(radians>Math.PI)radians-=Math.PI*2;while(radians<-Math.PI)radians+=Math.PI*2;
+    op.translation=base.translation.slice();op.rotation=base.rotation.slice();op.scale=base.scale.slice();
+    op.rotation[axis.id]=base.rotation[axis.id]+radians*180/Math.PI;
+  }else{
+    const item=drag.info.axes.find(entry=>entry.axis.id===axis.id),dx=item.end.x-drag.info.origin.x,dy=item.end.y-drag.info.origin.y;
+    const length=Math.hypot(dx,dy)||1,amount=((event.clientX-drag.start.x)*dx+(event.clientY-drag.start.y)*dy)/length/length*drag.info.worldScale;
+    op.translation=base.translation.slice();op.rotation=base.rotation.slice();op.scale=base.scale.slice();
+    if(transformGizmo.mode==='move')op.translation[axis.id]=base.translation[axis.id]+amount;
+    else op.scale[axis.id]=Math.max(.05,base.scale[axis.id]*(1+amount/drag.info.worldScale));
+  }
+  // Moving a handle updates a private preview and the numeric fields together.
+  // The preview remains outside the edit layer until the user adds or saves it.
+  showTransformDelta(op);editor.transformPreview=clone(op);storeTransformSession();refreshPreview();
+}
+function transformHasEffect(operation){
+  return operation.translation.some(value=>Math.abs(value)>1e-6)||operation.rotation.some(value=>Math.abs(value)>1e-4)||operation.scale.some(value=>Math.abs(value-1)>1e-6);
+}
+function finishGizmoDrag(cancelled){
+  const drag=transformGizmo.drag;if(!drag)return;
+  transformGizmo.drag=null;
+  if(cancelled){editor.transformPreview=drag.startPreview;storeTransformSession();showTransformDelta(drag.startPreview||{translation:[0,0,0],rotation:[0,0,0],scale:[1,1,1]});refreshPreview();checkpointRecovery('Gizmo gesture cancelled');updateEditStatus('Gizmo gesture cancelled.');return;}
+  if(transformHasEffect(drag.operation)){recordEditorHistory(drag.startHistory);checkpointRecovery('Transform preview checkpoint updated');updateEditStatus('Live preview ready: use Add transform to draft or Save all changes.');}
+  else updateEditStatus('No transform values changed.');
+}
+
 function draw(){
-  let bg=cssColor('--canvas-bg');
-  if(M && M.DATA.sky) bg=M.DATA.sky;
-  else if(M && M.DATA.fog) bg=M.DATA.fog.color;
+  gizmo2d.clearRect(0,0,cssW,cssH);
+  let bg=viewerBackground || modelBackground(M&&M.DATA);
   gl.clearColor(bg[0],bg[1],bg[2],1);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   if(!M) return;
@@ -563,33 +1794,42 @@ function draw(){
     gl.disable(gl.BLEND);
   }
 
+  drawSelectionHalo(m);
+
   if(skelBox.checked){
-    const {spos} = M;
-    let n=0;
-    const hp=new Float64Array(NB*3);
-    for(let i=0;i<NB;i++){
-      const h=DATA.bones[i].h, o=i*12;
-      hp[i*3]  =G[o]*h[0]+G[o+1]*h[1]+G[o+2]*h[2]+G[o+3];
-      hp[i*3+1]=G[o+4]*h[0]+G[o+5]*h[1]+G[o+6]*h[2]+G[o+7];
-      hp[i*3+2]=G[o+8]*h[0]+G[o+9]*h[1]+G[o+10]*h[2]+G[o+11];
+    const {spos} = M, ac=cssColor('--accent');
+    let selectedBoneIndex=-1;
+    if(editor.selection) try { selectedBoneIndex=selectedBone(DATA,editor.selection.part); } catch(ignore) {}
+    function bonePoint(index,rest){
+      const o=index*12;
+      return [G[o]*rest[0]+G[o+1]*rest[1]+G[o+2]*rest[2]+G[o+3],
+              G[o+4]*rest[0]+G[o+5]*rest[1]+G[o+6]*rest[2]+G[o+7],
+              G[o+8]*rest[0]+G[o+9]*rest[1]+G[o+10]*rest[2]+G[o+11]];
     }
+    gl.useProgram(lprog);gl.uniformMatrix4fv(luMVP,false,m);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bSkel);gl.enableVertexAttribArray(laPos);gl.vertexAttribPointer(laPos,3,gl.FLOAT,false,0,0);
+    if(xrayBox.checked)gl.disable(gl.DEPTH_TEST);
     for(let i=0;i<NB;i++){
-      const p=DATA.bones[i].p; if(p<0)continue;
-      spos[n*6]=hp[p*3]; spos[n*6+1]=hp[p*3+1]; spos[n*6+2]=hp[p*3+2];
-      spos[n*6+3]=hp[i*3]; spos[n*6+4]=hp[i*3+1]; spos[n*6+5]=hp[i*3+2];
-      n++;
+      const b=DATA.bones[i], head=bonePoint(i,b.h), tail=bonePoint(i,b.t||b.h);
+      let axis=[tail[0]-head[0],tail[1]-head[1],tail[2]-head[2]];
+      const length=Math.hypot(axis[0],axis[1],axis[2]);if(length<1e-5)continue;
+      axis=axis.map(v=>v/length);
+      const seed=Math.abs(axis[1])<.9?[0,1,0]:[1,0,0];
+      let side=[axis[1]*seed[2]-axis[2]*seed[1],axis[2]*seed[0]-axis[0]*seed[2],axis[0]*seed[1]-axis[1]*seed[0]];
+      const sl=Math.hypot(...side);side=side.map(v=>v/sl);
+      const up=[axis[1]*side[2]-axis[2]*side[1],axis[2]*side[0]-axis[0]*side[2],axis[0]*side[1]-axis[1]*side[0]];
+      const mid=head.map((v,a)=>v+axis[a]*length*.34), radius=Math.max(length*.11, M.radius*.006);
+      const ring=[side.map((v,a)=>mid[a]+v*radius),up.map((v,a)=>mid[a]+v*radius),side.map((v,a)=>mid[a]-v*radius),up.map((v,a)=>mid[a]-v*radius)];
+      let count=0;function edge(a,c){spos.set(a,count*6);spos.set(c,count*6+3);count++;}
+      for(let r=0;r<4;r++){edge(head,ring[r]);edge(tail,ring[r]);edge(ring[r],ring[(r+1)%4]);}
+      gl.bufferData(gl.ARRAY_BUFFER,spos.subarray(0,count*6),gl.DYNAMIC_DRAW);
+      const hit=i===selectedBoneIndex;
+      gl.uniform4f(luColor,hit?1:ac[0],hit ? 0.82 : ac[1],hit ? 0.16 : ac[2],1);
+      gl.drawArrays(gl.LINES,0,count*2);
     }
-    const ac=cssColor('--accent');
-    gl.useProgram(lprog);
-    gl.uniformMatrix4fv(luMVP,false,m);
-    gl.uniform4f(luColor,ac[0],ac[1],ac[2],1);
-    gl.bindBuffer(gl.ARRAY_BUFFER,bSkel);
-    gl.bufferData(gl.ARRAY_BUFFER,spos,gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(laPos); gl.vertexAttribPointer(laPos,3,gl.FLOAT,false,0,0);
-    gl.disable(gl.DEPTH_TEST);
-    gl.drawArrays(gl.LINES,0,n*2);
-    gl.enable(gl.DEPTH_TEST);
+    if(xrayBox.checked)gl.enable(gl.DEPTH_TEST);
   }
+  drawGizmo();
 }
 
 // ---- main loop ----
@@ -617,7 +1857,7 @@ const stage=document.getElementById('stage');
 function loadFile(file){
   const rd=new FileReader();
   rd.onload=()=>{
-    try { loadModel(JSON.parse(rd.result)); }
+    try { openEditorModel(JSON.parse(rd.result)); }
     catch(e){ alert('Not a WAM viewer JSON: '+e.message); }
   };
   rd.readAsText(file);
@@ -638,27 +1878,392 @@ window.addEventListener('drop',(e)=>{
   if(e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
 });
 
+function numberValue(id){
+  const value=Number(document.getElementById(id).value);
+  if(!Number.isFinite(value)) throw new Error('Use finite numeric transform values.');
+  return value;
+}
+function setSelectMode(mode){
+  if(editor.mirrorPickPhase!=='none')stopMirrorPicker('Mirror picker cancelled: selection mode changed.');
+  if(editor.paintBrush.active)setPaintBrush(false,'Paint brush exited: selection mode changed.');
+  editor.selectMode=mode;
+  // A face has no stable per-part pivot, so only a selected object exposes
+  // the transform gizmo.  Face mode deliberately remains paint/hide-only.
+  transformGizmo.hover=null;
+  document.getElementById('selectObject').classList.toggle('on',mode==='object');
+  document.getElementById('selectFace').classList.toggle('on',mode==='face');
+  updateRotationSpaceControls();updatePaintControls();
+  updateEditStatus(mode==='face'?'Face select: click a visible triangle.':'Object select: click a visible geometry.');
+}
+function updatePaintControls(){
+  const button=document.getElementById('paintFace'),help=document.getElementById('paintHelp');
+  const active=editor.paintBrush.active;
+  button.classList.toggle('on',active);button.textContent=active?'Stop painting':'Paint faces';
+  help.textContent=active?'Painting: left-click or drag across visible faces. Esc exits the brush.':'Paint faces: left-click or drag across visible faces. Esc exits the brush.';
+}
+function brushFaceCount(stroke){return Object.values(stroke.faces).reduce((total,faces)=>total+faces.length,0);}
+function cancelPaintStroke(message){
+  const stroke=editor.paintBrush.stroke;if(!stroke)return false;
+  editor.paintBrush.stroke=null;refreshPreview();
+  if(message){updateEditStatus(message);logEditor(message);}
+  return true;
+}
+function setPaintBrush(enabled,message){
+  if(enabled){
+    if(editor.mirrorPickPhase!=='none')stopMirrorPicker('Mirror picker cancelled: face painting started.');
+    if(editor.selectMode!=='face')setSelectMode('face');
+    editor.paintBrush.active=true;transformGizmo.hover=null;
+    updatePaintControls();updateEditStatus('Paint faces: left-click or drag across visible faces.');logEditor('Paint brush enabled.');
+  }else{
+    cancelPaintStroke('Paint stroke cancelled.');editor.paintBrush.active=false;
+    updatePaintControls();if(message){updateEditStatus(message);logEditor(message);}else{updateEditStatus('Face select: click a visible triangle.');logEditor('Paint brush disabled.');}
+  }
+}
+function paintStrokeAt(event){
+  const stroke=editor.paintBrush.stroke;if(!stroke)return false;
+  const previous=stroke.last||{x:event.clientX,y:event.clientY};
+  const dx=event.clientX-previous.x,dy=event.clientY-previous.y;
+  // Pointer events can skip small triangles during a fast drag.  Resample the
+  // segment at two CSS pixels, always through the depth-tested pick buffer.
+  const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/2));let changed=false;
+  // Geometry and camera stay still while painting. Render once per pointer
+  // segment, then sample that exact depth-tested buffer along the segment.
+  if(!renderPickBuffer(buildMVP().m))return false;
+  for(let step=0;step<=steps;step++){
+    const t=step/steps,hit=readPickFaceAt({clientX:previous.x+dx*t,clientY:previous.y+dy*t});
+    if(!hit)continue;
+    const part=M.DATA.triPart[hit.face],local=M.DATA.triFace[hit.face],faces=stroke.faces[part]||(stroke.faces[part]=[]);
+    if(faces.includes(local))continue;
+    // Face painting is independent of object transform sessions.  A brush
+    // crossing another geometry must never erase that geometry's draft.
+    // This is a visual stroke only. `previewData` supplies these faces to the
+    // renderer until pointer release converts them into ordinary draft edits.
+    faces.push(local);editor.selection={part,face:local};editor.mirrorTarget='';changed=true;
+  }
+  stroke.last={x:event.clientX,y:event.clientY};
+  if(!changed)return false;
+  refreshPreview();updateEditStatus('Painting… '+brushFaceCount(stroke)+' face'+(brushFaceCount(stroke)===1?'':'s')+'.');
+  return true;
+}
+function beginPaintStroke(event){
+  editor.paintBrush.stroke={pointerId:event.pointerId,color:document.getElementById('editColor').value,faces:{},last:null};
+  cv.setPointerCapture(event.pointerId);cv.classList.add('dragging');
+  paintStrokeAt(event);updateEditStatus('Painting… drag across visible faces.');
+}
+function finishPaintStroke(cancelled){
+  const stroke=editor.paintBrush.stroke;if(!stroke)return false;
+  editor.paintBrush.stroke=null;
+  const operations=brushOperations(stroke),count=brushFaceCount(stroke);
+  if(cancelled){refreshPreview();updateEditStatus('Paint stroke cancelled.');logEditor('Paint stroke cancelled.');return true;}
+  if(!operations.length){refreshPreview();updateEditStatus('Paint stroke ignored: no visible face was crossed.');logEditor('Paint stroke ignored: no visible face was crossed.');return true;}
+  if(queueDraftOperations(operations,'paint stroke ('+count+' face'+(count===1?'':'s')+')')){
+    updateEditStatus('Stroke added to the draft: '+count+' face'+(count===1?'':'s')+'. Use Save all changes to commit it locally.');
+    logEditor('Paint stroke added: '+count+' face'+(count===1?'':'s')+'.');
+    return true;
+  }
+  editor.paintBrush.stroke=stroke;refreshPreview();return false;
+}
+function currentLayer(){
+  if(!editor.baseline||!editor.baseline.editSource)throw new Error('This viewer JSON has no WAM source fingerprint. Recompile the .wam with this version of WAM first.');
+  if(editor.draft.length)throw new Error('Use Save all changes before saving or downloading the edit layer.');
+  if(hasTransformSessions()||editor.paintBrush.stroke)throw new Error('Save all changes or cancel the temporary preview before saving or downloading the edit layer.');
+  const serialise=(op)=>{
+    const copy=clone(op);
+    if(copy.type==='add_primitive'&&Number.isInteger(copy.bone)){
+      const bone=editor.baseline.bones[copy.bone];
+      if(!bone)throw new Error('The primitive references an unknown bone.');
+      copy.bone=bone.n;
+    }
+    return copy;
+  };
+  return {schemaVersion:1,source:clone(editor.baseline.editSource),operations:editor.baseOps.concat(editor.ops).map(serialise)};
+}
+function downloadLayer(){
+  try{
+    const layer=currentLayer(), blob=new Blob([JSON.stringify(layer,null,2)],{type:'application/json'});
+    const a=document.createElement('a'), source=(layer.source.name||'model.wam').replace(/\.wam$/i,'');
+    a.href=URL.createObjectURL(blob);a.download=source+'.wamedit.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    updateEditStatus('Edit layer downloaded: '+layer.operations.length+' operation(s).');logEditor('Edit layer downloaded: '+layer.operations.length+' operation(s).');
+  }catch(error){reportEditorError(error.message);}
+}
+function describeOps(ops){
+  if(!ops.length)return 'No manual WAM corrections are currently recorded.';
+  return 'Manual WAM corrections ('+ops.length+'): '+ops.map(op=>{
+    const target=op.part||('manual:'+op.id);
+    return op.type+' '+target+(op.mirror?' [Mirror X]':'');
+  }).join('; ')+'. Download the .wamedit.json and compile with --edits.';
+}
+function copyBrief(){
+  let brief;try{brief=describeOps(currentLayer().operations);}catch(error){reportEditorError(error.message);return;}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(brief).then(()=>updateEditStatus('Correction brief copied.')).catch(()=>prompt('Copy this correction brief:',brief));
+  else prompt('Copy this correction brief:',brief);
+}
+document.getElementById('editToggle').onclick=()=>{
+  if(!M)return;
+  if(!M.DATA.editSource){alert('This viewer predates edit layers. Recompile its .wam with the current WAM compiler.');return;}
+  editor.enabled=!editor.enabled;
+  document.getElementById('editPanel').hidden=!editor.enabled;
+  // The editor needs more room than the read-only viewer, but only while it
+  // is open, so the model keeps the wider stage the rest of the time.
+  document.querySelector('aside').classList.toggle('editing',editor.enabled);
+  document.getElementById('editToggle').textContent=editor.enabled?'Exit edit mode':'Enter edit mode';
+  cv.style.cursor=editor.enabled?'crosshair':'';
+  if(editor.enabled){
+    // Keeping edit mode in rest pose stabilizes both World and Local (bone)
+    // axes instead of letting an animation move the pivot below the cursor.
+    spinBox.checked=false;curAnim=null;animClock=0;transformGizmo.drag=null;
+    transformGizmo.hover=null;setGizmoMode(transformGizmo.mode);
+  }
+  updateEditStatus();
+};
+document.getElementById('selectObject').onclick=()=>setSelectMode('object');
+document.getElementById('selectFace').onclick=()=>setSelectMode('face');
+document.getElementById('geometrySelect').onchange=event=>{
+  if(event.target.value)selectGeometry(event.target.value);
+};
+document.getElementById('mirrorTransform').onchange=()=>{if(!document.getElementById('mirrorTransform').checked)stopMirrorPicker('Mirror picker cancelled: Mirror X disabled.');updateMirrorControls();};
+document.getElementById('mirrorTarget').onchange=event=>{editor.mirrorTarget=event.target.value;updateMirrorControls();};
+document.getElementById('pickMirror').onclick=startMirrorPicker;
+document.getElementById('recenterCamera').onclick=recenterCamera;
+document.getElementById('copyLog').onclick=copyEditorLog;
+document.getElementById('clearLog').onclick=clearEditorLog;
+document.getElementById('gizmoMove').onclick=()=>setGizmoMode('move');
+document.getElementById('gizmoRotate').onclick=()=>setGizmoMode('rotate');
+document.getElementById('gizmoScale').onclick=()=>setGizmoMode('scale');
+document.getElementById('rotationSpace').onchange=()=>{
+  const select=document.getElementById('rotationSpace'),part=editor.selection&&editor.selection.face===null?editor.selection.part:null;
+  if(select.value==='local'&&(!M||!part||!localRotationAxes(M.DATA,part))){select.value='world';reportEditorError('Local transforms need a selected geometry with a valid dominant-bone frame.');return;}
+  const history=editorSnapshot();parkCurrentTransformPreview();resetTransformInputs();storeTransformSession();recordEditorHistory(history);
+  updateRotationSpaceControls();
+  const name=select.value==='local'?'Local (bone)':'World';
+  updateEditStatus('Transform orientation: '+name+'. Existing transform preview remains pending for this geometry.');
+  logEditor('Transform orientation changed to '+name+'; existing preview retained in its geometry session.');
+  refreshPreview();checkpointRecovery('Transform orientation checkpoint updated');
+};
+backgroundInput.addEventListener('input',()=>{
+  const value=backgroundInput.value;
+  viewerBackground=[parseInt(value.slice(1,3),16)/255,parseInt(value.slice(3,5),16)/255,parseInt(value.slice(5,7),16)/255];
+});
+document.getElementById('resetBackground').onclick=()=>{viewerBackground=null;syncBackgroundInput();};
+setSelectMode('object');
+document.getElementById('applyTransform').onclick=()=>{
+  try{
+    const existing=sessionFor(selectedTransformPart(),false);
+    if((!editor.transformPreview||!transformHasEffect(editor.transformPreview))&&!(existing&&existing.operations&&existing.operations.length)&&!updateTransformPreview())throw new Error('Change at least one value before applying.');
+    const part=selectedTransformPart(),session=sessionFor(part,true),operations=[...(session.operations||[]).map(clone),clone(editor.transformPreview)];
+    if(!editor.transformPreview)operations.pop();
+    session.operations=[];session.preview=null;editor.transformPreview=null;
+    if(queueDraftOperations(operations,'transform '+part)){
+      delete editor.transformSessions[part];
+      resetTransformInputs();
+      logEditor('Transform added to draft: '+part+'.');
+    }else{session.operations=operations.slice(0,-1);editor.transformPreview=operations.at(-1);session.preview=clone(editor.transformPreview);refreshPreview();}
+  }catch(error){reportEditorError(error.message);}
+};
+function paintSelection(){
+  try{
+    const part=selectedPart(), color=document.getElementById('editColor').value;
+    // New viewer actions never mirror paint: asymmetric colours are evidence,
+    // while imported legacy layers retain their original mirror behaviour.
+    queueDraft({type:'paint_part',part,color,mirror:false});
+  }catch(error){reportEditorError(error.message);}
+}
+document.getElementById('paintPart').onclick=paintSelection;
+document.getElementById('paintFace').onclick=()=>setPaintBrush(!editor.paintBrush.active);
+document.getElementById('editColor').addEventListener('input',syncPaletteSelection);
+['moveX','moveY','moveZ','rotX','rotY','rotZ','scaleX','scaleY','scaleZ'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{
+    if(editor.selection&&editor.selection.face===null)updateTransformPreview();
+  });
+});
+function hideSelection(whole){
+  try{
+    const part=selectedPart(),op={type:whole?'hide_part':'hide_faces',part,mirror:false};
+    if(!whole){if(editor.selection.face===null)throw new Error('Select one face before hiding a face.');op.faces=[editor.selection.face];}
+    if(queueDraft(op)){editor.selection=null;syncGeometryMenus();updateRotationSpaceControls();updateEditStatus();}
+  }catch(error){reportEditorError(error.message);}
+}
+document.getElementById('hidePart').onclick=()=>hideSelection(true);
+document.getElementById('hideFace').onclick=()=>hideSelection(false);
+document.getElementById('addPrimitive').onclick=()=>{
+  try{
+    const D=previewData(),part=selectedPart(),center=selectedCenter(D,part),bone=selectedBone(D,part),scale=Math.max((D.height||1)*.12,.04);
+    const op={type:'add_primitive',id:'fix'+editor.nextPrimitive,primitive:document.getElementById('primitive').value,bone,center,rotation:[0,0,0],scale:[scale,scale,scale],color:document.getElementById('editColor').value,mirror:document.getElementById('primitiveMirror').checked};
+    if(queueDraft(op))editor.nextPrimitive++;
+  }catch(error){reportEditorError(error.message);}
+};
+document.getElementById('saveAllChanges').onclick=saveAllChanges;
+document.getElementById('discardDraft').onclick=discardDraft;
+document.getElementById('forgetRecovery').onclick=forgetRecovery;
+document.getElementById('undoEdit').onclick=()=>{if(!editor.undo.length)return;editor.redo.push(editorSnapshot());restoreEditorSnapshot(editor.undo.pop());logEditor('Undo: previous editor state restored.');checkpointRecovery('Undo checkpoint updated');};
+document.getElementById('redoEdit').onclick=()=>{if(!editor.redo.length)return;editor.undo.push(editorSnapshot());restoreEditorSnapshot(editor.redo.pop());logEditor('Redo: editor state restored.');checkpointRecovery('Redo checkpoint updated');};
+document.getElementById('downloadEdits').onclick=downloadLayer;
+document.getElementById('copyBrief').onclick=copyBrief;
+document.getElementById('loadEdits').onclick=()=>document.getElementById('editFile').click();
+document.getElementById('editFile').onchange=(event)=>{
+  const file=event.target.files[0];if(!file)return;
+  const reader=new FileReader();reader.onload=()=>{try{
+    const layer=JSON.parse(reader.result), source=editor.baseline&&editor.baseline.editSource;
+    if(layer.schemaVersion!==1||!Array.isArray(layer.operations)||!layer.source||layer.source.sha256!==source.sha256)throw new Error('This edit layer belongs to a different WAM source or schema.');
+    if(editor.baseOps.length)throw new Error('This viewer already contains an applied layer. Reload the pure WAM viewer before importing a replacement layer.');
+    if(editor.draft.length||hasTransformSessions())throw new Error('Save all changes or discard the draft and preview before loading an edit layer.');
+    recordEditorHistory(editorSnapshot());editor.ops=clone(layer.operations);editor.redo=[];updateNextPrimitive();refreshPreview();checkpointRecovery('Loaded edit layer checkpoint updated');updateEditStatus('Loaded '+editor.ops.length+' edit operation(s) and replaced local recovery.');logEditor('Edit layer loaded: '+editor.ops.length+' operation(s).');
+  }catch(error){reportEditorError(error.message);}};reader.readAsText(file);event.target.value='';
+};
+
 // scroll zoom
 cv.addEventListener('wheel',(e)=>{
   e.preventDefault();
   zoomf=Math.min(4.0, Math.max(0.12, zoomf*Math.exp(e.deltaY*0.0012)));
 },{passive:false});
 
-// drag orbit
+// Edit mode reserves the left button for selection and the gizmo.  The right
+// button remains a camera orbit so the model can still be inspected naturally.
 let drag=null;
+function projectPoint(matrix,point,rect){
+  const x=point[0],y=point[1],z=point[2];
+  const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];
+  if(w<=0)return null;
+  const nx=(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w;
+  const ny=(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w;
+  return {x:rect.left+(nx+1)*rect.width*.5,y:rect.top+(1-ny)*rect.height*.5};
+}
+function pickColour(face){
+  const value=face+1;
+  return [((value>>>16)&255)/255,((value>>>8)&255)/255,(value&255)/255,1];
+}
+function readPickFace(pixel){
+  const value=pixel[0]*65536+pixel[1]*256+pixel[2]-1;
+  return value>=0&&M&&value<M.NT?value:null;
+}
+function refreshPickPositions(){
+  const {DATA,NT,posed,fpos}=M;
+  for(let face=0;face<NT;face++)for(let vertex=0;vertex<3;vertex++){
+    const source=DATA.tris[face*3+vertex]*3,target=face*9+vertex*3;
+    fpos[target]=posed[source];fpos[target+1]=posed[source+1];fpos[target+2]=posed[source+2];
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.bufferSubData(gl.ARRAY_BUFFER,0,fpos);
+}
+function renderPickBuffer(matrix){
+  if(!M||M.NT>0xffffff||!ensurePickTarget())return false;
+  refreshPickPositions();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,pickFbo);gl.viewport(0,0,W,H);
+  gl.disable(gl.BLEND);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(pickProg);gl.uniformMatrix4fv(puMVP,false,matrix);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bPos);gl.enableVertexAttribArray(paPos);gl.vertexAttribPointer(paPos,3,gl.FLOAT,false,0,0);
+  for(let face=0;face<M.NT;face++){
+    gl.uniform4fv(puColor,pickColour(face));
+    gl.drawArrays(gl.TRIANGLES,face*3,3);
+  }
+  gl.disableVertexAttribArray(paPos);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);
+  return true;
+}
+function readPickFaceAt(event){
+  if(!M||!M.DATA.triPart)return null;
+  const rect=cv.getBoundingClientRect();
+  if(event.clientX<rect.left||event.clientX>=rect.right||event.clientY<rect.top||event.clientY>=rect.bottom)return null;
+  const x=Math.max(0,Math.min(W-1,Math.floor((event.clientX-rect.left)*W/rect.width)));
+  const y=Math.max(0,Math.min(H-1,H-1-Math.floor((event.clientY-rect.top)*H/rect.height)));
+  const pixel=new Uint8Array(4);gl.bindFramebuffer(gl.FRAMEBUFFER,pickFbo);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  const face=readPickFace(pixel);return face===null?null:{face};
+}
+function pickModelFace(event){
+  if(!M||!M.DATA.triPart||!renderPickBuffer(buildMVP().m))return null;
+  return readPickFaceAt(event);
+}
+function pickSelection(event){
+  const hit=pickModelFace(event);
+  if(!hit){updateEditStatus('No editable face is under this click.');logEditor('Selection refused: no editable face is under this click.');return false;}
+  return selectGeometry(M.DATA.triPart[hit.face],editor.selectMode==='face'?M.DATA.triFace[hit.face]:null);
+}
+function pickMirrorTarget(event){
+  const hit=pickModelFace(event);
+  if(!hit){updateEditStatus('No editable geometry is under this click.');logEditor('Target picker refused: no editable geometry is under this click.');return false;}
+  return chooseMirrorTarget(M.DATA.triPart[hit.face]);
+}
+function pickMirrorGeometry(event){
+  return editor.mirrorPickPhase==='source'?pickMirrorSource(event):pickMirrorTarget(event);
+}
+function pickMirrorSource(event){
+  const hit=pickModelFace(event);
+  if(!hit){updateEditStatus('No editable geometry is under this click.');logEditor('Mirror source picker refused: no editable geometry is under this click.');return false;}
+  return chooseMirrorSource(M.DATA.triPart[hit.face]);
+}
+cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('pointerdown',e=>{
-  drag={x:e.clientX,y:e.clientY}; cv.classList.add('dragging');
+  if(editor.enabled){
+    if(e.button===0){
+      if(editor.paintBrush.active){beginPaintStroke(e);return;}
+      if(editor.mirrorPickPhase!=='none'){pickMirrorGeometry(e);return;}
+      const hit=gizmoHit(e);
+      if(hit){if(beginGizmoDrag(hit,e))cv.classList.add('dragging');return;}
+      pickSelection(e);return;
+    }
+    if(e.button!==2)return;
+  } else if(e.button!==0)return;
+  drag={x:e.clientX,y:e.clientY,pointerId:e.pointerId}; cv.classList.add('dragging');
   cv.setPointerCapture(e.pointerId); spinBox.checked=false;
 });
 cv.addEventListener('pointermove',e=>{
-  if(!drag)return;
+  if(transformGizmo.drag){
+    if(e.pointerId===transformGizmo.drag.pointerId)updateGizmoDrag(e);
+    return;
+  }
+  if(editor.paintBrush.stroke){
+    if(e.pointerId===editor.paintBrush.stroke.pointerId)paintStrokeAt(e);
+    return;
+  }
+  if(!drag){
+    if(editor.enabled){
+      const hit=gizmoHit(e),next=hit?hit.axis.id:null;
+      if(next!==transformGizmo.hover){transformGizmo.hover=next;cv.style.cursor=hit?'pointer':'crosshair';}
+    }
+    return;
+  }
+  if(e.pointerId!==drag.pointerId)return;
   yaw+=(e.clientX-drag.x)*0.008;
   pitch=Math.max(-1.2,Math.min(1.2,pitch+(e.clientY-drag.y)*0.006));
-  drag={x:e.clientX,y:e.clientY};
+  drag={x:e.clientX,y:e.clientY,pointerId:e.pointerId};
 });
-cv.addEventListener('pointerup',()=>{drag=null;cv.classList.remove('dragging');});
+function releasePointer(event,cancelled){
+  if(transformGizmo.drag&&event.pointerId===transformGizmo.drag.pointerId){
+    finishGizmoDrag(cancelled);cv.classList.remove('dragging');
+    if(cv.hasPointerCapture(event.pointerId))cv.releasePointerCapture(event.pointerId);
+    return;
+  }
+  if(editor.paintBrush.stroke&&event.pointerId===editor.paintBrush.stroke.pointerId){
+    finishPaintStroke(cancelled);cv.classList.remove('dragging');
+    if(cv.hasPointerCapture(event.pointerId))cv.releasePointerCapture(event.pointerId);
+    return;
+  }
+  if(drag&&event.pointerId===drag.pointerId){
+    drag=null;cv.classList.remove('dragging');
+    if(cv.hasPointerCapture(event.pointerId))cv.releasePointerCapture(event.pointerId);
+  }
+}
+cv.addEventListener('pointerup',event=>releasePointer(event,false));
+cv.addEventListener('pointercancel',event=>releasePointer(event,true));
+window.addEventListener('keydown',event=>{
+  const tag=(event.target&&event.target.tagName)||'';
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(tag))return;
+  if(!editor.enabled)return;
+  if(event.key==='Escape'&&editor.paintBrush.stroke){
+    const pointerId=editor.paintBrush.stroke.pointerId;finishPaintStroke(true);cv.classList.remove('dragging');
+    if(cv.hasPointerCapture(pointerId))cv.releasePointerCapture(pointerId);event.preventDefault();return;
+  }
+  if(event.key==='Escape'&&editor.paintBrush.active){setPaintBrush(false);event.preventDefault();return;}
+  if(event.key==='Escape'&&editor.mirrorPickPhase!=='none'){stopMirrorPicker('Mirror picker cancelled.');event.preventDefault();return;}
+  if(event.key==='Escape'&&transformGizmo.drag){
+    const pointerId=transformGizmo.drag.pointerId;finishGizmoDrag(true);cv.classList.remove('dragging');
+    if(cv.hasPointerCapture(pointerId))cv.releasePointerCapture(pointerId);event.preventDefault();return;
+  }
+  if(event.key==='Escape'&&editor.transformPreview){clearTransformPreview('Transform preview cancelled.');event.preventDefault();return;}
+  const modes={w:'move',e:'rotate',r:'scale'},mode=modes[event.key.toLowerCase()];
+  if(mode){setGizmoMode(mode);event.preventDefault();}
+});
 
 resize();
-if(EMBEDDED) loadModel(EMBEDDED);
+if(EMBEDDED) openEditorModel(EMBEDDED);
 requestAnimationFrame(frame);
 </script>

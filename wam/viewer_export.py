@@ -1,5 +1,6 @@
-"""Export a compact JSON blob for the standalone HTML viewer."""
+"""Export a compact JSON blob for the standalone HTML viewer and editor."""
 import json
+import os
 
 import numpy as np
 
@@ -11,6 +12,7 @@ from .gltf import mat_to_quat
 from . import texture as wtexture
 from . import render as wrender
 import base64
+from . import edits as wedges
 
 
 def _mat_entry(model, name, rgb):
@@ -32,10 +34,76 @@ def export(path, out_json, samples=24):
     model = wparser.parse_file(path)
     bones, bone_order = wskel.solve(model)
     mesh = wmesh.build(model, bones)
-    return export_built(model, bones, bone_order, mesh, out_json, samples)
+    return export_built(model, bones, bone_order, mesh, out_json, samples,
+                        source_path=path)
 
 
-def export_built(model, bones, bone_order, mesh, out_json, samples=24):
+def _automatic_mirror_name(name, names):
+    """Find only conventional pairs; custom asymmetry is editor-authored."""
+    if name.endswith(".l"):
+        other = name[:-2] + ".r"
+    elif name.endswith(".r"):
+        other = name[:-2] + ".l"
+    elif name.endswith("_l"):
+        other = name[:-2] + "_r"
+    elif name.endswith("_r"):
+        other = name[:-2] + "_l"
+    elif name.endswith(".mirror"):
+        other = name[:-7]
+    else:
+        other = name + ".mirror"
+    return other if other in names else None
+
+
+def _dominant_bone(mesh, part, bone_order):
+    """Return the stable primary bone used to group geometry in the viewer."""
+    bounds = mesh.part_ranges.get(part)
+    if bounds is None:
+        return None
+    weights = {}
+    lo, hi = bounds
+    for skin in mesh.skin[lo:hi]:
+        for bone, weight in skin:
+            weights[bone] = weights.get(bone, 0.0) + float(weight)
+    if not weights:
+        return None
+    # ``bone_order`` breaks an equal-weight tie deterministically, rather than
+    # letting incidental vertex order make the geometry menu flicker.
+    return max(bone_order, key=lambda bone: weights.get(bone.name, 0.0)).name
+
+
+def _part_metadata(mesh, bone_order, bones):
+    """Expose stable part/local-face identities without leaking generator internals.
+
+    The editor stores face references as ``part + local ordinal``.  A global
+    triangle index would change as soon as an unrelated part is hidden.
+    """
+    tri_part, tri_face = [], []
+    faces = {name: [] for name in mesh.part_ranges}
+    for index, tri in enumerate(mesh.tris):
+        owner = next((name for name, (lo, hi) in mesh.part_ranges.items()
+                      if all(lo <= vertex < hi for vertex in tri)), None)
+        if owner is None:
+            owner = "unowned"
+            faces.setdefault(owner, [])
+        tri_part.append(owner)
+        tri_face.append(len(faces[owner]))
+        faces[owner].append(index)
+
+    names = set(faces)
+    rig_eligibility = wedges.rig_sync_eligibility(mesh, bones)
+    parts = []
+    for name, face_indexes in faces.items():
+        parts.append(dict(id=name, mirror=_automatic_mirror_name(name, names),
+                          bone=_dominant_bone(mesh, name, bone_order),
+                          rigBones=rig_eligibility.get(name, []),
+                          rigSyncEligible=bool(rig_eligibility.get(name)),
+                          faces=len(face_indexes)))
+    return parts, tri_part, tri_face
+
+
+def export_built(model, bones, bone_order, mesh, out_json, samples=24,
+                 source_path=None, edit_layer=None):
     """Same, for geometry that is already built.
 
     A composition has no `.wam` file to re-parse — it only exists as the
@@ -69,8 +137,14 @@ def export_built(model, bones, bone_order, mesh, out_json, samples=24):
                           loop=anim["loop"],
                           tracks={str(k): v for k, v in tracks.items()}))
 
-    atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
-    vcols = None if atlas is not None else wtexture.bake_vertex_colors(model, mesh, V, T, M)
+    # See cli.compile_model: an edit can be face-local while an atlas and
+    # vertex colours are shared across generated vertices.  Prefer the actual
+    # material assignments whenever a layer has changed the mesh.
+    atlas = atlas_uv = vcols = None
+    if edit_layer is None:
+        atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
+        vcols = None if atlas is not None else wtexture.bake_vertex_colors(model, mesh, V, T, M)
+    parts, tri_part, tri_face = _part_metadata(mesh, bone_order, bones)
     data = dict(
         name=model.name,
         height=model.height,
@@ -79,10 +153,21 @@ def export_built(model, bones, bone_order, mesh, out_json, samples=24):
         triMat=[int(x) for x in M],
         mats=[_mat_entry(model, n, rgb) for n, rgb in mesh.materials],
         skin=skin,
+        parts=parts,
+        triPart=tri_part,
+        triFace=tri_face,
         bones=[dict(n=b.name, p=(bindex[b.parent.name] if b.parent else -1),
-                    h=[round(float(x), 4) for x in b.head]) for b in bone_order],
+                    h=[round(float(x), 4) for x in b.head],
+                    t=[round(float(x), 4) for x in b.tail],
+                    side=[round(float(x), 4) for x in b.side],
+                    up=[round(float(x), 4) for x in b.up]) for b in bone_order],
         anims=anims,
     )
+    if source_path:
+        data["editSource"] = {"sha256": wedges.source_sha256(source_path),
+                              "name": os.path.basename(source_path)}
+    if edit_layer is not None:
+        data["editLayer"] = edit_layer
     if vcols is not None:
         data["vcols"] = [round(float(c), 3) for c in vcols.reshape(-1)]
     if atlas is not None:

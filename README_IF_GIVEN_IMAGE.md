@@ -1,5 +1,29 @@
 # If you were given an image
 
+This workflow also applies when you were given several images. Do not merge
+them mentally into one "average" reference: assign each image a stable ID and
+keep whole-object views, detail crops, and palette evidence separate.
+
+Prepare all references before writing a bone:
+
+```
+python3 -m wam.codex_cli references \
+  --reference front="refs/front.png" --view front=front \
+  --reference rear="refs/rear.png" --view rear=back \
+  --reference clasp="refs/clasp detail.png" --kind clasp=detail \
+  -o out/references
+```
+
+(`python` is the checkout's `.venv` interpreter — see the Quick start in
+[README.md](README.md). On Windows use `` ` `` instead of `\` to continue a
+line.)
+
+Read `references.json`, then inspect every image and every crop group. Prefix
+notes with the reference ID (`front:r0c1`, `rear:r1c2`, `clasp:r0c0`) so
+conflicting evidence remains visible and reversible. A detail image does not
+need a camera view. If two whole-object images disagree, record the conflict
+and ask which one is authoritative before encoding that feature.
+
 Read this before you write a single bone.
 
 There are two ways to fail here and they pull in opposite directions.

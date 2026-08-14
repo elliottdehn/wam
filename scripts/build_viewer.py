@@ -13,13 +13,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def build(json_path, out_path, title=None):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    tpl = open(os.path.join(root, "viewer", "template.html")).read()
-    d = open(json_path).read()
+    # Explicit contexts keep repeated agent builds from leaking file handles;
+    # UTF-8 also makes the generated page independent of the Windows locale.
+    with open(os.path.join(root, "viewer", "template.html"),
+              encoding="utf-8") as source:
+        tpl = source.read()
+    with open(json_path, encoding="utf-8") as source:
+        d = source.read()
     name = title or json.loads(d).get("name", "model").capitalize()
     h = tpl.replace("<title>WAM Viewer</title>",
                     "<title>WAM Viewer — %s</title>" % name)
     h = h.replace("null /*__DATA__*/", d)
-    open(out_path, "w").write(h)
+    with open(out_path, "w", encoding="utf-8", newline="\n") as output:
+        output.write(h)
     return out_path
 
 

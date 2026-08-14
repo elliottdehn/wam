@@ -1,0 +1,25 @@
+model codexsmoke
+  height 2.0
+  style smooth
+palette
+  shell #3f7fbf
+  accent #d99435
+skeleton
+  root pelvis at 0.042
+  bone spine parent=pelvis dir=up len=0.38
+parts
+  loft body bones=pelvis..spine material=shell
+    ring 0.00 w=0.22 d=0.15
+    ring 0.55 w=0.26 d=0.16
+    ring 1.00 w=0.11 d=0.09
+    cap start=dome end=dome
+  loft beak bone=spine at=0.82 dir=fwd pitch=8 len=0.22 material=accent
+    ring 0.00 w=0.06 d=0.04
+    ring 1.00 w=0.01 d=0.01
+    cap start=none end=dome
+  loft crest bone=spine at=0.94 dir=up len=0.16 material=accent
+    ring 0.00 w=0.05 d=0.04
+    ring 1.00 w=0.01 d=0.01
+    cap start=none end=dome
+checks
+  assert height(body) > 0.40
