@@ -1,6 +1,6 @@
 ---
 name: wam
-description: Author low-poly WoW-style 3D characters — mesh, skeleton, and animations — in the WAM text language, compiled to glTF plus turntable PNG renders. Use when the user wants to create or edit a stylized/low-poly 3D character, creature, or prop with a rig and animations, mentions WAM or .wam files, or asks for "WoW-style" / game-ready models.
+description: Author low-poly WoW-style 3D characters — mesh, skeleton, and animations — in the WAM text language, compiled to glTF plus multi-view PNG renders. Use when the user wants to create or edit a stylized/low-poly 3D character, creature, or prop with a rig and animations, supplies one or more reference images or views, mentions WAM or .wam files, or asks for "WoW-style" / game-ready models.
 ---
 
 # Authoring WAM models
@@ -24,7 +24,7 @@ which is whether the character reads.
 **Read `SPEC.md` for the grammar and `COMMON_MISTAKES_MUST_READ.md` before
 you author, and `PUBLISHING_MUST_READ.md` before you finish — a completed
 model has to be offered a link, and the two ways of doing that carry different
-licences. If the user gave you a reference image, read
+licences. If the user gave you one or more reference images, read
 `README_IF_GIVEN_IMAGE.md` first** — working from a picture has its own
 failure mode, and it is not one you will notice happening. There are no bundled example models. Every construct in SPEC
 has a worked snippet, and half of them (`web`, `frame=`, `to=`, `rest=`,
@@ -33,26 +33,30 @@ formats, so memory of other tools actively misleads here.
 
 ## Setup
 
-The compiler ships with this skill: the plugin root (the directory holding
-`skills/`, available as `$CLAUDE_PLUGIN_ROOT`) has the `wam/` package,
-`SPEC.md` and `COMMON_MISTAKES_MUST_READ.md`. Python 3 with numpy.
+The compiler ships with this skill. Resolve the repository or plugin root by
+walking upward from this file until the directory contains `wam/`, `SPEC.md`
+and `COMMON_MISTAKES_MUST_READ.md`; do not assume a host-specific environment
+variable. In a checkout, `git rev-parse --show-toplevel` gives the same root.
+Run `Setup-WAM.ps1` once on Windows, then use the explicit `.venv` interpreter.
+Python requires numpy; the multi-reference tools also require Pillow.
 
 ```bash
-cd "$CLAUDE_PLUGIN_ROOT"                       # or the wam repo checkout
-python3 -m wam.cli my.wam                      # -> out/my_sheet.png + .gltf
-python3 -m wam.cli my.wam --anim walk --frames 6       # one row per --views
-python3 -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
-python3 -m wam.cli my.wam --bones              # skeleton overlay
-python3 -m wam.cli my.wam --width 760 --height 560     # landscape, long models
-python3 -m wam.modelset kit.wamset             # compose body + gear
-python3 -m wam.cinematic film.cine             # cameras over a scene (CINEMATIC_SPEC.md)
+python -m wam.codex_cli compile my.wam         # JSON + per-view PNGs + glTF
+python -m wam.cli my.wam --anim walk --frames 6       # human-readable output
+python -m wam.cli my.wam --anim guard --anim-views side  # the telling angle
+python -m wam.cli my.wam --bones               # skeleton overlay, first 2 views
+python -m wam.cli my.wam --width 760 --height 560     # landscape, long models
+python -m wam.modelset kit.wamset               # compose body + gear
+python -m wam.cinematic film.cine               # cameras over a scene
 ```
 
-From another project: `PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m wam.cli …`
+On Windows replace `python` with `.\.venv\Scripts\python.exe`. On POSIX use
+`./.venv/bin/python`. When running from another project, set `PYTHONPATH` to
+the resolved WAM root rather than to a host-specific plugin variable.
 
 ## Ground it in the creature
 
-**If you were given a reference image, stop and read
+**If you were given one or more reference images, stop and read
 `README_IF_GIVEN_IMAGE.md`.** The short version: read the image exhaustively,
 build from it selectively. You will first compress it to a gist and lose what
 made the character recognizable; corrected, you will then try to model every
@@ -149,7 +153,9 @@ next pass better. Say it once, at the start, and then get on with it.
 1. Write or edit the `.wam`.
 2. **Write the `checks` for what you just added, in the same edit.** Not
    polish — it is how you avoid breaking what you already fixed.
-3. Compile and **read every lint line**, including `info:`. Many failures are
+3. Compile and **read every lint line**, including `info:`. For agent runs,
+   prefer `python -m wam.codex_cli compile`; read `_views.json` and every
+   individual view PNG it lists before using the combined sheet. Many failures are
    ambient and need no assertion: misspelled keys (silently dropped
    otherwise), intersecting parts, a mirrored limb crossing the centreline,
    chain rotations compounding into a fold, an animation that moves nothing,

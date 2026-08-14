@@ -1,0 +1,4 @@
+interface:
+  display_name: "WAM Model Author"
+  short_description: "Build and inspect multi-view WAM models"
+  default_prompt: "Use $wam to build a WAM model from my brief and reference images."
