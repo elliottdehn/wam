@@ -44,7 +44,10 @@ def file_hash(path: Path) -> str:
 
 class EditorBridgeTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="wam-editor-bridge-"))
+        # The bridge resolves every path it is handed, so the fixture must too.
+        # On macOS the system temporary directory is /var -> /private/var, and
+        # an unresolved prefix silently fails to match the discovered profile.
+        self.tmp = Path(tempfile.mkdtemp(prefix="wam-editor-bridge-")).resolve()
         self.source = self.tmp / "fixture.wam"
         self.source.write_text(SOURCE, encoding="utf-8")
         self.prefix = self.tmp / "renders"
@@ -140,6 +143,62 @@ class EditorBridgeTests(unittest.TestCase):
                 workspace.save_layer(self.layer("#11aa33"))
         self.assertEqual(self.outputs(), before)
         self.assertFalse(list(self.tmp.glob(".wam-edit-transaction-*")))
+
+    def test_failure_during_backup_keeps_the_files_not_yet_backed_up(self):
+        """The dangerous half of a failed save: crash while still backing up.
+
+        Recovery used to unlink every managed name before restoring, so the
+        originals that had not reached the backup directory yet were deleted
+        outright -- the recovery path destroying the generation it exists to
+        protect.  Only a failure in the *promote* loop was covered before, and
+        that is the safe case, because by then every original is in the backup.
+        """
+        before = self.outputs()
+        workspace = bridge.EditorWorkspace(self.source)
+        actual_replace = os.replace
+        moved = []
+
+        def fail_on_second_backup(source, destination):
+            destination_path = Path(destination)
+            if destination_path.parent.name == "backup":
+                moved.append(destination_path.name)
+                if len(moved) == 2:
+                    raise OSError("simulated crash mid-backup")
+            return actual_replace(source, destination)
+
+        with mock.patch("wam.editor_bridge.os.replace",
+                        side_effect=fail_on_second_backup):
+            with self.assertRaisesRegex(bridge.EditorBridgeError, "could not replace"):
+                workspace.save_layer(self.layer("#11aa33"))
+        # The fixture must actually exercise the hazard: a partial backup with
+        # more managed artifacts still sitting in the project directory.
+        self.assertEqual(len(moved), 2)
+        self.assertGreater(len(before), len(moved))
+        self.assertEqual(self.outputs(), before)
+        self.assertFalse(list(self.tmp.glob(".wam-edit-transaction-*")))
+        self.assertFalse(self.source.with_suffix(".wamedit.json").exists())
+
+    def test_startup_recovery_of_a_prepared_transaction_keeps_originals(self):
+        """A journal stuck at "prepared" means the backup loop never finished."""
+        untouched = self.tmp / "renders_sheet.png"
+        original_sheet = untouched.read_bytes()
+        target = self.tmp / "renders.html"
+        original_html = target.read_bytes()
+        transaction = Path(tempfile.mkdtemp(prefix=".wam-edit-transaction-", dir=self.tmp))
+        backup, new = transaction / "backup", transaction / "new"
+        backup.mkdir()
+        new.mkdir()
+        os.replace(target, backup / target.name)
+        bridge._write_json(transaction / "journal.json", {
+            "schemaVersion": 1,
+            "source": str(self.source.resolve()),
+            "state": "prepared",
+            "names": [target.name, untouched.name],
+        })
+        bridge.EditorWorkspace(self.source)
+        self.assertEqual(target.read_bytes(), original_html)
+        self.assertEqual(untouched.read_bytes(), original_sheet)
+        self.assertFalse(transaction.exists())
 
     def test_startup_recovers_an_interrupted_promotion(self):
         target = self.tmp / "renders.html"

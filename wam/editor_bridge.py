@@ -320,15 +320,22 @@ class EditorWorkspace:
         backup = transaction / "backup"
         if state != "committed":
             # A crash before the committed marker is treated as a failed save:
-            # remove partial replacements, then put the previous generation back.
-            for name in names:
-                target = self.directory / name
-                if target.is_file():
-                    target.unlink()
+            # put the previous generation back, then remove any replacement
+            # that has no previous generation to restore over it.
+            #
+            # The state decides what a *missing* backup means, and getting that
+            # wrong destroys the very files this exists to protect.  In
+            # "prepared" the backup loop was still running, so a file with no
+            # backup is an original that never got copied and must be left
+            # alone.  Only in "backed_up" has every original been moved, which
+            # is what makes an un-backed-up file a newly promoted one.
             for name in names:
                 previous = backup / name
+                target = self.directory / name
                 if previous.is_file():
-                    os.replace(previous, self.directory / name)
+                    os.replace(previous, target)
+                elif state == "backed_up" and target.is_file():
+                    target.unlink()
         shutil.rmtree(transaction, ignore_errors=True)
 
     def recover_interrupted_transactions(self) -> None:
