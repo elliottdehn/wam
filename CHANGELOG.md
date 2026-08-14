@@ -9,6 +9,19 @@ It retains the upstream MIT license and copyright notice in
 For an upstream-facing interface map, compatibility assessment, limitations,
 and validation evidence, see the [upstream comparison audit](Audits/2026-08-14-upstream-comparison-audit.md).
 
+## Why this fork exists
+
+The upstream WAM workflow has substantial potential for AI-assisted,
+parametric character authoring. This fork grew from a practical limit observed
+during real iteration: even clear, repeated feedback to an AI does not always
+produce the exact correction a user needs. The optional manual editor is an
+unblocking layer for those cases, not a replacement for WAM source authoring.
+
+These changes are implementation notes and experiments for upstream review,
+not a claim that the original project is incomplete or follows the wrong
+philosophy. Elliott may adopt, reject, split, or independently reimplement any
+idea after deciding whether it fits upstream WAM.
+
 ## Fork additions — 2026-08-14
 
 ### Codex workflow

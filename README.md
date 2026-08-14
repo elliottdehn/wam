@@ -113,6 +113,12 @@ navigation board. Each source remains separate and hash-addressed.
 
 ## Manual, non-destructive corrections
 
+This fork adds an optional escape hatch for AI-assisted iteration: a user can
+correct a result directly when clear, repeated instructions to an AI still do
+not converge on the intended geometry or colour. It supplements the WAM
+source workflow rather than replacing it; the source remains authoritative and
+the correction layer can be removed at any time.
+
 Every newly compiled `*.html` viewer includes an **Edit** mode. In that mode,
 left-click selects a part or face; right-click-and-drag orbits the camera; the
 mouse wheel zooms. Select a part to use the **Move / Scale** and **Rotate**

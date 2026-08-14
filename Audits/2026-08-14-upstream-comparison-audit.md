@@ -20,6 +20,24 @@ The implementation is substantial: **34 changed/new tracked files, 5,465 inserti
 
 No claim is made that this is ready to merge upstream. In particular, Elliott should review the browser security model, the edit-layer design, the large viewer surface, and the desired long-term product direction independently.
 
+## Fork intent and upstream ownership
+
+This work began from a positive use-case observation: WAM offers a strong
+parametric workflow for AI-assisted model generation and iteration. It also
+exposed a practical limit in real sessions. A user can describe a correction
+precisely and repeat it, yet an AI-authored result may still fail to converge
+to the intended shape, placement, or colour. The manual edit layer was built
+as an optional way to unblock that situation and let the user express a
+specific correction directly.
+
+That motivation is not a claim that the upstream project is missing a required
+feature, nor that its original parametric-first philosophy is wrong. WAM may
+intentionally prefer source-level authoring over interactive mesh correction.
+The audit is therefore a maintainer-facing set of observed experiments and
+trade-offs, not a merger request or a design mandate. Elliott can choose to
+take no part of it, take individual ideas, split them differently, or
+independently reimplement only what fits the upstream direction.
+
 ## Method, evidence, and boundaries
 
 ### What was inspected
