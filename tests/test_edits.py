@@ -90,6 +90,107 @@ def vertices(mesh, part):
     return np.asarray(mesh.verts[lo:hi], dtype=float)
 
 
+TEXTURED_SRC = """model texturedfixture
+  height 2.0
+palette
+  steel #336699
+textures
+  texture steel base=#336699
+    band axis=along at=0.35 width=0.15 color=#e8d8a0
+    noise scale=0.10 amount=0.14
+    ao amount=0.16
+skeleton
+  root pelvis at 0.025
+  bone spine parent=pelvis dir=up len=0.40
+parts
+  loft core bones=pelvis..spine material=steel
+    ring 0.00 w=0.16 d=0.14
+    ring 0.50 w=0.17 d=0.15
+    ring 1.00 w=0.13 d=0.11
+    cap start=dome end=dome
+"""
+
+
+class EditedAtlasTests(unittest.TestCase):
+    """An edit layer must not cost the model its authored surface.
+
+    Compiling with an edit layer used to skip bake_atlas entirely, so one
+    nudge in the editor dropped every band, grain and crevice in the model and
+    shipped a glTF with no image at all.  The stated reason was that a baked
+    atlas could not carry a per-face repaint without bleeding onto neighbours.
+    It can: the atlas is charted from the mesh and rasterized per triangle
+    with a per-texel material.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="wam-atlas-")
+        self.source = os.path.join(self.tmp, "textured.wam")
+        with open(self.source, "w", encoding="utf-8") as output:
+            output.write(TEXTURED_SRC)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _layer_path(self, operations):
+        layer = wedges.new_layer(self.source)
+        layer["operations"] = operations
+        path = os.path.join(self.tmp, "textured.wamedit.json")
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(layer, output)
+        return path
+
+    def test_an_edit_layer_keeps_the_texture_atlas(self):
+        report = {}
+        wcli.compile_model(self.source, os.path.join(self.tmp, "plain"), "front",
+                           quiet=True, width=80, height=100, report=report)
+        self.assertTrue(report["artifacts"]["texture"])
+
+        edited = {}
+        wcli.compile_model(
+            self.source, os.path.join(self.tmp, "edited"), "front", quiet=True,
+            width=80, height=100, report=edited,
+            edits_path=self._layer_path([
+                {"type": "paint_faces", "part": "core", "faces": [4, 5],
+                 "color": "#d92b2b"},
+            ]))
+        self.assertTrue(edited["artifacts"]["texture"],
+                        "an edit layer must still bake a texture atlas")
+        self.assertTrue(os.path.isfile(edited["artifacts"]["texture"]))
+        with open(edited["artifacts"]["gltf"], encoding="utf-8") as handle:
+            gltf = json.load(handle)
+        self.assertIn("images", gltf, "the edited glTF must still carry its image")
+
+    def test_a_face_repaint_stays_inside_the_faces_it_named(self):
+        model = wparser.parse_file(self.source)
+        bones, _order = wskel.solve(model)
+        mesh = wmesh.build(model, bones)
+        faces = wedges._part_faces(mesh, "core")
+        painted = [4, 5]
+        wedges.apply_layer(mesh, bones, self._loaded([
+            {"type": "paint_faces", "part": "core", "faces": painted,
+             "color": "#d92b2b"},
+        ]))
+        V, T, M = mesh.arrays()
+        from wam import texture as wtexture
+        atlas, _uv = wtexture.bake_atlas(model, mesh, V, T, M)
+        self.assertIsNotNone(atlas)
+        flat = atlas.reshape(-1, 3)
+        target = np.array([0xd9, 0x2b, 0x2b]) / 255.0
+        red = int((np.abs(flat - target).max(axis=1) < 0.02).sum())
+        filled = int((flat.sum(axis=1) > 0).sum())
+        self.assertGreater(red, 0, "the repaint never reached the atlas")
+        # Face-local, not chart-wide: a few faces of many, nowhere near the
+        # whole part.  This is the claim that skipping the bake rested on.
+        share = red / filled
+        self.assertLess(share, 4.0 * len(painted) / len(faces),
+                        "the repaint bled well beyond the faces it named")
+
+    def _loaded(self, operations):
+        layer = wedges.new_layer(self.source)
+        layer["operations"] = operations
+        return layer
+
+
 class EditLayerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="wam-edits-")

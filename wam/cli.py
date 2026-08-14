@@ -107,18 +107,6 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
         wedges.apply_layer(mesh, bones, edit_layer)
         infos.append("edit layer: %d operation(s) applied" %
                      len(edit_layer["operations"]))
-        # An edit layer turns the whole build flat, because a per-face repaint
-        # has no representation in a baked atlas.  That is far too large a
-        # consequence to leave implicit in an operation count: a model whose
-        # surfaces are carried by bands, grain and crevice shading reads as a
-        # different model once it is flat.  It is an info rather than a
-        # warning because the editor bridge treats any warning as a refusal to
-        # save, and a textured model would then be uneditable outright.
-        if getattr(model, "textures", None):
-            infos.append(
-                "edit layer: the baked texture atlas is disabled, so %d authored "
-                "texture(s) are not applied and the glTF carries no image"
-                % len(model.textures))
     artifacts = {
         "viewsManifest": None,
         "views": [],
@@ -143,14 +131,14 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     props = getattr(model, "material_pbr", {}) or {}
     mat_pbr = [((props[n]["metal"], props[n]["rough"]) if n in props else None)
                for n, _ in mesh.materials]
-    # A sidecar can paint one generated face independently.  A baked texture
-    # or one colour per shared vertex cannot represent that new material
-    # identity without silently bleeding it onto neighbouring faces, so edited
-    # exports intentionally use the mesh materials as the single source of
-    # colour.  Pure WAM compiles retain the established texture path.
-    atlas = atlas_uv = vcols = None
-    if not edit_layer:
-        atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
+    # Bake after the edit layer, not instead of it.  The atlas is charted from
+    # the mesh and rasterized per triangle with a per-texel material, so a
+    # per-face repaint is exactly representable: painting 2 of a part's 48
+    # faces colours 2% of its texels, not the whole chart.  Skipping the bake
+    # cost every authored band, grain and crevice the moment anything was
+    # edited, which is a far larger loss than the bleed it was avoiding.
+    vcols = None
+    atlas, atlas_uv = wtexture.bake_atlas(model, mesh, V, T, M)
     if atlas is not None:
         artifacts["texture"] = out_prefix + "_tex.png"
         wrender.write_png(artifacts["texture"], atlas)
