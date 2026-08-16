@@ -114,19 +114,42 @@ palette
   horn #cbbfa4
 ```
 
-A colour may also carry the two PBR factors:
+A colour may also carry PBR factors:
 
 ```
 palette
   steel #aeb6bf metal=1.0 rough=0.25     # polished metal
   gold  #c8a24a metal=1.0 rough=0.15
   wool  #7a2f2c rough=0.95               # matte cloth, not metal
-  skin  #c08b63                          # omitted: metal=0, rough=0.9
+  rune  #ffcc33 emit=0.8                 # glows in its own right
+  skin  #c08b63                          # omitted: metal=0, rough=0.9, emit=0
 ```
 
-Both are 0..1 and both are optional; anything else on the line is an error
-rather than a silently dropped key. They export as `metallicFactor` and
-`roughnessFactor`, so the glTF carries real PBR into Blender and engines.
+All three are 0..1 and all are optional; anything else on the line is an error
+rather than a silently dropped key. They export as `metallicFactor`,
+`roughnessFactor` and `emissiveFactor`, so the glTF carries real PBR into
+Blender and engines.
+
+`emit=` is self-illumination, and it **scales the colour rather than replacing
+it**: the material emits `colour x emit`. A rune at `#ffcc33 emit=0.8` emits a
+warm yellow; the same `emit=0.8` on `#101014` emits almost nothing, because
+there was almost nothing to emit. If you want a dark object with a bright
+glow, the glowing part is its own material — which is the same discrete,
+named decision the rest of the language asks for.
+
+Emission is added *after* shading rather than folded into it, in both the
+sheet renderer and the viewer. That is the whole point: a lamp has to stay lit
+on the side facing away from the key light, and folding emission into the
+shade term would let it go dark in its own shadow. Measured on a white sphere,
+declaring `emit=0.6` lifts the darkest 2% of body pixels from 57 to 159 out of
+255 while the already-saturated lit side is unchanged.
+
+The compiler warns when a declared glow cannot read — when `luminance x emit`
+falls below 0.02. That threshold is measured rather than guessed: on the same
+sphere, an emitted 0.01 lifts the shadowed tail by 2/255 and is invisible,
+while 0.02 lifts it by 5/255 and reads. The warning names both numbers, so
+`emit=0.02` on a bright colour is caught as readily as `emit=0.9` on a black
+one — and a deliberately subtle `emit=0.05` is left alone.
 
 The preview renderer honours them too, because a setting you cannot see in
 the sheet is a trap — but **only for colours that declare them**, so a model

@@ -129,7 +129,8 @@ def compile_model(path, out_prefix, views, anim_name=None, frames=6,
     V, T, M = mesh.arrays()
     mat_colors = [rgb for _, rgb in mesh.materials]
     props = getattr(model, "material_pbr", {}) or {}
-    mat_pbr = [((props[n]["metal"], props[n]["rough"]) if n in props else None)
+    mat_pbr = [((props[n]["metal"], props[n]["rough"],
+                 props[n].get("emit", 0.0)) if n in props else None)
                for n, _ in mesh.materials]
     # Bake after the edit layer, not instead of it.  The atlas is charted from
     # the mesh and rasterized per triangle with a per-texel material, so a

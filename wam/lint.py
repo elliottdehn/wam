@@ -204,6 +204,34 @@ def lint(model, bones, mesh):
 
     height = V[:, 1].max() - min(V[:, 1].min(), 0)
 
+    # 0. emission that cannot glow
+    # Emission scales the material's own colour, so declaring it on something
+    # near-black is the exact shape of trap this project keeps turning into a
+    # measurement: the model compiles, the glTF carries a real emissiveFactor,
+    # and nothing visibly lights up. Say the luminance rather than let the
+    # author conclude emission is broken.
+    used_materials = {name for i, (name, _rgb) in enumerate(mesh.materials)
+                      if (M == i).any()}
+    for name, props in sorted((getattr(model, "material_pbr", {}) or {}).items()):
+        emit = float(props.get("emit", 0.0))
+        if emit <= 0.0 or name not in used_materials:
+            continue
+        rgb = model.palette.get(name)
+        if rgb is None:
+            continue
+        # Rec. 709 luma: a dark blue and a dark grey glow equally poorly.
+        luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+        # Measured on a white sphere, lift of the shadowed 2% of pixels over
+        # the same model unlit: emitted 0.01 gives +2/255 and is invisible,
+        # 0.02 gives +5/255 and reads. Warning below 0.08 (the first guess)
+        # would have complained about deliberately subtle glows that work.
+        if luma * emit < 0.02:
+            warnings.append(
+                "material %r declares emit=%g but its colour has luminance "
+                "%.2f, so it emits %.2f and will not read as lit — emission "
+                "scales the colour, it does not replace it"
+                % (name, emit, luma, luma * emit))
+
     # 1. bones with no geometry nearby
     covered = set()
     for sk in mesh.skin:

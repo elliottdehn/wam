@@ -69,7 +69,7 @@ class Model:
         self.reach = 1.0           # multiplies every length along a path
         self.palette = {}          # name -> (r,g,b) floats 0..1
         self.profiles = {}         # name -> dict(points, mirror)
-        self.material_pbr = {}     # name -> dict(metal, rough)
+        self.material_pbr = {}     # name -> dict(metal, rough, emit)
         self.textures = {}         # name -> {base:(r,g,b), ops:[...]}
         self.bones = []            # list of dicts
         self.pins = []             # list of dicts: bone -> absolute head/tail
@@ -577,18 +577,18 @@ def parse(text, path=None):
         elif section == "palette":
             if len(tokens) < 2:
                 raise WamError("palette entry: <name> #rrggbb [metal=0..1] "
-                               "[rough=0..1]", line_no, line)
+                               "[rough=0..1] [emit=0..1]", line_no, line)
             model.palette[kw] = _hex_color(tokens[1], line_no, line)
             _, kv, _ = _split_kv(tokens[2:], line_no, line)
-            unknown = sorted(set(kv) - {"metal", "rough"})
+            unknown = sorted(set(kv) - {"metal", "rough", "emit"})
             if unknown:
                 raise WamError(
                     "palette %r does not understand %s — a colour takes "
-                    "metal= and rough=, both 0..1"
+                    "metal=, rough= and emit=, all 0..1"
                     % (kw, ", ".join(repr(u) for u in unknown)), line_no, line)
             if kv:
-                pbr = dict(metal=0.0, rough=0.9)
-                for k in ("metal", "rough"):
+                pbr = dict(metal=0.0, rough=0.9, emit=0.0)
+                for k in ("metal", "rough", "emit"):
                     if k in kv:
                         v = _num(kv[k], line_no, line)
                         if not 0.0 <= v <= 1.0:

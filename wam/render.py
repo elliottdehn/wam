@@ -344,10 +344,13 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
 
         mi = tri_mat[ti]
         props = mat_pbr[mi] if (mat_pbr is not None and mi < len(mat_pbr)) else None
+        # Tolerate the older two-value form, so a caller that still passes
+        # (metal, rough) keeps working rather than raising on unpack.
+        emit = float(props[2]) if (props is not None and len(props) > 2) else 0.0
         if props is None or ndh is None:
             px = base_px * shi[..., None]
         else:
-            metal, rough = props
+            metal, rough = props[0], props[1]
             power = 2.0 + 512.0 * (1.0 - rough) ** 3
             gain = (1.0 - rough) ** 2 * (0.35 + 0.65 * metal)
             # N·H is raised to the power *per pixel*. Interpolating the lobe
@@ -367,6 +370,12 @@ def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
             lit = shi * (1.0 - metal) + ev * metal
             tint = base_px if metal > 0.5 else np.ones(3)[None, None, :]
             px = base_px * lit[..., None] + tint * (gain * sp)[..., None]
+        if emit:
+            # Added after shading rather than folded into it, because the
+            # whole point of declaring emission is that the surface still
+            # reads on the side facing away from the key light. Folding it
+            # into the shade term would let a lamp go dark in its own shadow.
+            px = px + base_px * emit
         if fog is not None:
             f = np.clip((zi - fog["start"]) / max(fog["end"] - fog["start"], 1e-6),
                         0, 1) * fog.get("max", 0.85)

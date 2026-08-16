@@ -174,6 +174,12 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
         if tex_png is not None:
             pbr["baseColorTexture"] = dict(index=0)
         material = dict(name=mname, pbrMetallicRoughness=pbr)
+        emit = float(props.get("emit", 0.0))
+        if emit > 0.0:
+            # glTF emission is independent of baseColor, so it stays the
+            # material's own colour even on a textured export where
+            # baseColorFactor is white and the albedo comes from the atlas.
+            material["emissiveFactor"] = [float(c) * emit for c in rgb[:3]]
         if mname in double_sided:
             material["doubleSided"] = True
         materials.append(material)

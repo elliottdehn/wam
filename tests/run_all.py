@@ -17,6 +17,7 @@ TESTS = (
     "test_mirror.py",
     "test_cinematic.py",
     "test_acceptance_cine.py",
+    "test_emissive.py",
     "test_multiview.py",
     "test_multireference.py",
     "test_edits.py",

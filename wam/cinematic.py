@@ -305,6 +305,13 @@ class Loaded:
         self.vcols = (None if self.atlas is not None else
                       wtexture.bake_vertex_colors(self.model, self.mesh, V, T, M))
         self.colors = [rgb for _, rgb in self.mesh.materials]
+        # Emission is the reason a night shot can have lit windows or glowing
+        # runes at all, so the film renderer needs the same factors the
+        # turnaround sheet uses. None means "this colour declared nothing".
+        props = getattr(self.model, "material_pbr", {}) or {}
+        self.pbr = [((props[n]["metal"], props[n]["rough"],
+                      props[n].get("emit", 0.0)) if n in props else None)
+                    for n, _ in self.mesh.materials]
         self.markers = dict(getattr(self.model, "markers", {}) or {})
         # The checks language already knows how to turn a name into a point or
         # a vertex range. Reusing it is the whole reason `look at=crown.break`
@@ -384,6 +391,7 @@ class Scene:
 
         chunks = []          # (V, T, M, uv, colors_offset)
         self.colors = []
+        self.pbr = []        # parallel to self.colors; None = nothing declared
         self.atlas = None
         self.uv_rows = []
         self.actors = []     # (Loaded, slice, transform, anim, phase)
@@ -422,6 +430,7 @@ class Scene:
                 self._subjects[key] = (start, start + len(V))
                 self._targets[key] = (V.min(axis=0) + V.max(axis=0)) / 2.0
             self.colors.extend(mdl.colors)
+            self.pbr.extend(mdl.pbr)
             if entry.get("shadow"):
                 self._shadow_specs.append((start, start + len(V),
                                            float(base[1])))
@@ -509,6 +518,8 @@ class Scene:
                            "recompile the zone" % (npz, schema, SCENE_SCHEMA), 0, "")
         chunks.append((d["V"], d["T"], d["M"], d["UV"], d["tex"], None))
         self.colors.extend([tuple(c) for c in d["colors"]])
+        # A compiled zone dump carries colours only, so terrain declares none.
+        self.pbr.extend([None] * len(d["colors"]))
         self.sky = (tuple(d["sky"][0]), tuple(d["sky"][1]))
         fr = d["fog_range"]
         self.fog = dict(color=tuple(d["fog_color"]), start=float(fr[0]),
@@ -597,6 +608,7 @@ class Scene:
         self.floor = 0.0
         col = tuple(0.5 * np.array(self.sky[1]) + 0.5 * np.array([0.42, 0.44, 0.36]))
         self.colors.append(col)
+        self.pbr.append(None)
         M = np.full(len(T), len(self.colors) - 1, dtype=int)
         self.V = np.concatenate([self.V, V])
         self.T = np.concatenate([self.T, T])
@@ -626,6 +638,7 @@ class Scene:
                            "shadow cannot be projected — raise elevation above "
                            "about 9 degrees", 0, "")
         self.colors.append((0.0, 0.0, 0.0))
+        self.pbr.append(None)
         shadow_mat = len(self.colors) - 1
         for v0, v1, base_y in self._shadow_specs:
             src = self._base_V[v0:v1]
@@ -1786,6 +1799,7 @@ def _render(scene, cam, V, t, width, height):
         V, scene.T, scene.M, scene.colors,
         width=width, height=height, fov_deg=cam.fov_at(t),
         uv=scene.uv, tex=scene.atlas, sky=scene.sky, fog=scene.fog,
+        mat_pbr=getattr(scene, "pbr", None),
         eye=cam.eye_at(t), look=cam.look_at(t),
         sun=scene.sun, fill=scene.fill, ambient=scene.ambient)
 

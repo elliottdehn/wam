@@ -26,6 +26,12 @@ def _mat_entry(model, name, rgb):
     if props:
         entry["metal"] = round(float(props.get("metal", 0.0)), 3)
         entry["rough"] = round(float(props.get("rough", 0.9)), 3)
+        # Only when it is actually asked for: this file's contract is that a
+        # model which never mentioned a factor keeps the blob it already had,
+        # and the viewer already treats a missing emit as zero.
+        emit = round(float(props.get("emit", 0.0)), 3)
+        if emit:
+            entry["emit"] = emit
     return entry
 
 

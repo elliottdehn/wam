@@ -318,10 +318,10 @@ const IDENT=[0,0,0,1];
 // ---- GL programs (model-independent) ----
 const VS = `
 attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol; attribute vec2 aUV;
-attribute vec2 aPBR;
+attribute vec3 aPBR;
 uniform mat4 uMVP; uniform mat3 uRot;
 varying vec3 vN; varying vec3 vC; varying vec2 vUV; varying float vW; varying vec3 vPos;
-varying vec2 vPBR;
+varying vec3 vPBR;
 void main(){
   gl_Position = uMVP * vec4(aPos, 1.0);
   vN = aNrm;              // world-space; sun is fixed in the world
@@ -334,7 +334,7 @@ void main(){
 const FS = `
 precision mediump float;
 varying vec3 vN; varying vec3 vC; varying vec2 vUV; varying float vW; varying vec3 vPos;
-varying vec2 vPBR;
+varying vec3 vPBR;
 uniform sampler2D uTex;
 uniform sampler2D uDetail;
 uniform float uUseTex;
@@ -375,6 +375,10 @@ void main(){
     vec3 tint = metal > 0.5 ? base : vec3(1.0);
     lit = base * shade + tint * spec;
   }
+  // Emission is added after shading, matching wam/render.py: a declared glow
+  // has to survive the side facing away from the key light, which is the
+  // whole reason for declaring it.
+  lit += base * max(vPBR.z, 0.0);
   float f = clamp((vW - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-5), 0.0, 1.0) * uFogColor.a;
   gl_FragColor = vec4(mix(lit, uFogColor.rgb, f), 1.0);
 }`;
@@ -688,7 +692,7 @@ function loadModel(DATA,preserveCamera=false){
 
   const fpos=new Float32Array(NT*9), fnrm=new Float32Array(NT*9),
         fcol=new Float32Array(NT*9), fuv=new Float32Array(NT*6),
-        fpbr=new Float32Array(NT*6);
+        fpbr=new Float32Array(NT*9);
   for(let t=0;t<NT;t++){
     for(let k=0;k<3;k++){
       const vi=DATA.tris[t*3+k];
@@ -697,8 +701,9 @@ function loadModel(DATA,preserveCamera=false){
       else { const rgb=DATA.mats[DATA.triMat[t]].rgb; r=rgb[0]; g=rgb[1]; bl=rgb[2]; }
       fcol[t*9+k*3]=r; fcol[t*9+k*3+1]=g; fcol[t*9+k*3+2]=bl;
       const mt=DATA.mats[DATA.triMat[t]];
-      fpbr[t*6+k*2]   = (mt && mt.metal!==undefined) ? mt.metal : -1.0;
-      fpbr[t*6+k*2+1] = (mt && mt.rough!==undefined) ? mt.rough : 0.9;
+      fpbr[t*9+k*3]   = (mt && mt.metal!==undefined) ? mt.metal : -1.0;
+      fpbr[t*9+k*3+1] = (mt && mt.rough!==undefined) ? mt.rough : 0.9;
+      fpbr[t*9+k*3+2] = (mt && mt.emit!==undefined) ? mt.emit : 0.0;
       if(DATA.uv){ fuv[t*6+k*2]=DATA.uv[vi*2]; fuv[t*6+k*2+1]=DATA.uv[vi*2+1]; }
     }
   }
@@ -1746,7 +1751,7 @@ function draw(){
   gl.bindBuffer(gl.ARRAY_BUFFER,bCol);
   gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bPBR);
-  gl.enableVertexAttribArray(aPBR); gl.vertexAttribPointer(aPBR,2,gl.FLOAT,false,0,0);
+  gl.enableVertexAttribArray(aPBR); gl.vertexAttribPointer(aPBR,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,bUV);
   gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);
   gl.activeTexture(gl.TEXTURE0);
