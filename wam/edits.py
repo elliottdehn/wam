@@ -13,6 +13,8 @@ import re
 
 import numpy as np
 
+from . import color as wcolor
+
 from .parser import WamError
 
 
@@ -72,9 +74,10 @@ def _vec(value, name, positive=False):
 
 
 def _color(value):
+    """An edit layer's `#rrggbb` -> the linear value the mesh works in."""
     if not isinstance(value, str) or not _HEX.match(value):
         raise EditLayerError("color must use #rrggbb")
-    return tuple(int(value[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+    return wcolor.hex_to_linear(value)
 
 
 def _part_faces(mesh, part):
@@ -127,7 +130,10 @@ def _mirror_part(mesh, part, required, explicit=None):
 
 def _mat(mesh, color):
     """Reuse a stable synthetic material for every face painted the same colour."""
-    name = "edit_%02x%02x%02x" % tuple(round(channel * 255) for channel in color)
+    # Name it after the hex someone actually picked, not the linear value: the
+    # name is an identifier a human reads next to a swatch. The conversion
+    # round-trips exactly at 8 bits, so this is the string they typed.
+    name = "edit_%s" % wcolor.linear_to_hex(color)[1:]
     return mesh.material(name, color)
 
 

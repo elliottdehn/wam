@@ -21,6 +21,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from wam import cli as wcli  # noqa: E402
+from wam import color as wcolor  # noqa: E402
 from wam import cinematic as wcine  # noqa: E402
 from wam import parser as wparser  # noqa: E402
 from wam import viewer_export as wviewer  # noqa: E402
@@ -162,12 +163,31 @@ rune = [m for m in gltf["materials"] if m["name"] == "rune"]
 check("the glTF carries emissiveFactor", bool(rune) and "emissiveFactor" in rune[0],
       json.dumps(rune))
 if rune and "emissiveFactor" in rune[0]:
-    # colour x emit, not the raw colour: #ffcc33 at 0.8 -> (0.8, 0.64, 0.16)
-    want = [1.0 * 0.8, (0xcc / 255.0) * 0.8, (0x33 / 255.0) * 0.8]
+    # Two things have to be right here, and only one of them is obvious.
+    #
+    # The obvious one: the factor is the colour scaled by emit, not the raw
+    # colour. The other: glTF's emissiveFactor is LINEAR, and so is the
+    # palette by the time it reaches the exporter -- the conversion happens
+    # once when the hex is parsed. So this is the palette value scaled by a
+    # plain multiplier, with no conversion at the exporter at all.
+    #
+    # #ffcc33 at emit=0.8 -> linear (1.0, 0.6038, 0.0331) -> x0.8 ->
+    # (0.800, 0.483, 0.026). Those are the numbers a consumer must receive,
+    # and they did not change when the pipeline moved to linear internally --
+    # only the place responsible for producing them did.
+    #
+    # Assert all three channels. Red is a fixed point of the conversion
+    # (1.0 stays 1.0), so a one-channel check passes just as happily on a
+    # half-applied conversion as on a correct one.
+    want = [wcolor.srgb_to_linear(c) * 0.8
+            for c in (1.0, 0xcc / 255.0, 0x33 / 255.0)]
     got = rune[0]["emissiveFactor"]
-    check("emissiveFactor is the colour scaled by emit",
-          all(abs(a - b) < 0.01 for a, b in zip(got, want)),
-          "got %s want %s" % (got, [round(v, 3) for v in want]))
+    check("emissiveFactor is the linearised colour scaled by emit",
+          len(got) == 3 and all(abs(a - b) < 0.002 for a, b in zip(got, want)),
+          "got %s want %s" % (got, [round(v, 4) for v in want]))
+    check("emissiveFactor is not the raw sRGB colour scaled by emit",
+          abs(got[1] - (0xcc / 255.0) * 0.8) > 0.05,
+          "green channel %.4f is the un-converted value" % got[1])
 
 with open(os.path.join(TMP, "off.gltf")) as handle:
     plain = json.load(handle)

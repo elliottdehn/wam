@@ -2,6 +2,12 @@
 """Semantic lint: catches the mistakes that make models look broken."""
 import numpy as np
 
+from . import color as wcolor
+
+# The ambient term in wam/render.py: what a surface gets with no key light
+# on it, and therefore the level a glow has to lift above to be seen.
+AMBIENT_SHADE = 0.34
+
 from . import animation as wanim
 from . import checks as wchecks
 
@@ -219,18 +225,29 @@ def lint(model, bones, mesh):
         rgb = model.palette.get(name)
         if rgb is None:
             continue
-        # Rec. 709 luma: a dark blue and a dark grey glow equally poorly.
+        # Rec. 709 luminance, on the linear values the palette now holds --
+        # which is the space those coefficients are defined for.
         luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
-        # Measured on a white sphere, lift of the shadowed 2% of pixels over
-        # the same model unlit: emitted 0.01 gives +2/255 and is invisible,
-        # 0.02 gives +5/255 and reads. Warning below 0.08 (the first guess)
-        # would have complained about deliberately subtle glows that work.
-        if luma * emit < 0.02:
+        # Predict the lift the author will actually see rather than threshold a
+        # proxy for it. A fixed cut on `luma * emit` was calibrated when the
+        # renderer worked in sRGB; in linear the same emitted amount lifts a
+        # near-black material 7.7/255 and a bright one 2.7/255, because the
+        # display curve is far steeper near black. So model it: the shadowed
+        # side of a material sits near its own colour times the ambient term,
+        # and the lift is what emission adds once encoded for display.
+        # Measured against renders: predicted and actual agree within a level
+        # or so across #3b2a22, #808080 and #ffcc33. Under +3/255 nothing
+        # reads; +5 reads.
+        shadowed = luma * AMBIENT_SHADE
+        lift = 255.0 * float(wcolor.linear_to_srgb(shadowed + luma * emit)
+                             - wcolor.linear_to_srgb(shadowed))
+        if lift < 3.0:
             warnings.append(
                 "material %r declares emit=%g but its colour has luminance "
-                "%.2f, so it emits %.2f and will not read as lit — emission "
-                "scales the colour, it does not replace it"
-                % (name, emit, luma, luma * emit))
+                "%.3f, so the glow would lift its shadowed side by about "
+                "%.1f/255 and will not read as lit — emission scales the "
+                "colour, it does not replace it"
+                % (name, emit, luma, lift))
 
     # 1. bones with no geometry nearby
     covered = set()

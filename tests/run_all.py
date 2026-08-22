@@ -18,6 +18,7 @@ TESTS = (
     "test_cinematic.py",
     "test_acceptance_cine.py",
     "test_emissive.py",
+    "test_colorspace.py",
     "test_multiview.py",
     "test_multireference.py",
     "test_edits.py",

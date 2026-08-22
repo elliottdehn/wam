@@ -6,6 +6,15 @@ import zlib
 
 import numpy as np
 
+from . import color as wcolor
+
+# The sheet's backdrop and the padding between panels, in linear, chosen so
+# they encode back to the exact greys these have always been (0.92/0.94 and
+# 0.85 in display terms). Everything the renderer touches is linear now; a
+# constant that exists to look a certain way has to be declared that way.
+SHEET_BG = tuple(wcolor.srgb_to_linear(c) for c in (0.92, 0.92, 0.94))
+PAD_BG = wcolor.srgb_to_linear(0.85)
+
 
 def png_bytes(img):
     """Encode (H,W,3) float image to PNG bytes."""
@@ -17,7 +26,10 @@ def png_bytes(img):
 
 def _write_png_fh(f, img):
     h, w, _ = img.shape
-    data = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    # The renderer works in linear light; a PNG is displayed as sRGB. This is
+    # the only place that conversion happens on the way out, and every image
+    # WAM writes passes through it.
+    data = wcolor.encode_image(img)
     raw = b"".join(b"\x00" + data[y].tobytes() for y in range(h))
 
     def chunk(tag, payload):
@@ -31,21 +43,9 @@ def _write_png_fh(f, img):
 
 
 def write_png(path, img):
-    """img: (H,W,3) float 0..1"""
-    h, w, _ = img.shape
-    data = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-    raw = b"".join(b"\x00" + data[y].tobytes() for y in range(h))
-
-    def chunk(tag, payload):
-        c = struct.pack(">I", len(payload)) + tag + payload
-        return c + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF)
-
-    png = (b"\x89PNG\r\n\x1a\n"
-           + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-           + chunk(b"IDAT", zlib.compress(raw, 6))
-           + chunk(b"IEND", b""))
+    """img: (H,W,3) float 0..1, linear. Encoded to sRGB as it is written."""
     with open(path, "wb") as f:
-        f.write(png)
+        _write_png_fh(f, img)
 
 
 def quiet_fp(fn):
@@ -147,7 +147,7 @@ def fit_distance(V, center, R, fov_deg=28.0, aspect=1.0, margin=1.12):
 
 @quiet_fp
 def render_view(V, T, tri_mat, mat_colors, yaw_deg=0.0, pitch_deg=10.0,
-                width=480, height=600, fov_deg=28.0, bg=(0.92, 0.92, 0.94),
+                width=480, height=600, fov_deg=28.0, bg=SHEET_BG,
                 ground_y=None, margin=1.12, vert_colors=None,
                 uv=None, tex=None, sky=None, fog=None,
                 eye=None, look=None, detail=None, detail_scale=180.0,
@@ -467,7 +467,7 @@ def _clip_near(Vc, T, tri_mat, near, attrs):
     return T2, np.array(out_mats, dtype=int), Vc2, ext
 
 
-def hstack_views(images, pad=6, bg=0.85):
+def hstack_views(images, pad=6, bg=PAD_BG):
     h = max(im.shape[0] for im in images)
     total_w = sum(im.shape[1] for im in images) + pad * (len(images) + 1)
     sheet = np.full((h + 2 * pad, total_w, 3), bg)
@@ -478,7 +478,7 @@ def hstack_views(images, pad=6, bg=0.85):
     return sheet
 
 
-def vstack_views(images, pad=6, bg=0.85):
+def vstack_views(images, pad=6, bg=PAD_BG):
     """Stack rows (each already an hstacked strip) into one sheet."""
     w = max(im.shape[1] for im in images)
     total_h = sum(im.shape[0] for im in images) + pad * (len(images) - 1)
@@ -490,7 +490,7 @@ def vstack_views(images, pad=6, bg=0.85):
     return sheet
 
 
-def grid_views(images, cols, pad=6, bg=0.85):
+def grid_views(images, cols, pad=6, bg=PAD_BG):
     rows = (len(images) + cols - 1) // cols
     ch = max(im.shape[0] for im in images)
     cw = max(im.shape[1] for im in images)

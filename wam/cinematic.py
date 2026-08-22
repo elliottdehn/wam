@@ -26,6 +26,7 @@ from . import animation as wanim
 from . import checks as wchecks
 from . import mesh as wmesh
 from . import parser as wparser
+from . import color as wcolor
 from . import render as wr
 from . import skeleton as wskel
 from . import texture as wtexture
@@ -1304,8 +1305,14 @@ def sample_px(img, x, y):
 
 
 def to_hex(rgb):
-    c = np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0)
-    return "#%02x%02x%02x" % tuple(int(round(v * 255)) for v in c)
+    """A linear colour as the hex an author would recognise.
+
+    Hex is an sRGB notation, so this encodes on the way out -- the same
+    conversion the PNG writer does. A scene that declares `sky top=#1b2740`
+    reads back as `#1b2740`, and a sampled pixel reports the colour someone
+    would get with an eyedropper rather than its linear magnitude.
+    """
+    return wcolor.linear_to_hex(np.clip(np.asarray(rgb, dtype=float), 0.0, 1.0))
 
 
 class RGBSeries:

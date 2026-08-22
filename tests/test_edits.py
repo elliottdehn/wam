@@ -22,6 +22,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from wam import cli as wcli  # noqa: E402
 from wam import codex_cli  # noqa: E402
+from wam import color as wcolor
 from wam import edits as wedges  # noqa: E402
 from wam import mesh as wmesh  # noqa: E402
 from wam import parser as wparser  # noqa: E402
@@ -175,7 +176,10 @@ class EditedAtlasTests(unittest.TestCase):
         atlas, _uv = wtexture.bake_atlas(model, mesh, V, T, M)
         self.assertIsNotNone(atlas)
         flat = atlas.reshape(-1, 3)
-        target = np.array([0xd9, 0x2b, 0x2b]) / 255.0
+        # The atlas is held in linear, like everything else inside WAM; it is
+        # encoded to sRGB only when it is written out as a PNG. Look for the
+        # colour in the space the array is actually in.
+        target = np.array(wcolor.hex_to_linear("#d92b2b"))
         red = int((np.abs(flat - target).max(axis=1) < 0.02).sum())
         filled = int((flat.sum(axis=1) > 0).sum())
         self.assertGreater(red, 0, "the repaint never reached the atlas")

@@ -137,7 +137,10 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
     w_acc = bb.add(WEIGHTS, 34962, 5126, "VEC4")
     col_acc = None
     if vert_colors is not None and tex_png is None:
-        col_acc = bb.add(np.asarray(vert_colors, dtype=np.float32), 34962, 5126, "VEC3")
+        # COLOR_0 is linear, and so is everything inside WAM, so the baked
+        # array goes out as it is. See wam/color.py.
+        col_acc = bb.add(np.asarray(vert_colors, dtype=np.float32),
+                         34962, 5126, "VEC3")
     uv_acc = None
     if uv is not None and tex_png is not None:
         uv_acc = bb.add(np.asarray(uv, dtype=np.float32), 34962, 5126, "VEC2")
@@ -166,7 +169,10 @@ def export(path, model, bones_dict, bone_order, mesh, anim_tracks, scale, vert_c
     for mi in used:
         mname, rgb = mesh.materials[mi]
         textured = vert_colors is not None or tex_png is not None
-        base = [1.0, 1.0, 1.0, 1.0] if textured else [rgb[0], rgb[1], rgb[2], 1.0]
+        # glTF defines these as linear and WAM holds them linear, so the
+        # palette value is written straight through.
+        base = ([1.0, 1.0, 1.0, 1.0] if textured
+                else [float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0])
         props = (getattr(model, "material_pbr", {}) or {}).get(mname, {})
         pbr = dict(baseColorFactor=base,
                    metallicFactor=float(props.get("metal", 0.0)),

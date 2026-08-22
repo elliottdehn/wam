@@ -114,6 +114,19 @@ palette
   horn #cbbfa4
 ```
 
+Colours are written as sRGB hex, which is what a colour picker gives you and
+what every other tool calls that value. The compiler converts each one to
+linear as it parses the line, and everything downstream — shading, texture
+ops, the glTF, the viewer — works in linear light, because multiplying a
+colour by an amount of illumination only means anything there. Renders and
+the atlas are encoded back to sRGB as they are written.
+
+Nothing about authoring changes: write the hex you want, and that is the
+colour that arrives. `#8c5a3c` in the palette is `#8c5a3c` when the glTF is
+imported into Blender or Godot, and `tests/test_colorspace.py` holds that true
+byte for byte. See `wam/color.py` for why the internal representation is
+linear.
+
 A colour may also carry PBR factors:
 
 ```

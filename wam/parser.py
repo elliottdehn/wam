@@ -7,6 +7,8 @@ See SPEC.md for the full grammar.
 import math
 import re
 
+from . import color as wcolor
+
 
 class WamError(Exception):
     def __init__(self, msg, line_no=None, line=None):
@@ -186,11 +188,19 @@ def _similar(a, b):
 
 
 def _hex_color(tok, line_no, line):
-    m = re.match(r"^#([0-9a-fA-F]{6})$", tok)
-    if not m:
+    """Authored sRGB hex -> the linear value everything downstream works in.
+
+    This is the single door colour comes in through -- palettes, texture
+    bases, texture ops, cinematic skies and lights, zones. Converting here is
+    what lets the renderer shade correctly and the glTF exporter write the
+    value it already holds. See wam/color.py for why linear is the internal
+    representation; authors keep writing sRGB hex and nothing they wrote
+    changes meaning.
+    """
+    rgb = wcolor.hex_to_linear(tok)
+    if rgb is None:
         raise WamError("expected color like #rrggbb, got %r" % tok, line_no, line)
-    h = m.group(1)
-    return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    return rgb
 
 
 def _skin_spec(tok, line_no, line):

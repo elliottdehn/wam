@@ -30,6 +30,17 @@ animation, reference-image, or `.wam` work.
 - Preserve the historical `.gltf`, viewer HTML, and sheet outputs when changing
   render behavior.
 
+## Colour
+
+- Colours are authored as sRGB hex and held internally as **linear**;
+  `wam/color.py` owns both conversions and is the only module that should.
+- Colour enters through `parser._hex_color` (and `edits._color`) and leaves
+  through `render.write_png` / `png_bytes`. A new consumer that wants sRGB
+  encodes at its own edge; a new exporter that wants linear writes the value
+  it already has.
+- `tests/test_colorspace.py` holds the guarantee that whatever hex an author
+  writes is what an importer receives.
+
 ## Validation and safety
 
 - Run `python3 tests/run_all.py` for the complete suite; the runner keeps the

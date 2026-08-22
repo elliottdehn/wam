@@ -351,7 +351,12 @@ void main(){
   vec3 L2 = normalize(vec3(0.55, 0.15, -0.60));   // fill
   float sh = 0.34 + 0.60*max(dot(n,L1),0.0) + 0.16*max(dot(n,L2),0.0);
   if(back > 0.5) sh *= 0.7;
-  vec3 base = mix(vC, texture2D(uTex, vUV).rgb, uUseTex);
+  // The atlas is a PNG, so it arrives sRGB-encoded; everything else the
+  // viewer is handed is already linear. Decode it before it meets any light.
+  vec3 tex = texture2D(uTex, vUV).rgb;
+  tex = mix(tex / 12.92, pow((tex + 0.055) / 1.055, vec3(2.4)),
+            step(vec3(0.04045), tex));
+  vec3 base = mix(vC, tex, uUseTex);
   if(uUseDetail > 0.5){
     float d1 = texture2D(uDetail, vUV * uDetailScale).r;
     float d2 = texture2D(uDetail, vUV * uDetailScale * 0.27 + 0.37).r;
@@ -380,7 +385,14 @@ void main(){
   // whole reason for declaring it.
   lit += base * max(vPBR.z, 0.0);
   float f = clamp((vW - uFogRange.x) / max(uFogRange.y - uFogRange.x, 1e-5), 0.0, 1.0) * uFogColor.a;
-  gl_FragColor = vec4(mix(lit, uFogColor.rgb, f), 1.0);
+  vec3 outc = mix(lit, uFogColor.rgb, f);
+  // Shading happened in linear, matching wam/render.py. Encode on the way to
+  // the screen -- the same conversion write_png does for the sheets, which is
+  // what keeps the viewer and the sheet showing the same model.
+  outc = clamp(outc, 0.0, 1.0);
+  outc = mix(outc * 12.92, 1.055 * pow(outc, vec3(1.0 / 2.4)) - 0.055,
+             step(vec3(0.0031308), outc));
+  gl_FragColor = vec4(outc, 1.0);
 }`;
 const LVS = `
 attribute vec3 aPos; uniform mat4 uMVP;
