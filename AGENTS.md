@@ -46,6 +46,13 @@ so a broken render announces itself.
   it already has.
 - `tests/test_colorspace.py` holds the guarantee that whatever hex an author
   writes is what an importer receives.
+- **Anything that builds an image and hands it to `write_png` must declare its
+  own palette in linear too** — backdrops, grid lines, colour ramps. A constant
+  that exists to *look* a certain way is a display value and will be encoded
+  twice otherwise. `wam/render.py` (`SHEET_BG`, `PAD_BG`) and
+  `wam/audio_sheet.py` both do this; the audio sheets washed out when they did
+  not. A colour *ramp* is the exception worth knowing: mix it in display space
+  and convert once at the end, or its stops stop being evenly spaced as seen.
 
 ## Validation and safety
 
