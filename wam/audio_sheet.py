@@ -12,6 +12,7 @@ import math
 import numpy as np
 
 from . import audio as waudio
+from . import color as wcolor
 from . import render as wrender
 
 
@@ -106,30 +107,45 @@ def text_width(text, scale=1):
 
 # ------------------------------------------------------------------ colours
 
-BG = (0.055, 0.06, 0.075)
-PANEL = (0.09, 0.10, 0.125)
-GRID = (0.20, 0.22, 0.27)
-INK = (0.80, 0.84, 0.90)
-DIM = (0.45, 0.49, 0.57)
-WAVE = (0.42, 0.78, 0.95)
-WAVE2 = (0.95, 0.62, 0.36)
-ACCENT = (0.98, 0.78, 0.30)
+# These are display values -- the greys and inks this sheet has always been
+# drawn in. Everything WAM renders is linear and is encoded to sRGB by
+# write_png, so a colour that exists to *look* a certain way has to be
+# declared in linear or it gets encoded twice and washes out. See wam/color.py.
+def _ink(*rgb):
+    return tuple(float(wcolor.srgb_to_linear(c)) for c in rgb)
+
+
+BG = _ink(0.055, 0.06, 0.075)
+PANEL = _ink(0.09, 0.10, 0.125)
+GRID = _ink(0.20, 0.22, 0.27)
+INK = _ink(0.80, 0.84, 0.90)
+DIM = _ink(0.45, 0.49, 0.57)
+WAVE = _ink(0.42, 0.78, 0.95)
+WAVE2 = _ink(0.95, 0.62, 0.36)
+ACCENT = _ink(0.98, 0.78, 0.30)
+LEVEL = _ink(0.30, 0.55, 0.70)
 
 # Perceptually-ordered ramp for the spectrogram: dark blue -> magenta ->
 # orange -> white. Ordered by luminance so a printout still reads correctly.
-_RAMP = [(0.02, 0.02, 0.09), (0.16, 0.06, 0.35), (0.45, 0.09, 0.45),
-         (0.72, 0.21, 0.33), (0.91, 0.47, 0.15), (0.99, 0.78, 0.28),
-         (1.00, 0.98, 0.86)]
+#
+# Kept in display values and interpolated there, unlike every other colour in
+# this file. The stops were chosen to be evenly spaced *as seen*, and mixing
+# them in linear moves every midtone off that spacing -- which for a colour
+# ramp is not a subtle difference, it is the ramp no longer meaning what it
+# was drawn to mean. Interpolate as designed, convert once at the end.
+_RAMP_SRGB = np.array([(0.02, 0.02, 0.09), (0.16, 0.06, 0.35), (0.45, 0.09, 0.45),
+                       (0.72, 0.21, 0.33), (0.91, 0.47, 0.15), (0.99, 0.78, 0.28),
+                       (1.00, 0.98, 0.86)])
 
 
 def colormap(v):
-    """v in 0..1 -> (H,W,3), vectorised."""
-    v = np.clip(v, 0.0, 1.0) * (len(_RAMP) - 1)
+    """v in 0..1 -> (H,W,3) linear, vectorised. Mixed in display space."""
+    v = np.clip(v, 0.0, 1.0) * (len(_RAMP_SRGB) - 1)
     lo = np.floor(v).astype(int)
-    hi = np.minimum(lo + 1, len(_RAMP) - 1)
+    hi = np.minimum(lo + 1, len(_RAMP_SRGB) - 1)
     f = (v - lo)[..., None]
-    ramp = np.array(_RAMP)
-    return ramp[lo] * (1.0 - f) + ramp[hi] * f
+    mixed = _RAMP_SRGB[lo] * (1.0 - f) + _RAMP_SRGB[hi] * f
+    return wcolor.srgb_to_linear(mixed)
 
 
 def _rect(img, x0, y0, x1, y1, color):
@@ -259,7 +275,7 @@ def build_sheet(piece, width=1180):
     cols = np.interp(np.linspace(0, len(env) - 1, plot_w), np.arange(len(env)), env)
     for col, v in enumerate(cols):
         top = int(y + mark_h - v * (mark_h - 12))
-        _rect(img, x0 + col, top, x0 + col + 1, y + mark_h, (0.30, 0.55, 0.70))
+        _rect(img, x0 + col, top, x0 + col + 1, y + mark_h, LEVEL)
     for t in waudio.find_onsets(mono, rate):
         _vline(img, x0 + t / max(dur, 1e-9) * plot_w, y, y + mark_h, ACCENT, 0.9)
     draw_text(img, pad, y + mark_h // 2 - 3, "hits", DIM)
