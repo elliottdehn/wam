@@ -296,9 +296,9 @@ The code, the language and the documentation are MIT — see `LICENSE`.
 
 **`samples/` is not.** The recorded instrument banks under `samples/` are
 third-party audio under their own licences, and the MIT licence does not cover
-them. Today that is one piano bank under Creative Commons Attribution 3.0;
-`samples/piano/ATTRIBUTION.md` names its authors, links the licence, and lists
-what was changed. Ship that file with the audio, keep the notice intact, and
+them. Today that is a piano bank under Creative Commons Attribution 3.0 and a drum
+kit under Creative Commons Attribution 4.0; the `ATTRIBUTION.md` in each names
+its authors, links its licence, and lists what was changed. Ship that file with the audio, keep the notice intact, and
 nothing else about WAM's licensing changes.
 
 Everything the compiler *generates* is yours. Sampled instruments are the only

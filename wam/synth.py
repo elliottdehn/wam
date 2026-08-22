@@ -596,6 +596,41 @@ def play_sample(bank, freq, n, sr=SR):
     return out
 
 
+_KITS = {}
+
+
+def load_kit(mapping):
+    """`{piece: path}` -> a cached kit of recordings, keyed by piece.
+
+    A drum bank is not a pitched one. Nothing is transposed and nothing is
+    chosen by frequency: a snare is a snare, and the only question is which
+    file it is.
+    """
+    key = tuple(sorted(mapping.items()))
+    if key in _KITS:
+        return _KITS[key]
+    kit = {}
+    for piece, path in mapping.items():
+        data, rate = _read_wav(path)
+        peak = float(np.max(np.abs(data))) or 1.0
+        kit[piece] = (data / peak, rate)
+    _KITS[key] = kit
+    return kit
+
+
+def play_hit(kit, piece, sr=SR):
+    """One drum recording, at the render's sample rate. Rings its own length."""
+    entry = kit.get(piece)
+    if entry is None:
+        return None
+    data, data_sr = entry
+    if data_sr == sr:
+        return data
+    n = int(len(data) * sr / float(data_sr))
+    return np.interp(np.arange(n) * (data_sr / float(sr)),
+                     np.arange(len(data)), data)
+
+
 def bell(freq, n, sr=SR, tone="plain", seed=0):
     """Inharmonic FM: a struck metal body, not a tuned oscillator."""
     if n <= 0:

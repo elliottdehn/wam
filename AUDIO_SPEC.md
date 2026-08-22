@@ -61,7 +61,7 @@ instruments
 
 | option | values |
 |---|---|
-| `source=` | `sine tri saw square pulse pluck piano bell metal thump breath bow drone noise pink band sample` |
+| `source=` | `sine tri saw square pulse pluck piano bell metal thump breath bow drone noise pink band sample kit` |
 | `tone=` | `plain bright warm dark soft harsh hollow thin fat`, or any tone the file defines |
 | `env=` | `pluck hit stab pad swell sustain gate bloom bow natural` |
 | `level=` | fader, as a percentage |
@@ -90,6 +90,21 @@ instrument piano source=sample bank=samples/piano env=natural
 recorded at — `piano_c'.wav`, `piano_es''.wav` — so the bank is readable and
 each file says what it is. Each written note is played from the nearest
 recording, transposed. `file=` with `root=` names a single sample instead.
+
+A **drum** bank is `source=kit` instead, and is keyed by piece rather than by
+pitch — nothing is transposed, because a snare is a snare:
+
+```
+instruments
+  instrument kit source=kit bank=samples/drums
+```
+
+The directory holds `kick.wav`, `snare.wav`, `hat.wav`, `openhat.wav`,
+`tom.wav`, `lowtom.wav`, `crash.wav`, `ride.wav`. Any piece the bank does not
+supply falls back to the synthesised kit, so a partial bank is fine. A staff
+naming a `source=kit` instrument reads its bars as drum pieces, exactly as
+`instrument=kit` does. Each hit rings for as long as the recording does — the
+written note value says when a cymbal starts, not how long it lasts.
 
 Use a bank rather than one file. Transposing a recording more than a few
 semitones drags its formants along with it, and a piano sample pushed two

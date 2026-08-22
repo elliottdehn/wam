@@ -649,8 +649,12 @@ def _start_staff(song, doc, tok, ln, raw):
         raise WamAudioError("curve is one of %s" % ", ".join(CURVES), ln, raw)
     if any(st["name"] == staff["name"] for st in song["staves"]):
         raise WamAudioError("staff %r declared twice" % staff["name"], ln, raw)
-    # A drum staff reads its tokens as kit pieces rather than pitches.
-    staff["drums"] = staff["instrument"] == "kit"
+    # A drum staff reads its tokens as kit pieces rather than pitches. That is
+    # true of the built-in `kit` and of any instrument declaring `source=kit`,
+    # which is a bank of recordings keyed by piece.
+    declared = doc["instruments"].get(staff["instrument"], {})
+    staff["drums"] = (staff["instrument"] == "kit"
+                      or declared.get("source") == "kit")
     song["staves"].append(staff)
     return staff
 

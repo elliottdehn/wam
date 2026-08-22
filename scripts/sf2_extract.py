@@ -68,6 +68,86 @@ def read_sf2(path):
     return smpl, headers
 
 
+# How a drum soundfont's sample names map onto WAM's kit pieces. Matched as
+# case-insensitive substrings against the name with its take number and
+# channel suffix stripped, first match winning -- so the order matters: `Tom4`
+# has to be tested before `Tom`.
+DRUM_MAP = (
+    ("kick", ("kdruml", "kick", "bassdrum")),
+    ("snare", ("snare",)),
+    ("hat", ("hihatclosed", "hatclosed", "closedhat")),
+    ("openhat", ("hihatopen", "hatopen", "openhat")),
+    ("lowtom", ("tom4", "tom3", "lowtom", "floortom")),
+    ("tom", ("tom2", "tom1", "tom")),
+    ("crash", ("crashl", "crash")),
+    ("ride", ("ridel", "ride")),
+)
+
+
+def drum_stem(name):
+    """A soundfont sample name with its take number and channel stripped."""
+    stem = re.sub(r"^\d+-", "", name)
+    return re.sub(r"_[LR]$", "", stem).lower()
+
+
+def drum_piece(stem, exact_only=False):
+    """A stripped sample name -> the WAM piece it is, or None."""
+    for piece, keys in DRUM_MAP:
+        if stem in keys:
+            return piece
+    if exact_only:
+        return None
+    for piece, keys in DRUM_MAP:
+        for key in keys:
+            if stem.startswith(key):
+                return piece
+    return None
+
+
+def extract_drums(smpl, headers, outdir, take, trim=0.0):
+    """Write one recording per kit piece, named for the piece."""
+    os.makedirs(outdir, exist_ok=True)
+    # Several takes exist per piece -- velocity layers, and left and right
+    # channels as separate samples. Pick one: the take whose leading number is
+    # nearest the one asked for, preferring the left channel.
+    # Two passes. An exactly-named sample always wins, and the looser prefix
+    # match only fills pieces that nothing named exactly -- otherwise a
+    # `SnareRest` take at a closer velocity beats the actual `Snare`.
+    best = {}
+    for exact_only in (True, False):
+        for h in headers:
+            piece = drum_piece(drum_stem(h["name"]), exact_only)
+            if piece is None or (not exact_only and piece in best):
+                continue
+            m = re.match(r"^(\d+)-", h["name"])
+            layer = int(m.group(1)) if m else 0
+            rank = (abs(layer - take), 0 if h["name"].endswith("_L") else 1)
+            if piece not in best or rank < best[piece][0]:
+                best[piece] = (rank, h)
+    for piece, (_rank, h) in sorted(best.items()):
+        pcm = smpl[h["start"] * 2:h["end"] * 2]
+        if trim:
+            keep = int(trim * h["rate"]) * 2
+            if len(pcm) > keep:
+                import numpy as _np
+                cut = _np.frombuffer(pcm[:keep], dtype="<i2").astype(float)
+                fade = int(0.08 * h["rate"])
+                cut[-fade:] *= _np.linspace(1.0, 0.0, fade)
+                pcm = cut.astype("<i2").tobytes()
+        out = os.path.join(outdir, "%s.wav" % piece)
+        with wave.open(out, "wb") as fh:
+            fh.setnchannels(1)
+            fh.setsampwidth(2)
+            fh.setframerate(h["rate"])
+            fh.writeframes(pcm)
+        print("%-34s %5.2fs  from %s" % (out, len(pcm) / 2.0 / h["rate"], h["name"]))
+    print("\n%d pieces -> %s" % (len(best), outdir))
+    return 0
+
+
+import re  # noqa: E402  (used by the drum mapping above)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sf2_extract")
     ap.add_argument("soundfont")
@@ -78,6 +158,10 @@ def main(argv=None):
     ap.add_argument("--trim", type=float, default=0.0,
                     help="keep only the first N seconds of each sample")
     ap.add_argument("--list", action="store_true", help="only show what is inside")
+    ap.add_argument("--drums", action="store_true",
+                    help="extract a drum kit by piece name instead of by pitch")
+    ap.add_argument("--take", type=int, default=24,
+                    help="which velocity layer to prefer for --drums (default 24)")
     args = ap.parse_args(argv)
 
     smpl, headers = read_sf2(args.soundfont)
@@ -98,6 +182,9 @@ def main(argv=None):
         if have is None or (h["end"] - h["start"]) > (have["end"] - have["start"]):
             best[h["pitch"]] = h
     headers = [best[p] for p in sorted(best)]
+
+    if args.drums:
+        return extract_drums(smpl, headers, args.outdir, args.take, args.trim)
 
     os.makedirs(args.outdir, exist_ok=True)
     kept, last = 0, -99

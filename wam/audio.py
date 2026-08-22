@@ -166,6 +166,31 @@ def sample_bank(instrument, doc):
     return instrument["_bank"]
 
 
+def kit_bank(instrument, doc):
+    """Resolve an instrument's `bank=` into a kit keyed by piece name."""
+    if instrument.get("_kit") is not None:
+        return instrument["_kit"]
+    root = doc.get("dir") or os.getcwd()
+    folder = os.path.join(root, instrument.get("bank") or "")
+    if not os.path.isdir(folder):
+        raise ap.WamAudioError(
+            "instrument %r names sample bank %r, which is not a directory"
+            % (instrument["name"], instrument.get("bank")), instrument.get("line"))
+    known = set(wnotation.DRUM_PIECES.values())
+    mapping = {}
+    for name in sorted(os.listdir(folder)):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() == ".wav" and stem in known:
+            mapping[stem] = os.path.join(folder, name)
+    if not mapping:
+        raise ap.WamAudioError(
+            "kit bank %r holds no files named for a piece (%s)"
+            % (instrument.get("bank"), ", ".join(sorted(known))),
+            instrument.get("line"))
+    instrument["_kit"] = synth.load_kit(mapping)
+    return instrument["_kit"]
+
+
 def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None, bank=None):
     """One note (or chord) of one instrument, as a mono buffer.
 
@@ -199,7 +224,14 @@ def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None, bank=Non
         sig = synth.render_source(voice["source"], curve, n, rate, tone, seed + i * 17)
         out += sig
     if len(freqs) > 1:
-        out /= math.sqrt(len(freqs))          # a chord is not N times louder
+        # A chord is not N times louder -- but an octave is not a chord. Two
+        # notes an octave apart are one note reinforcing itself, which is why a
+        # pianist's left hand plays them, and attenuating that made the
+        # heaviest passages the quietest. Compensate for how many distinct
+        # pitch classes are sounding, not how many keys are down.
+        classes = len({int(round(12.0 * math.log2(f / freqs[0]))) % 12
+                       for f in freqs}) or 1
+        out /= math.sqrt(classes)
     out *= env
     if voice.get("cut"):
         out = synth.filter_signal(out, "low",
@@ -353,7 +385,11 @@ def render_song(song, doc, tones, rate):
 
     for staff in live:
         if staff["drums"]:
+            # A drum staff still gets its declared instrument when there is
+            # one -- that is how a sampled kit reaches the mixer. Only the
+            # bare built-in `kit` has nothing to look up.
             instrument = dict(_instrument_defaults("kit"))
+            instrument.update(doc["instruments"].get(staff["instrument"], {}))
         else:
             declared = doc["instruments"].get(staff["instrument"])
             if declared is None:
@@ -401,7 +437,15 @@ def render_song(song, doc, tones, rate):
                 seed = int((at * 97 + zlib.crc32(voice["name"].encode()) % 1000)
                            % 100000)
                 if ev["kind"] == "drum":
-                    sig = _drum(ev["piece"], rate, seed)
+                    sig = None
+                    if instrument["source"] == "kit":
+                        # A recorded piece rings for as long as it rings; the
+                        # written value says when it starts, not how long a
+                        # cymbal lasts.
+                        sig = synth.play_hit(kit_bank(instrument, doc),
+                                             ev["piece"], rate)
+                    if sig is None:
+                        sig = _drum(ev["piece"], rate, seed)
                     mix_stereo(staff_buf, sig, int(start * rate),
                                gain * dynamic * ev["accent"] * swing_vel * 0.9,
                                DRUM_PAN.get(ev["piece"], pan))
