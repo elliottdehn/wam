@@ -8,6 +8,7 @@ The parser's only job is to turn text into a checked structure. Every musical
 or acoustic decision -- what a "bright pluck" is, where an eighth note lands,
 how loud a layer ends up -- belongs to the compiler, not to this file.
 """
+import os
 import re
 
 from . import notation as wnotation
@@ -44,7 +45,8 @@ TONE_FIELDS = {"tilt": float, "harm": float, "noise": float,
 TONE_FIELD_ALIASES = {"odd": "odd_only", "spread": "detune"}
 
 VOICE_KEYS = ("source", "tone", "env", "level", "octave", "detune", "space",
-              "echo", "drive", "pan", "damp", "glide", "cut") + tuple(TONE_FIELDS)
+              "echo", "drive", "pan", "damp", "glide", "cut",
+              "bank", "file", "root") + tuple(TONE_FIELDS)
 
 SWEEP_TARGETS = ("pitch", "center", "level")
 
@@ -361,7 +363,7 @@ def parse(text):
     lines = _Lines(text)
     doc = {"name": None, "rate": 44100, "master": -1.0, "key": None,
            "tempo": None, "tones": {}, "instruments": {}, "songs": [],
-           "sounds": []}
+           "sounds": [], "dir": os.getcwd()}
     while lines.peek() is not None:
         level, line, no, raw = lines.next()
         if level != 0:
@@ -459,6 +461,8 @@ def _parse_instruments(doc, lines, level):
              "echo": kv.get("echo", "none"), "drive": kv.get("drive", "none"),
              "pan": kv.get("pan", "center"), "damp": 0.5,
              "glide": kv.get("glide", "none"), "cut": kv.get("cut"),
+             "bank": kv.get("bank"), "file": kv.get("file"),
+             "root": kv.get("root"),
              "tone_fields": parse_tone_overrides(kv, ln, raw), "line": ln}
         for k, caster in (("level", float), ("octave", int),
                           ("detune", float), ("damp", float)):
@@ -470,7 +474,7 @@ def _parse_instruments(doc, lines, level):
 
 
 STAFF_KEYS = ("instrument", "level", "octave", "pan", "space", "echo",
-              "humanize", "curve")
+              "humanize", "curve", "cut")
 STAFF_FLAGS = ("mute", "solo")
 
 # Timing, loudness and tuning jitter, in that order: seconds, a fraction, and
@@ -617,9 +621,23 @@ def _start_staff(song, doc, tok, ln, raw):
             raise WamAudioError("unknown staff flag %r (have: %s)"
                                 % (flag, ", ".join(STAFF_FLAGS)), ln, raw)
     level, level_to = _parse_level(kv.get("level", "100%"), ln, raw)
+    # `cut=800` is a fixed lowpass over the whole staff; `cut=400->9000` opens
+    # it across the song. A filter opening is how dance music builds -- the
+    # parts do not change, the amount of them you can hear does -- and there
+    # was no way to say it before.
+    cut = cut_to = None
+    if "cut" in kv:
+        text = kv["cut"]
+        if "->" in text:
+            a, b = text.split("->", 1)
+            cut = parse_freq(a, ln, raw)
+            cut_to = parse_freq(b, ln, raw)
+        else:
+            cut = parse_freq(text, ln, raw)
     staff = {"name": tok[1], "instrument": kv.get("instrument", tok[1]),
              "level": level, "level_to": level_to,
              "curve": kv.get("curve", "ease"),
+             "cut": cut, "cut_to": cut_to,
              "octave": int(kv.get("octave", 0)), "pan": kv.get("pan"),
              "space": kv.get("space"), "echo": kv.get("echo"),
              "humanize": kv.get("humanize", "off"),
@@ -829,4 +847,8 @@ def _parse_assert(tok, ln, raw):
 
 def parse_file(path):
     with open(path, "r", encoding="utf-8") as fh:
-        return parse(fh.read())
+        doc = parse(fh.read())
+    # Sample banks are named relative to the file that asks for them, not to
+    # whatever directory the compiler happens to be run from.
+    doc["dir"] = os.path.dirname(os.path.abspath(path))
+    return doc

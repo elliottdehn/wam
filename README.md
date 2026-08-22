@@ -292,7 +292,19 @@ compile, and visually iterate using the bundled toolchain.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The code, the language and the documentation are MIT — see `LICENSE`.
+
+**`samples/` is not.** The recorded instrument banks under `samples/` are
+third-party audio under their own licences, and the MIT licence does not cover
+them. Today that is one piano bank under Creative Commons Attribution 3.0;
+`samples/piano/ATTRIBUTION.md` names its authors, links the licence, and lists
+what was changed. Ship that file with the audio, keep the notice intact, and
+nothing else about WAM's licensing changes.
+
+Everything the compiler *generates* is yours. Sampled instruments are the only
+part of this project that carries someone else's terms, which is the real cost
+of `source=sample` — a `.wama` that uses a sampled instrument is text plus a
+payload, and the payload has a licence of its own.
 
 ## Fork changelog
 

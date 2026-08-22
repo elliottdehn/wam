@@ -78,6 +78,10 @@ ENVELOPES = {
     "gate":    dict(a=0.001, d=0.00, s=1.00, r=0.02, a_abs=0.001),
     "bloom":   dict(a=0.080, d=0.22, s=0.55, r=0.45, a_abs=0.01),
     "bow":     dict(a=0.120, d=0.10, s=0.90, r=0.25, a_abs=0.015),
+    # For sources that decay on their own -- piano, bell, metal -- anything
+    # else imposes a second decay on top and takes the tail off. `natural`
+    # gets out of the way: it exists only to open and close without a click.
+    "natural": dict(a=0.001, d=0.00, s=1.00, r=0.04, a_abs=0.0008),
 }
 
 
@@ -424,6 +428,174 @@ def karplus(freq, n, sr=SR, tone="plain", seed=0, damp=0.5):
     return out / (np.max(np.abs(out)) or 1.0)
 
 
+def piano(freq, n, sr=SR, tone="plain", seed=0, damp=0.5):
+    """A struck string, which is not a plucked one.
+
+    Three things separate a piano from the `pluck` model, and the first is the
+    one the ear identifies it by:
+
+    * **Inharmonicity.** Piano strings are stiff, so a partial does not sit at
+      n times the fundamental but at ``n * f0 * sqrt(1 + B n^2)`` -- every
+      partial progressively sharp. That is why a piano's octaves are stretched
+      and why an exactly-harmonic model reads as a guitar no matter what
+      envelope is put on it. B grows towards the bass, where the strings are
+      thickest relative to their length.
+    * **Paired strings.** Most notes are two or three strings tuned a couple of
+      cents apart. They beat, and the beating is the shimmer.
+    * **Double decay.** Energy leaves fast at first and then much more slowly,
+      so a held note has a quick fall and a long aftersound rather than one
+      exponential.
+
+    The attack is a felt hammer rather than a plectrum: duller, lower, and
+    spread over a few milliseconds instead of one.
+    """
+    if n <= 0:
+        return np.zeros(0)
+    base = float(np.mean(_as_curve(freq, n)))
+    t = tone_params(tone)
+    tt = np.arange(n) / float(sr)
+    rng = rng_for(seed)
+    # Stiffness rises towards the bass: a low string is short and thick for the
+    # pitch it has to make, which is exactly the condition that stretches it.
+    stiffness = float(np.clip(0.0004 * (196.0 / max(base, 20.0)) ** 1.4,
+                              4e-5, 0.02))
+    # A held note rings for a long time; damp shortens it the way a pedal up does.
+    t60 = max(9.0 * (1.0 - 0.85 * float(np.clip(damp, 0.0, 1.0))), 0.25)
+    out = np.zeros(n)
+    nyq = sr * 0.47
+    count = max(int(MAX_HARMONICS * min(float(t["harm"]), 1.0)), 6) \
+        if float(t["harm"]) < 1.0 else MAX_HARMONICS
+    # Where the hammer lands. A partial with a node at the strike point cannot
+    # be excited at all, so striking at a seventh or an eighth of the string
+    # notches out partial 7 or 8 and its multiples. That comb is a large part
+    # of what a piano *is*, and a smooth 1/k rolloff without it sounds like a
+    # string being plucked in the middle of nowhere.
+    strike = 1.0 / 8.0
+    # A felt hammer is soft and wide, which is a lowpass on the excitation
+    # itself: the harder the note, the brighter, but never a bright edge.
+    hammer_cut = 2200.0 * (0.6 + 0.4 * float(t["harm"]))
+    for k in range(1, count + 1):
+        fk = k * base * math.sqrt(1.0 + stiffness * k * k)
+        if fk > nyq:
+            break
+        amp = k ** -(float(t["tilt"]) + 0.9)
+        amp *= abs(math.sin(k * math.pi * strike))
+        amp *= math.exp(-fk / hammer_cut)
+        if amp < 1e-5:
+            continue
+        # Fast component then a long aftersound, both quicker for high partials.
+        tau_fast = (t60 / 6.9) / (k ** 1.1) * 0.18
+        tau_slow = (t60 / 6.9) / (k ** 0.6)
+        env = 0.62 * np.exp(-tt / tau_fast) + 0.38 * np.exp(-tt / tau_slow)
+        # Nothing starts instantly. The string takes a few milliseconds to take
+        # the hammer's energy, and the high partials arrive a touch later than
+        # the low ones -- an instant onset on every partial at once is a click,
+        # which is most of what reads as "plucked".
+        # A hammer pushes energy in over a few milliseconds rather than
+        # displacing the string in an instant, and it does it to every partial
+        # at once. A raised cosine over a common window keeps the onset a
+        # single event; per-partial rises made it a scatter, which the ear
+        # hears as a tick followed by a note rather than a note starting.
+        rise = max(int(0.010 * sr), 8)
+        env[:rise] *= (1.0 - np.cos(np.linspace(0.0, math.pi, rise))) * 0.5
+        # Two strings a couple of cents apart, which is what shimmers.
+        for cents in (-1.7, 1.7):
+            phase = 2.0 * math.pi * fk * (2.0 ** (cents / 1200.0)) * tt
+            out += 0.5 * amp * env * np.sin(phase)
+    # --- the soundboard -------------------------------------------------
+    # Until here this is a bare string, and a bare string with a soft attack
+    # is a guitar with the lights off. What makes a piano sound *large* is the
+    # board: a wide, dense field of resonances that every note pours into, plus
+    # the other two hundred strings ringing in sympathy with it. Modelled as a
+    # short causal impulse response -- a few low body modes over a fast diffuse
+    # tail -- and mixed under the string rather than over it.
+    board_n = int(0.32 * sr)
+    bt = np.arange(board_n) / float(sr)
+    board = rng_for(seed + 91).standard_normal(board_n) * np.exp(-bt * 11.0) * 0.35
+    for mode_f, mode_q, mode_a in ((58.0, 26.0, 1.0), (96.0, 30.0, 0.7),
+                                   (147.0, 34.0, 0.5), (232.0, 40.0, 0.32),
+                                   (390.0, 48.0, 0.2)):
+        board += mode_a * np.sin(2 * math.pi * mode_f * bt) * \
+            np.exp(-bt * mode_f / mode_q)
+    board /= np.sqrt(np.sum(board * board)) or 1.0
+    wet = _fftconv(out, board, causal=True)[:n]
+    peak = np.max(np.abs(wet)) or 1.0
+    out = out + 0.55 * wet / peak * (np.max(np.abs(out)) or 1.0)
+
+    # Felt, not plectrum: a short dull thump rather than a bright tick.
+    hammer = int(min(0.030 * sr, n))
+    if hammer > 16:
+        thud = rng_for(seed + 5).standard_normal(hammer) * \
+            np.exp(-np.arange(hammer) / (0.004 * sr))
+        out[:hammer] += 0.035 * float(t["harm"]) * filter_signal(thud, "low", 320.0, sr)
+    return out / (np.max(np.abs(out)) or 1.0)
+
+
+# --------------------------------------------------------------- samples
+
+_BANKS = {}
+
+
+def _read_wav(path):
+    """A WAV file as mono float, plus its own sample rate."""
+    import wave as _wave
+    with _wave.open(path, "rb") as fh:
+        width, channels = fh.getsampwidth(), fh.getnchannels()
+        raw = fh.readframes(fh.getnframes())
+        rate = fh.getframerate()
+    if width == 2:
+        data = np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
+    elif width == 4:
+        data = np.frombuffer(raw, dtype="<i4").astype(np.float64) / 2147483648.0
+    elif width == 1:
+        data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float64) - 128) / 128.0
+    else:
+        raise ValueError("unsupported WAV sample width: %d bytes" % width)
+    if channels > 1:
+        data = data.reshape(-1, channels).mean(axis=1)
+    return data, rate
+
+
+def load_bank(paths):
+    """Load `[(root_hz, path)]` into a cached, pitch-sorted sample bank.
+
+    A bank rather than one file, because a single recording stretched across a
+    keyboard is the oldest sampling mistake there is: transposing a note more
+    than a few semitones moves its formants with it, and a piano sample pushed
+    two octaves down sounds like a piano the size of a house.
+    """
+    key = tuple(sorted(paths))
+    if key in _BANKS:
+        return _BANKS[key]
+    bank = []
+    for root_hz, path in sorted(paths, key=lambda pair: pair[0]):
+        data, rate = _read_wav(path)
+        peak = float(np.max(np.abs(data))) or 1.0
+        bank.append((float(root_hz), data / peak, rate))
+    if not bank:
+        raise ValueError("sample bank is empty")
+    _BANKS[key] = bank
+    return bank
+
+
+def play_sample(bank, freq, n, sr=SR):
+    """Play the nearest-pitched sample in the bank, transposed to `freq`."""
+    if n <= 0:
+        return np.zeros(0)
+    f = float(np.mean(_as_curve(freq, n)))
+    root, data, data_sr = min(bank, key=lambda entry: abs(math.log(entry[0] / max(f, 1e-6))))
+    step = (f / root) * (data_sr / float(sr))
+    if step > 1.0:
+        # Reading faster than the source is a decimation, so band-limit first
+        # or everything above the new Nyquist folds back down as grit.
+        data = filter_signal(data, "low", data_sr * 0.5 / step, data_sr)
+    idx = np.arange(n) * step
+    live = idx < len(data) - 1
+    out = np.zeros(n)
+    out[live] = np.interp(idx[live], np.arange(len(data)), data)
+    return out
+
+
 def bell(freq, n, sr=SR, tone="plain", seed=0):
     """Inharmonic FM: a struck metal body, not a tuned oscillator."""
     if n <= 0:
@@ -567,6 +739,7 @@ SOURCES = {
     "square": lambda f, n, sr, tone, seed: osc("square", f, n, sr, tone, seed),
     "pulse": lambda f, n, sr, tone, seed: osc("pulse", f, n, sr, tone, seed),
     "pluck": karplus,
+    "piano": piano,
     "bell": bell,
     "metal": metal,
     "thump": thump,

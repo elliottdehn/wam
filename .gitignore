@@ -20,3 +20,7 @@ online/**/dist/
 online/backend/public/
 online/backend/.wrangler/
 online/frontend/public/pyodide/
+
+# samples/ is committed: the piano bank ships with the project under its own
+# licence. See samples/piano/ATTRIBUTION.md. Anything fetched and *not*
+# cleared for redistribution belongs in out/ instead.

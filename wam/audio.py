@@ -12,6 +12,8 @@ frequencies from the key, percentages become gains from the parent, and named
 lengths become seconds from the piece.
 """
 import math
+import os
+import re
 import struct
 import wave
 import zlib
@@ -19,6 +21,7 @@ import zlib
 import numpy as np
 
 from . import audio_parser as ap
+from . import notation as wnotation
 from . import synth
 
 
@@ -115,7 +118,55 @@ def _instrument_defaults(name):
             "glide": "none", "cut": None, "tone_fields": {}}
 
 
-def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None):
+_NOTE_FILE = re.compile(r"_([a-g](?:is|es|isis|eses)?(?:'+|,+)?)\.wav$", re.I)
+
+
+def sample_bank(instrument, doc):
+    """Resolve an instrument's `bank=` directory into a loaded sample bank.
+
+    Filenames carry the root pitch -- `piano_c'.wav` -- because a bank has to
+    know what each recording actually is, and putting it in the name keeps the
+    directory readable and the file self-describing.
+    """
+    if instrument.get("_bank") is not None:
+        return instrument["_bank"]
+    root = doc.get("dir") or os.getcwd()
+    entries = []
+    if instrument.get("bank"):
+        folder = os.path.join(root, instrument["bank"])
+        if not os.path.isdir(folder):
+            raise ap.WamAudioError(
+                "instrument %r names sample bank %r, which is not a directory"
+                % (instrument["name"], instrument["bank"]), instrument.get("line"))
+        for name in sorted(os.listdir(folder)):
+            m = _NOTE_FILE.search(name)
+            if not m:
+                continue
+            letter, alter, octave = wnotation.parse_pitch(m.group(1).lower())
+            midi = wnotation.pitch_to_midi(letter, alter or 0, octave)
+            entries.append((midi_to_freq(midi), os.path.join(folder, name)))
+        if not entries:
+            raise ap.WamAudioError(
+                "sample bank %r holds no files named like `name_c'.wav`"
+                % instrument["bank"], instrument.get("line"))
+    elif instrument.get("file"):
+        if not instrument.get("root"):
+            raise ap.WamAudioError(
+                "instrument %r gives a file= but no root=, so nothing knows "
+                "what pitch it was recorded at" % instrument["name"],
+                instrument.get("line"))
+        letter, alter, octave = wnotation.parse_pitch(instrument["root"])
+        midi = wnotation.pitch_to_midi(letter, alter or 0, octave)
+        entries.append((midi_to_freq(midi), os.path.join(root, instrument["file"])))
+    else:
+        raise ap.WamAudioError(
+            "instrument %r uses source=sample but names neither bank= nor file="
+            % instrument["name"], instrument.get("line"))
+    instrument["_bank"] = synth.load_bank(entries)
+    return instrument["_bank"]
+
+
+def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None, bank=None):
     """One note (or chord) of one instrument, as a mono buffer.
 
     `dur_s` is the written value; the returned buffer may be longer when the
@@ -131,6 +182,13 @@ def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None):
     tone = tone_for(voice["tone"], voice.get("tone_fields"), tones)
     glide = GLIDE_TIMES.get(voice.get("glide", "none"), 0.0)
     out = np.zeros(n)
+    if voice["source"] == "sample":
+        for f in freqs:
+            out += synth.play_sample(bank, f, n, rate)
+        if len(freqs) > 1:
+            out /= math.sqrt(len(freqs))
+        out *= env
+        return synth.drive(out, voice.get("drive", "none"))
     for i, f in enumerate(freqs):
         f = f * (2.0 ** (voice["detune"] / 1200.0)) if voice["detune"] else f
         curve = f
@@ -351,7 +409,9 @@ def render_song(song, doc, tones, rate):
                     continue
                 freqs = [midi_to_freq(m + 12 * octave) * drift for m in ev["midis"]]
                 sig = render_note(instrument, freqs, ev["beats"] * beat_s, rate,
-                                  tones, seed, prev_freq)
+                                  tones, seed, prev_freq,
+                                  bank=sample_bank(instrument, doc)
+                                  if instrument["source"] == "sample" else None)
                 prev_freq = freqs[0]
                 mix_stereo(staff_buf, sig, int(start * rate),
                            gain * dynamic * ev["accent"] * swing_vel, pan)
@@ -364,6 +424,23 @@ def render_song(song, doc, tones, rate):
                 1.0, staff["level_to"] / max(staff["level"], 1e-9), body_n,
                 staff["curve"])
             staff_buf *= curve[:, None]
+        if staff.get("cut"):
+            body_n = min(int(total_s * rate), n)
+            if staff.get("cut_to") is None:
+                cutoff = staff["cut"]
+            else:
+                cutoff = np.full(n, float(staff["cut_to"]))
+                cutoff[:body_n] = synth.ramp(staff["cut"], staff["cut_to"],
+                                             body_n, staff["curve"])
+            for ch in range(2):
+                # A coarser hop than the default: this runs over a whole staff
+                # rather than one note, and a filter opening over a minute does
+                # not need 5 ms of time resolution.
+                staff_buf[:, ch] = (
+                    synth.filter_signal(staff_buf[:, ch], "low", cutoff, rate)
+                    if staff.get("cut_to") is None
+                    else synth._swept_filter(staff_buf[:, ch], "low", cutoff,
+                                             rate, 4.0, win=2048, hop=1024))
         staff_buf = _apply_space(staff_buf, staff["echo"] or instrument.get("echo"),
                                  rate, synth.echo)
         staff_buf = _apply_space(staff_buf, staff["space"] or instrument.get("space"),

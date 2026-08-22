@@ -1,0 +1,249 @@
+# "Ashglass" — an original piano ballad in the gothic-ballad idiom.
+#
+# The shape that style depends on: a piano alone for eight bars, a melody that
+# enters over almost nothing, strings that arrive under the second half of the
+# first chorus rather than at its start, one lift where everything doubles,
+# and the piano left alone again at the end. Am-F-C-G throughout, which is the
+# most common progression in popular music and belongs to no one.
+#
+# The piano is sampled, not modelled: `source=sample` over a bank of recorded
+# notes, one every four semitones, with each written note played from the
+# nearest recording. Four rounds of physical modelling got the partials, the
+# hammer notch, the double decay and the soundboard approximately right and
+# still sounded like a guitar being a piano. A recording of a piano sounds
+# like a piano.
+#
+# Rebuild the bank from any SoundFont with:
+#   python3 scripts/sf2_extract.py grand.sf2 samples/piano --every 4 --trim 6
+#
+# The melody line is played by strings because this engine has no voice. In
+# this idiom that is a real loss — the form exists to carry a singer — so the
+# arrangement gives the tune to the instrument with the slowest attack and
+# lets the piano do the rhythm underneath it.
+audio ashglass
+  key a minor
+  tempo 76
+  master -1.5
+
+tones
+  tone felt from=warm tilt=1.35 harm=1.0
+  tone bowed from=warm tilt=1.4 harm=0.9 spread=8
+  tone glassy from=bright tilt=1.15 harm=1.15
+
+instruments
+  instrument piano  source=sample bank=../../samples/piano env=natural level=100% space=hall
+  instrument voice1 source=bow   tone=bowed  env=bow   level=100% space=hall
+  instrument hi     source=bow   tone=bowed  env=bow   level=100% space=hall
+  instrument lo     source=bow   tone=bowed  env=bow   level=100% space=hall
+  instrument cello  source=bow   tone=felt   env=bow   level=100% space=hall
+  instrument chime  source=bell  tone=glassy env=pluck level=100% space=hall
+
+song ashglass
+  meter 4/4
+  bars 76
+  feel straight
+  space hall
+
+  # --- the piano is the whole record's clock ----------------------------
+  staff piano instrument=piano level=44% pan=-12% humanize=light
+    voice figure
+      phrase ARP
+        | a8 e'8 a'8 e'8 a8 e'8 a'8 e'8
+        | f8 c'8 f'8 c'8 f8 c'8 f'8 c'8
+        | c8 g8 c'8 g8 c8 g8 c'8 g8
+        | g,8 d8 g8 d8 g,8 d8 g8 d8
+      phrase FULL
+        | <a, a>8 e'8 a'8 e'8 c''8 e'8 a'8 e'8
+        | <f, f>8 c'8 f'8 c'8 a'8 c'8 f'8 c'8
+        | <c, c>8 g8 c'8 g8 e'8 g8 c'8 g8
+        | <g,, g,>8 d8 g8 d8 b8 d8 g8 d8
+      phrase SOFT
+        | a2 e'2
+        | f2 c'2
+        | c2 g2
+        | g,2 d2
+      dynamic mp
+      play ARP ARP
+      play ARP ARP ARP ARP
+      dynamic mf
+      play FULL FULL FULL FULL
+      dynamic mp
+      play ARP ARP ARP
+      dynamic ff
+      play FULL FULL FULL FULL
+      dynamic p
+      play SOFT ARP
+
+  # --- the tune, where a singer would be --------------------------------
+  staff voice1 instrument=voice1 level=52% pan=0 humanize=light
+    voice tune
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase VERSE1
+        | r2 a'2
+        | c''2 b'2
+        | a'2 g'2
+        | e'1
+      phrase VERSE2
+        | r2 a'2
+        | c''2 e''2
+        | d''2 c''2
+        | a'1
+      phrase LIFT
+        | e''2 f''2
+        | e''2 c''2
+        | d''2 e''2
+        | c''1
+      phrase FALL
+        | c''2 b'2
+        | a'2 g'2
+        | a'2 e'2
+        | a'1
+      phrase LAST
+        | r2 a'2
+        | c''2 b'2
+        | a'1
+        | a'1
+      dynamic p
+      play REST REST
+      dynamic mf
+      play VERSE1 VERSE2 VERSE1 REST
+      dynamic f
+      play LIFT FALL LIFT FALL
+      dynamic mp
+      play VERSE2 VERSE1 REST
+      dynamic ff
+      play LIFT FALL LIFT FALL
+      dynamic p
+      play LAST REST
+
+  # --- strings arrive under the back half of the first chorus -----------
+  staff hi instrument=hi level=34% pan=-25% humanize=light
+    voice upper
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase PAD
+        | e''1
+        | f''1
+        | e''1
+        | d''1
+      phrase HIGH
+        | a''1
+        | a''1
+        | g''1
+        | g''1
+      play REST REST
+      play REST REST REST REST
+      dynamic mp
+      play REST REST PAD PAD
+      play REST REST REST
+      dynamic f
+      play HIGH HIGH PAD PAD
+      dynamic p
+      play PAD REST
+
+  staff lo instrument=lo level=32% pan=25% humanize=light
+    voice lower
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase PAD
+        | c''1
+        | c''1
+        | g'1
+        | b'1
+      play REST REST
+      play REST REST REST REST
+      dynamic mp
+      play REST REST PAD PAD
+      play REST REST REST
+      dynamic f
+      play PAD PAD PAD PAD
+      dynamic p
+      play PAD REST
+
+  staff cello instrument=cello level=38% octave=-1 humanize=light
+    voice line
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase ROOT
+        | a1
+        | f1
+        | c1
+        | g,1
+      play REST REST
+      dynamic mp
+      play ROOT ROOT ROOT ROOT
+      dynamic mf
+      play ROOT ROOT ROOT ROOT
+      play ROOT ROOT ROOT
+      dynamic ff
+      play ROOT ROOT ROOT ROOT
+      dynamic p
+      play ROOT REST
+
+  staff chime instrument=chime level=24% pan=30%
+    voice toll
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase MARK
+        | a''1
+        | r1
+        | r1
+        | r1
+      play REST REST
+      play REST REST REST REST
+      dynamic mp
+      play MARK REST MARK REST
+      play REST REST REST
+      dynamic mf
+      play MARK REST MARK REST
+      dynamic p
+      play MARK REST
+
+  # --- drums only in the second chorus, and only just ------------------
+  staff drum instrument=kit level=30%
+    voice beat
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase SLOW
+        | k2 s2
+        | k2 s2
+        | k2 s2
+        | k4 k4 s2
+      phrase FULL
+        | k4 r4 s4 r4
+        | k4 r4 s4 r4
+        | k4 r4 s4 r4
+        | k4 k4 s4 t8 T8
+      play REST REST
+      play REST REST REST REST
+      dynamic mp
+      play REST REST SLOW SLOW
+      play REST REST REST
+      dynamic f
+      play FULL FULL FULL FULL
+      dynamic p
+      play REST REST
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 240 s
+    assert centroid < 3000 hz

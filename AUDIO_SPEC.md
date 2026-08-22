@@ -61,9 +61,9 @@ instruments
 
 | option | values |
 |---|---|
-| `source=` | `sine tri saw square pulse pluck bell metal thump breath bow drone noise pink band` |
+| `source=` | `sine tri saw square pulse pluck piano bell metal thump breath bow drone noise pink band sample` |
 | `tone=` | `plain bright warm dark soft harsh hollow thin fat`, or any tone the file defines |
-| `env=` | `pluck hit stab pad swell sustain gate bloom bow` |
+| `env=` | `pluck hit stab pad swell sustain gate bloom bow natural` |
 | `level=` | fader, as a percentage |
 | `octave=` | whole octaves up or down |
 | `detune=` | cents |
@@ -78,10 +78,39 @@ instruments
 `space=` places a sound; it never changes its level. The wet path is matched to
 the dry one and the crossfade's loss put back, so a fader means what it says.
 
+### Sampled instruments
+
+`source=sample` plays recordings instead of generating them:
+
+```
+instrument piano source=sample bank=samples/piano env=natural
+```
+
+`bank=` is a directory of WAVs whose filenames end in the pitch they were
+recorded at — `piano_c'.wav`, `piano_es''.wav` — so the bank is readable and
+each file says what it is. Each written note is played from the nearest
+recording, transposed. `file=` with `root=` names a single sample instead.
+
+Use a bank rather than one file. Transposing a recording more than a few
+semitones drags its formants along with it, and a piano sample pushed two
+octaves down sounds like a piano the size of a building. Paths resolve
+relative to the `.wama` file. `scripts/sf2_extract.py` builds a bank from any
+SoundFont — a `.sf2` is RIFF, so no soundfont library is needed to read one.
+
+The trade is that the file stops being self-contained: a `.wama` using samples
+is text plus a payload, and everything else in this language is text alone.
+That is worth it for one instrument in particular — see the note on pianos in
+**Hard-won rules**.
+
 ### Envelopes
 
+`natural` is the one to reach for on a source that already decays by itself —
+`piano`, `bell`, `metal`. It only opens and closes without a click. Anything
+else multiplies a second decay over the source's own and takes its tail off,
+which is how a piano ends up sounding plucked.
+
 `pad swell sustain gate bow stab` hold for exactly their written value.
-`pluck hit bloom` ring past it — a plucked eighth cut dead at the eighth
+`pluck hit bloom natural` ring past it — a plucked eighth cut dead at the eighth
 sounds like a mute, not a note. Every envelope ends at true zero.
 
 ---
@@ -376,6 +405,24 @@ one without listening to seven of them.
 
 ## 11. Hard-won rules
 
+* **A piano is worth sampling.** The synthesised `piano` source models the
+  things that separate a struck string from a plucked one — stretched partials,
+  the hammer notch where the felt lands, a two-stage decay, a soundboard — and
+  it is still recognisably not a piano. An acoustic piano is two hundred
+  strings, a soundboard, sympathetic resonance across the whole instrument and
+  a different timbre at every velocity. Nobody synthesises one in production,
+  and neither should this. Use `source=sample` and keep the modelled sources
+  for things that are not trying to be a specific famous object.
+* **`pluck` is a plucked string and `piano` is a struck one, and the
+  difference is not the envelope.** A plucked string's partials are exactly
+  harmonic; a piano's are progressively sharp, because stiff strings resonate
+  above where an ideal string would — which is why piano octaves are stretched
+  and why a `pluck` with a long decay reads as a harp however it is labelled.
+  `piano` also pairs its strings a couple of cents apart so they beat, notches
+  out the partials with a node where the hammer lands (an eighth along the
+  string, so partial 8 and its multiples vanish), and decays in two stages.
+  Give it `env=natural`: a source that decays on its own must not have a
+  second envelope multiplied over the top.
 * **A synth's timbre must not be an accident of its pitch.** Delay-line
   (Karplus-Strong) strings were tried and abandoned: their spectrum emerges
   from a feedback loop, and at some pitches the fundamental held 1% of the
