@@ -473,10 +473,19 @@ STAFF_KEYS = ("instrument", "level", "octave", "pan", "space", "echo",
               "humanize", "curve")
 STAFF_FLAGS = ("mute", "solo")
 
-# Timing and loudness jitter. A player is never exactly on the grid and never
-# exactly as loud twice; a sequencer always is, and that is most of what makes
-# a rendered part sound like a machine reading a list.
-HUMANIZE = {"off": (0.0, 0.0), "light": (0.008, 0.07), "loose": (0.022, 0.16)}
+# Timing, loudness and tuning jitter, in that order: seconds, a fraction, and
+# cents. A player is never exactly on the grid, never exactly as loud twice,
+# and never exactly in tune -- a sequencer is all three, which is most of what
+# makes a rendered part sound like a machine reading a list.
+#
+# The pitch column matters more than its size suggests. Perfect tuning is the
+# loudest remaining tell that something was computed: real players and real
+# strings drift a few cents against each other, and it is that drift beating
+# between two sustained notes that the ear hears as "acoustic". A few cents is
+# inaudible as pitch and obvious as texture.
+HUMANIZE = {"off": (0.0, 0.0, 0.0),
+            "light": (0.008, 0.07, 4.0),
+            "loose": (0.022, 0.16, 11.0)}
 
 CURVES = ("linear", "ease", "fast", "slow", "snap", "drop")
 

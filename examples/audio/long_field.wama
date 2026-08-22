@@ -1,0 +1,212 @@
+# "Long Field" — the least synthetic thing this compiler can currently make.
+#
+# Everything here is chosen against the things that make rendered music sound
+# rendered:
+#
+#   * No square and no pulse waves, and no drive stage anywhere. Those are the
+#     chiptune timbres; a saw through a fuzz is a game, a bowed string is not.
+#   * No kit. A quantised drum machine is instantly a video game, so there is
+#     no percussion at all — the pulse comes from notes arriving, not from
+#     anything hitting.
+#   * `humanize=loose` on every staff: timing, loudness *and* tuning drift a
+#     few cents per note. Two sustained lines a fraction apart beat against
+#     each other, and that beating is most of what "acoustic" means.
+#   * `spread` on the sustaining instruments, so each one is several players
+#     rather than one oscillator.
+#   * Long values tied across bar lines, at 52 in five, so the ear cannot find
+#     a grid to lock onto.
+#   * Almost nothing repeats exactly. Where a shape returns it returns changed.
+#
+# What it cannot fix: every partial here still comes from an additive model
+# with no bow noise between notes, no key clicks, no room but a synthetic one,
+# and no player deciding to lean on a note. It is further from an arcade than
+# anything else in this repo, and it is not a recording.
+audio long_field
+  key a dorian
+  tempo 52
+  master -2.0
+
+tones
+  # Wide and soft: many quiet harmonics rather than few loud ones, which is
+  # roughly what separates a bowed string from a buzzer.
+  tone bowed from=warm tilt=1.45 harm=0.85 spread=9
+  tone airy from=soft tilt=1.9 harm=0.55 noise=1%
+  tone woody from=warm tilt=1.25 harm=0.9
+
+instruments
+  instrument upper source=bow    tone=bowed env=bow    level=100% space=hall
+  instrument lower source=bow    tone=bowed env=bow    level=100% space=hall
+  instrument cello source=bow    tone=woody env=bow    level=100% space=hall
+  instrument air   source=breath tone=airy  env=swell  level=100% space=cave
+  instrument harp  source=pluck  tone=woody env=pluck  level=100% damp=0.3 space=hall
+  instrument under source=drone  tone=airy  env=pad    level=100% space=cave
+
+song long_field
+  meter 5/4
+  bars 32
+  feel straight
+  space hall
+
+  staff strings instrument=upper level=44% pan=-18% humanize=loose
+    voice first
+      phrase A
+        | a'1~ a'4
+        | b'2. c''2
+        | d''1~ d''4
+        | c''2 b'2 a'4
+        | g'1~ g'4
+        | a'2. b'2
+        | c''1~ c''4
+        | b'2 a'2 g'4
+      phrase B
+        | e''1~ e''4
+        | d''2. c''2
+        | b'1~ b'4
+        | c''2 d''2 e''4
+        | d''1~ d''4
+        | c''2. b'2
+        | a'1~ a'4
+        | a'1 r4
+      phrase C
+        | c''2 b'2 a'4
+        | g'1~ g'4
+        | a'2. c''2
+        | b'1~ b'4
+        | a'2 g'2 e'4
+        | g'1~ g'4
+        | a'1~ a'4
+        | a'1 r4
+      play A B C A
+
+    # A second line on the same staff, moving where the first one holds.
+    voice second
+      phrase A
+        | e'1~ e'4
+        | g'2. e'2
+        | f'1~ f'4
+        | e'2 d'2 c'4
+        | b2. d'2
+        | e'1~ e'4
+        | e'2 f'2 g'4
+        | d'1 r4
+      phrase B
+        | g'1~ g'4
+        | a'2. g'2
+        | f'1~ f'4
+        | e'2 f'2 g'4
+        | a'1~ a'4
+        | g'2. e'2
+        | e'1~ e'4
+        | e'1 r4
+      phrase C
+        | e'2 d'2 c'4
+        | b1~ b4
+        | c'2. e'2
+        | d'1~ d'4
+        | c'2 b2 a4
+        | b1~ b4
+        | c'1~ c'4
+        | c'1 r4
+      play A B C A
+
+  staff cello instrument=cello level=40% pan=18% octave=-1 humanize=loose
+    voice line
+      phrase A
+        | a1~ a4
+        | a1~ a4
+        | d'1~ d'4
+        | d'1~ d'4
+        | g1~ g4
+        | g1~ g4
+        | a1~ a4
+        | a1 r4
+      phrase B
+        | c'1~ c'4
+        | c'1~ c'4
+        | g1~ g4
+        | g1~ g4
+        | d'1~ d'4
+        | d'1~ d'4
+        | a1~ a4
+        | a1 r4
+      play A B A B
+
+  staff under instrument=under level=26% octave=-1 humanize=loose
+    voice pedal
+      phrase HOLD
+        | <a, e>1~ q4
+        | q1~ q4
+        | q1~ q4
+        | q1~ q4
+        | <g, d>1~ q4
+        | q1~ q4
+        | <a, e>1~ q4
+        | q1~ q4
+      dynamic p
+      play HOLD
+      dynamic mp
+      play HOLD HOLD
+      dynamic p
+      play HOLD
+
+  staff harp instrument=harp level=30% pan=-30% humanize=loose
+    voice figure
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase FALL
+        | a8 e'8 a'8 e'8 r4 r2
+        | r1 r4
+        | d8 a8 d'8 a8 r4 r2
+        | r1 r4
+        | g,8 d8 g8 d'8 r4 r2
+        | r1 r4
+        | a,8 e8 a8 e'8 a8 c''8 r4 r4
+        | r1 r4
+      phrase SPARSE
+        | a8 e'8 a'8 e'8 r4 r2
+        | r1 r4
+        | r1 r4
+        | e8 b8 e'8 b8 r4 r2
+        | r1 r4
+        | r1 r4
+        | a,8 e8 a8 e'8 r4 r2
+        | r1 r4
+      dynamic mp
+      play SILENT FALL SPARSE FALL
+
+  staff air instrument=air level=24% pan=30% humanize=loose
+    voice breath
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase DRIFT
+        | r1 r4
+        | a''1~ a''4
+        | r1 r4
+        | e''1~ e''4
+        | r1 r4
+        | g''1~ g''4
+        | r1 r4
+        | a''1 r4
+      dynamic p
+      play SILENT DRIFT
+      dynamic pp
+      play DRIFT DRIFT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 185 s
+    assert centroid < 2500 hz

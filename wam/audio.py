@@ -305,14 +305,16 @@ def render_song(song, doc, tones, rate):
                 if at >= total_beats:
                     continue
                 start = _swing(at, song["feel"]) * beat_s
-                jitter, vel_jitter = ap.HUMANIZE[staff["humanize"]]
-                if jitter or vel_jitter:
+                jitter, vel_jitter, cents = ap.HUMANIZE[staff["humanize"]]
+                drift = 1.0
+                if jitter or vel_jitter or cents:
                     # Seeded on the beat, so a re-render is bit-identical: a
                     # file that compiles differently each time cannot be
                     # reviewed, and cannot be checked.
                     r = synth.rng_for(int(at * 1000) + len(voice["name"]) * 7919)
                     start = max(start + float(r.normal(0.0, jitter)), 0.0)
                     swing_vel = 1.0 + float(r.normal(0.0, vel_jitter))
+                    drift = 2.0 ** (float(r.normal(0.0, cents)) / 1200.0)
                 else:
                     swing_vel = 1.0
                 if ev["kind"] == "dynamic":
@@ -335,7 +337,7 @@ def render_song(song, doc, tones, rate):
                                DRUM_PAN.get(ev["piece"], pan))
                     placed += 1
                     continue
-                freqs = [midi_to_freq(m + 12 * octave) for m in ev["midis"]]
+                freqs = [midi_to_freq(m + 12 * octave) * drift for m in ev["midis"]]
                 sig = render_note(instrument, freqs, ev["beats"] * beat_s, rate,
                                   tones, seed, prev_freq)
                 prev_freq = freqs[0]
