@@ -466,6 +466,32 @@ again = waudio.compile_document(ap.parse_file(os.path.join(EXAMPLES, "tavern.wam
 check("the same file renders the same samples twice",
       np.allclose(again["buf"], tavern["buf"]))
 
+# In-process determinism is the easy half and it hid a real bug for the whole
+# life of this branch: seeds were derived with `hash(name)`, and Python
+# randomises string hashing per process. Two renders in one process agreed
+# perfectly while every fresh compile produced different noise -- so an album
+# changed on every rebuild. Only a subprocess with a different PYTHONHASHSEED
+# can see it.
+import subprocess                                                  # noqa: E402
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROBE = (
+    "import sys, hashlib; sys.path.insert(0, %r);"
+    "import numpy as np;"
+    "from wam import audio_parser as ap, audio;"
+    "p = audio.compile_document(ap.parse_file(%r))[0];"
+    "print(hashlib.sha256(np.ascontiguousarray(p['buf']).tobytes()).hexdigest())"
+    % (ROOT, os.path.join(EXAMPLES, "tavern.wama"))
+)
+digests = []
+for hashseed in ("0", "1", "12345"):
+    env = dict(os.environ, PYTHONHASHSEED=hashseed)
+    out = subprocess.run([sys.executable, "-c", PROBE], capture_output=True,
+                         text=True, env=env, cwd=ROOT)
+    digests.append(out.stdout.strip() or ("failed: " + out.stderr.strip()[-120:]))
+check("and renders identically in a fresh process, whatever the hash seed",
+      len(set(digests)) == 1 and digests[0] and not digests[0].startswith("failed"),
+      " / ".join(d[:16] for d in digests))
+
 sheet = wsheet.build_sheet(piece, width=600)
 check("a sheet is a real image", sheet.ndim == 3 and sheet.shape[1] == 600
       and float(sheet.max()) > 0.5)

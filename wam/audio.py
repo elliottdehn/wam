@@ -14,6 +14,7 @@ lengths become seconds from the piece.
 import math
 import struct
 import wave
+import zlib
 
 import numpy as np
 
@@ -320,7 +321,13 @@ def render_song(song, doc, tones, rate):
                 if ev["kind"] == "rest":
                     prev_freq = None
                     continue
-                seed = int((at * 97 + hash(voice["name"]) % 1000) % 100000)
+                # crc32, not hash(): Python randomises string hashing per
+                # process, so `hash(name)` seeded every noise source
+                # differently on every run. The same file rendered differently
+                # each time it was compiled -- which cannot be reviewed, cannot
+                # be checked, and quietly changed an album on every rebuild.
+                seed = int((at * 97 + zlib.crc32(voice["name"].encode()) % 1000)
+                           % 100000)
                 if ev["kind"] == "drum":
                     sig = _drum(ev["piece"], rate, seed)
                     mix_stereo(staff_buf, sig, int(start * rate),
