@@ -306,6 +306,13 @@ def parse_event(tok, state, drums, line_no, line, whole=4.0):
     else:
         m = re.match(r"^([^0-9]*)(\d*\.*)$", body)
         head, dur = (m.group(1), m.group(2)) if m else (body, "")
+        # An accent may be written before the duration as well as after it.
+        # LilyPond puts articulations last (`s8?`), but `s?8` is what a hand
+        # reaches for when the mark belongs to the note rather than its length,
+        # and a ghost note is exactly that case.
+        while head[-1:] in ("!", "?"):
+            ev["accent"] *= 1.35 if head[-1] == "!" else 0.7
+            head = head[:-1]
         if head == "r":
             ev["kind"] = "rest"
         elif head == "q" and not drums:

@@ -1,0 +1,373 @@
+# "Black Glass" — heavy drum & bass.
+#
+# The genre is two tempos at once: the break runs at 176 and everything
+# harmonic moves at half that, so the bass lands like a slow record while the
+# drums sprint over it. Written here as 4/4 at 176 with the bass in whole and
+# half notes — the notation does not need a special case for it, the note
+# values just get long.
+#
+# Three things make it the genre rather than fast rock:
+#
+#   * **The break.** Kick and snare are two voices playing a two-step: kick on
+#     the one, snare on the three, and everything else is displacement and
+#     ghost notes. Hats run sixteenths. Nothing is humanised — a break is a
+#     sampled loop and its rigidity is the sound.
+#   * **The Reese.** Two saws detuned against each other until they beat. The
+#     `drone` source already stacks detuned saws, so `spread` on the tone is
+#     the whole recipe; drive thickens it.
+#   * **Drops.** The bass does not enter until bar 33, and it leaves twice
+#     more. The gap before a drop is what makes the drop.
+audio black_glass
+  key d minor
+  tempo 176
+  master -1.5
+
+tones
+  tone reese from=harsh tilt=0.95 harm=1.7 spread=22
+  tone murk from=dark tilt=2.4
+  tone glassy from=bright tilt=1.05 harm=1.35
+
+instruments
+  instrument reese source=drone tone=reese  env=gate  level=100% drive=soft
+  instrument sub   source=sine  tone=plain  env=gate  level=100%
+  instrument pad   source=drone tone=murk   env=pad   level=100% space=cave
+  instrument stab  source=pluck tone=glassy env=pluck level=100% damp=0.4 space=hall
+  instrument bell  source=bell  tone=murk   env=pluck level=100% space=cave
+
+song black_glass
+  meter 4/4
+  bars 192
+  feel straight
+  space room
+
+  # --- the Reese: absent until the drop, and gone again after it --------
+  staff reese instrument=reese level=54%
+    voice line
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase HOLD
+        | d,1
+        | d,1
+        | bes,,1
+        | bes,,1
+        | f,1
+        | f,1
+        | c,1
+        | c,1
+      phrase STAB
+        | d,2. d,8 d,8
+        | r1
+        | bes,,2. bes,,8 bes,,8
+        | r1
+        | f,2. f,8 f,8
+        | r1
+        | c,2 c,8 c,8 c,4
+        | r1
+      dynamic ff
+      play REST REST REST REST
+      play HOLD STAB HOLD STAB
+      play REST REST
+      play REST
+      play HOLD STAB HOLD STAB
+      play REST REST
+      play STAB HOLD STAB HOLD
+      play REST REST REST
+
+  staff sub instrument=sub level=34%
+    voice line
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase ROOT
+        | d,1
+        | d,1
+        | bes,,1
+        | bes,,1
+        | f,1
+        | f,1
+        | c,1
+        | c,1
+      dynamic ff
+      play REST REST REST REST
+      play ROOT ROOT ROOT ROOT
+      play REST REST
+      play REST
+      play ROOT ROOT ROOT ROOT
+      play REST REST
+      play ROOT ROOT ROOT ROOT
+      play REST REST REST
+
+  # --- atmosphere, which is what is left when the bass drops out --------
+  staff pad instrument=pad level=30% octave=-1
+    voice hold
+      phrase MAIN
+        | <d' f' a'>1
+        | q1
+        | <bes d' f'>1
+        | q1
+        | <f a c'>1
+        | q1
+        | <c' e' g'>1
+        | q1
+      dynamic mf
+      play MAIN MAIN
+      dynamic mp
+      play MAIN MAIN
+      dynamic p
+      play MAIN MAIN MAIN MAIN
+      dynamic mf
+      play MAIN MAIN
+      dynamic mp
+      play MAIN
+      dynamic p
+      play MAIN MAIN MAIN MAIN
+      dynamic mf
+      play MAIN MAIN
+      dynamic p
+      play MAIN MAIN MAIN MAIN
+      dynamic mp
+      play MAIN MAIN MAIN
+
+  staff stab instrument=stab level=42% pan=-20%
+    voice line
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase HOOK
+        | d''4 r4 a'4 r4
+        | r1
+        | f''4 r4 d''4 r4
+        | r1
+        | c''4 r4 a'4 r4
+        | r1
+        | e''4 d''4 a'2
+        | r1
+      phrase HIGH
+        | a''2 f''2
+        | d''1
+        | bes''2 a''2
+        | f''1
+        | c'''2 a''2
+        | f''1
+        | e''2 d''2
+        | d''1
+      dynamic mp
+      play REST HOOK
+      dynamic mf
+      play HOOK HOOK
+      dynamic f
+      play HOOK REST HOOK REST
+      dynamic mf
+      play HIGH HIGH
+      play HOOK
+      dynamic f
+      play HOOK REST HOOK REST
+      dynamic mf
+      play HIGH HIGH
+      dynamic f
+      play HOOK HOOK REST HOOK
+      dynamic mp
+      play HIGH REST REST
+
+  staff bell instrument=bell level=26% pan=30%
+    voice toll
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase TOLL
+        | d'''1
+        | r1
+        | r1
+        | r1
+        | bes''1
+        | r1
+        | r1
+        | r1
+      dynamic mf
+      play TOLL REST
+      play REST REST
+      dynamic f
+      play TOLL REST REST REST
+      dynamic mf
+      play TOLL REST
+      play REST
+      dynamic f
+      play TOLL REST REST REST
+      dynamic mf
+      play REST REST
+      play TOLL REST REST REST
+      dynamic p
+      play TOLL REST REST
+
+  # --- the break --------------------------------------------------------
+  staff drum instrument=kit level=50%
+    voice kick
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase STEP
+        | k8 r8 r8 k8 r8 r8 r8 r8
+        | k8 r8 r8 r8 r8 k8 r8 r8
+        | k8 r8 r8 k8 r8 r8 r8 r8
+        | k8 r8 r8 r8 k8 r8 k8 r8
+        | k8 r8 r8 k8 r8 r8 r8 r8
+        | k8 r8 r8 r8 r8 k8 r8 r8
+        | k8 r8 k8 r8 r8 k8 r8 r8
+        | k8 r8 r8 k8 r8 r8 k8 k8
+      phrase HALF
+        | k1
+        | r1
+        | k1
+        | r1
+        | k1
+        | r1
+        | k4 r4 k4 r4
+        | r1
+      dynamic mp
+      play REST HALF
+      dynamic mf
+      play HALF STEP
+      dynamic ff
+      play STEP STEP STEP STEP
+      dynamic mp
+      play HALF HALF
+      dynamic mf
+      play STEP
+      dynamic ff
+      play STEP STEP STEP STEP
+      dynamic mp
+      play HALF HALF
+      dynamic ff
+      play STEP STEP STEP STEP
+      dynamic mp
+      play HALF REST REST
+
+    voice snare
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase TWOSTEP
+        | r4 r4 s4 r4
+        | r4 r8 s?8 s4 r4
+        | r4 r4 s4 r8 s?8
+        | r4 r4 s4 r4
+        | r4 r4 s4 r4
+        | r4 r8 s?8 s4 r4
+        | r4 r4 s4 r8 s?8
+        | r8 s?8 r8 s?8 s4 s8 s8
+      phrase SPARSE
+        | r4 r4 s4 r4
+        | r1
+        | r4 r4 s4 r4
+        | r1
+        | r4 r4 s4 r4
+        | r1
+        | r4 r4 s4 r4
+        | s8 s8 t8 t8 T8 T8 s8 c8
+      dynamic mp
+      play REST SPARSE
+      dynamic mf
+      play SPARSE TWOSTEP
+      dynamic ff
+      play TWOSTEP TWOSTEP TWOSTEP TWOSTEP
+      dynamic mp
+      play SPARSE SPARSE
+      dynamic mf
+      play TWOSTEP
+      dynamic ff
+      play TWOSTEP TWOSTEP TWOSTEP TWOSTEP
+      dynamic mp
+      play SPARSE SPARSE
+      dynamic ff
+      play TWOSTEP TWOSTEP TWOSTEP TWOSTEP
+      dynamic mp
+      play SPARSE REST REST
+
+    voice hats
+      phrase REST
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase EIGHTHS
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+        | h8 h8 h8 h8 h8 h8 h8 h8
+      phrase SIXTEENTHS
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 H16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16 h16
+        | h16 h16 h16 h16 h16 h16 H16 h16 h16 h16 h16 h16 H16 h16 h16 h16
+      dynamic mp
+      play EIGHTHS EIGHTHS
+      dynamic mf
+      play EIGHTHS SIXTEENTHS
+      dynamic f
+      play SIXTEENTHS SIXTEENTHS SIXTEENTHS SIXTEENTHS
+      dynamic mp
+      play EIGHTHS EIGHTHS
+      dynamic mf
+      play SIXTEENTHS
+      dynamic f
+      play SIXTEENTHS SIXTEENTHS SIXTEENTHS SIXTEENTHS
+      dynamic mp
+      play EIGHTHS EIGHTHS
+      dynamic f
+      play SIXTEENTHS SIXTEENTHS SIXTEENTHS SIXTEENTHS
+      dynamic mp
+      play EIGHTHS REST REST
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 262 s
+    assert centroid < 4000 hz

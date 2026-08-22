@@ -261,6 +261,18 @@ def render_song(song, doc, tones, rate):
         for voice in staff["voices"]:
             lengths.append(len(voice["bars"]))
     written_bars = max(lengths) if lengths else 0
+    # A voice that writes fewer bars than the song declares simply stops, and
+    # nothing said so. That is easy to do the moment a `play` list gets long:
+    # miscount by one phrase and a staff drops out early, or -- if every staff
+    # miscounts -- the piece ends before its last section and the tail is
+    # silence. Say it.
+    short = []
+    if song["bars"] is not None:
+        for staff in song["staves"]:
+            for voice in staff["voices"]:
+                if 0 < len(voice["bars"]) < song["bars"]:
+                    short.append("%s/%s stops at bar %d"
+                                 % (staff["name"], voice["name"], len(voice["bars"])))
     if song["bars"] is not None:
         for staff in song["staves"]:
             for voice in staff["voices"]:
@@ -385,6 +397,7 @@ def render_song(song, doc, tones, rate):
             "key": song["key"]["text"], "meter": meter["text"],
             "beats_per_bar": meter["beats"], "feel": song["feel"],
             "loop": bool(song["loop"]), "beats": total_beats, "staves": stats,
+            "short_voices": short,
             "soloed": [st["name"] for st in soloed],
             "muted": [st["name"] for st in song["staves"] if st["mute"]]}
     cut = len(body)
@@ -728,6 +741,9 @@ def lint(buf, rate, metrics, meta):
         if stat["peak_db"] < -50.0:
             warn.append("%r contributes nothing audible (%.1f dBFS)"
                         % (stat.get("staff") or stat.get("layer"), stat["peak_db"]))
+    for note in meta.get("short_voices", []):
+        warn.append("%s, but the song declares more — it falls silent early"
+                    % note)
     if meta.get("soloed"):
         warn.append("solo is on (%s): this render is not the finished mix"
                     % ", ".join(meta["soloed"]))
