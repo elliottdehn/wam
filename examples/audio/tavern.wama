@@ -1,0 +1,59 @@
+# A looping tavern bed. Every track reads the same progression, so the
+# arrangement agrees with itself without any track spelling a chord out.
+audio tavern
+  key d minor
+  tempo walk
+  master -1.5
+
+tones
+  # The built-in `bright` is fierce for a gut-strung lute; soften it once here
+  # and every voice that asks for `bright` in this file gets the softer one.
+  tone bright harm=1.2 noise=0%
+  tone reedy from=warm odd=on tilt=1.3
+
+voices
+  voice lute   source=pluck tone=bright env=pluck   level=90% damp=0.55 space=room
+  voice bass   source=pluck tone=warm   env=pluck   level=100% damp=0.35 octave=-2
+  voice fiddle source=bow   tone=reedy  env=bow     level=100% octave=0  space=hall
+  voice reed   source=drone tone=dark   env=pad     level=100% octave=-1
+
+song tavern_loop
+  bars 8
+  meter 4
+  feel straight
+  progression i i VI V
+  space room
+
+  # Root and fifth on the strong beats: the floor everything else stands on.
+  track bass voice=bass notes=q level=75%
+    phrase L = *1 . *5 .
+    play L
+
+  # An arpeggio spelled against the chord, not against the key.
+  track lute voice=lute notes=e level=55% pan=left humanize=light
+    phrase A = *1 *3 *5 *3 *5^ *3 *5 *3
+    play A
+
+  # A held chord underneath, one octave down: body, not melody.
+  track reed voice=reed notes=w level=28%
+    phrase D = *
+    play D
+
+  # The tune: sparse, mostly chord tones, and it rests so the loop can breathe.
+  track fiddle voice=fiddle notes=q level=42% pan=right humanize=light
+    phrase T = . *5^ *3^:h
+    phrase U = . 4^ 5^:h
+    phrase V = . *1^ 7:e 5:e *1^:h
+    play T U T V
+
+  # Two hits a bar. A tavern has a drum, not a drum kit.
+  track drums voice=kit notes=q level=38% humanize=light
+    pattern P = k . s .
+    pattern F = k . s k?
+    play P P P F
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 22.9 s
+    assert centroid < 3000 hz
+    assert loop_pop < 14 db

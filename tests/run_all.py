@@ -23,6 +23,7 @@ TESTS = (
     "test_multireference.py",
     "test_edits.py",
     "test_editor_bridge.py",
+    "test_audio.py",
 )
 
 

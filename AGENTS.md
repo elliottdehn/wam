@@ -3,6 +3,12 @@
 Use `.agents/skills/wam/SKILL.md` for character, creature, prop, rig,
 animation, reference-image, or `.wam` work.
 
+Use `AUDIO_SPEC.md` for music, sound-effect, or `.wama` work. Audio compiles
+with `python3 -m wam.audio_cli piece.wama --stems`; review the emitted
+`out/<name>_sheet.png` and the metrics in `out/<file>_audio.json` rather than
+assuming a render is right, and state the intent as `assert` lines in the file
+so a broken render announces itself.
+
 ## Local setup
 
 - On Windows, run `powershell -ExecutionPolicy Bypass -File .\Setup-WAM.ps1`.

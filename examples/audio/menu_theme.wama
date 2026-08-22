@@ -1,0 +1,106 @@
+# Main menu theme. The whole piece is one gesture repeated: a call, then an
+# answer from a different voice in a different place in the stereo field.
+# Nothing else is invented -- the arrangement is built by deciding, per track,
+# which bars it is allowed to speak in.
+audio menu
+  key g major
+  tempo 92
+  master -1.5
+
+tones
+  # The lead has to carry over everything without turning into a reed: more
+  # harmonics than `warm`, but falling away faster than `bright` leaves them.
+  tone bright harm=1.15 tilt=1.15
+  # The answering voice is the same family, one shade darker, so the pair reads
+  # as two singers rather than two instruments.
+  tone answering from=warm tilt=1.35 harm=0.85
+
+voices
+  voice lead    source=bow   tone=bright    env=bow    level=100% octave=0  space=hall
+  voice reply   source=bow   tone=answering env=bow    level=100% octave=-1 space=hall
+  voice strings source=drone tone=warm      env=pad    level=100% octave=0  space=hall
+  voice pad     source=drone tone=dark      env=pad    level=100% octave=-1
+  voice bass    source=pluck tone=warm      env=pluck  level=100% octave=-2 damp=0.40
+  voice harp    source=pluck tone=bright    env=pluck  level=100% octave=0  damp=0.50 space=room
+  voice chime   source=bell  tone=warm      env=pluck  level=100% octave=0  space=hall
+
+song main_theme
+  bars 32
+  meter 4
+  feel straight
+  progression vi IV I V vi IV ii V7
+  space hall
+
+  # --- the call ---------------------------------------------------------
+  # Motion on scale degrees, arrivals on chord tones: the melody is free to
+  # wander, but every long note is guaranteed to belong to the chord under it.
+  track lead voice=lead notes=q level=52% pan=-35% humanize=light
+    phrase CALL = 5 1^ *5^:h 6 5 *3^:h
+    phrase LIFT = 5 6 *5^:h 1^ 2^ *1^:h
+    play CALL
+    rest 2
+    play LIFT
+    rest 2
+
+  # --- and the answer ---------------------------------------------------
+  # Two bars later, lower, and resolving where the call left off hanging.
+  track reply voice=reply notes=q level=44% pan=35% humanize=light
+    phrase ANSWER = 1^ 7 *5:h 3 2 *1:h
+    phrase SETTLE = 5 3 *3:h 2 1 *1:h
+    rest 2
+    play ANSWER
+    rest 2
+    play SETTLE
+
+  # --- the floor, from the first bar ------------------------------------
+  track pad voice=pad notes=w level=16%->26%
+    phrase P = *
+    play P
+
+  # --- everything below waits eight bars before it is allowed in --------
+  track strings voice=strings notes=w level=18%->34%
+    phrase S = *
+    rest 8
+    play S S S S S S S S
+    play S S S S S S S S
+    play S S S S S S S S
+
+  track bass voice=bass notes=q level=48%->70%
+    phrase B = *1:h *5:h
+    rest 8
+    play B B B B B B B B
+    play B B B B B B B B
+    play B B B B B B B B
+
+  track harp voice=harp notes=e level=20%->40% pan=-20% humanize=light
+    phrase H = *1 *5 *3^ *5 *1^ *5 *3^ *5
+    rest 8
+    play H H H H H H H H
+    play H H H H H H H H
+    play H H H H H H H H
+
+  # Light hand percussion for the middle section, driving for the last half.
+  track drums voice=kit notes=e level=24%->46% humanize=light
+    pattern LIGHT = t . . h . . t .
+    pattern DRIVE = k . t h k t . h
+    pattern TAPER = k . t . . . t .
+    rest 8
+    play LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT
+    play DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE
+    play DRIVE DRIVE DRIVE DRIVE
+    play TAPER TAPER TAPER TAPER
+
+  # One chime to mark each new section, and nothing else.
+  track chime voice=chime notes=w level=24%
+    phrase X = *1^
+    rest 16
+    play X
+    rest 7
+    play X
+    rest 7
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 83.5 s
+    assert centroid < 3000 hz
+    assert loop_pop < 14 db

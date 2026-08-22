@@ -1,0 +1,130 @@
+# A game's sound set. Each sound is layers over one named length, and every
+# time inside it is a percentage of that length -- so making a sound bigger is
+# one edit, not a re-tuning of every number in it.
+audio sfx
+  rate 44100
+  master -1.5
+
+tones
+  tone glassy from=bright tilt=0.55 odd=on
+
+sound sword_swing
+  length short
+  space room
+  # Air first: a narrow band climbing as the blade accelerates.
+  layer whoosh
+    source band
+    sweep center 600 -> air curve=fast
+    env swell
+    level 90%
+  # Then the edge itself, at the top of the arc.
+  layer edge at=62%
+    source metal bright
+    pitch high
+    # A blade rings, but a lone partial above 8 kHz is a whistle, not a ring.
+    cut low 7000
+    env hit
+    length 55%
+    level 75%
+  assert duration < 0.8 s
+  assert onsets >= 1
+
+sound footstep_dirt
+  length tiny
+  layer body
+    source thump warm
+    pitch low
+    env hit
+    level 100%
+  # Grit under the boot: a short noise burst, quieter than the body.
+  layer grit
+    source pink
+    cut band 2400 q=1.5
+    env hit
+    length 70%
+    level 45%
+  assert peak <= -1.0 db
+
+sound spell_zap
+  length medium
+  space plate
+  echo slap
+  layer charge
+    source saw glassy
+    sweep pitch low -> sparkle curve=slow
+    env swell
+    length 60%
+    level 70%
+  layer discharge at=58%
+    source noise harsh
+    sweep center sparkle -> mid curve=drop
+    env hit
+    length 42%
+    drive soft
+    level 100%
+  assert onsets >= 2
+
+sound coin_pickup
+  length short
+  space room
+  layer ping
+    source bell bright
+    pitch air
+    env pluck
+    level 90%
+  # Two more, quieter and quicker: a handful of coins, not one.
+  layer sparkle at=18%
+    source bell glassy
+    pitch air
+    env pluck
+    length 40%
+    level 55%
+    repeat 2 every 14% decay=70%
+
+sound door_creak
+  length long
+  space cave
+  layer hinge
+    source bow harsh
+    sweep pitch 180 -> 340 curve=snap
+    env sustain
+    level 80%
+  layer thud at=80%
+    source thump dark
+    pitch sub
+    env hit
+    length 25%
+    level 90%
+  assert duration > 1.0 s
+
+sound monster_roar
+  length huge
+  space cave
+  drive soft
+  layer throat
+    source drone harsh
+    sweep pitch 90 -> 62 curve=ease
+    env bloom
+    level 100%
+  layer rasp
+    source noise
+    sweep center 900 -> 300 curve=slow
+    env bloom
+    level 55%
+  layer snarl at=55%
+    source metal dark
+    pitch low
+    env stab
+    length 35%
+    level 40%
+  assert centroid < 2000 hz
+
+sound ui_click
+  length tiny
+  layer tick
+    source tri
+    sweep pitch 1800 -> 900 curve=drop
+    env hit
+    length 35%
+  assert duration < 0.25 s
+  assert onsets == 1
