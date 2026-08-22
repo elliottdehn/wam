@@ -1,0 +1,294 @@
+# ALIEN GOD, track 9 — "The God Wakes"
+#
+# The loudest thing here, and it returns to the title track's key so the
+# record closes the circle it opened: C phrygian, the same flat second, the
+# same G flat fighting it. Five beats to the bar at 144 — fast enough to run
+# from, and one beat longer than running music should be.
+audio the_god_wakes
+  key c phrygian
+  tempo 144
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument guitar   source=saw    tone=grind env=gate  level=100% drive=fuzz
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument lead     source=square tone=grind env=gate  level=100% drive=hard
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+  instrument bell     source=bell   tone=dark  env=pluck level=100% space=cave
+
+song the_god_wakes
+  meter 5/4
+  bars 152
+  feel straight
+  space room
+
+  staff monolith instrument=monolith level=28%
+    voice pedal
+      phrase HOLD
+        | <c, g,>1~ q4
+        | q1~ q4
+        | q1~ q4
+        | q1~ q4
+        | <des, aes,>1~ q4
+        | q1~ q4
+        | <c, g,>1~ q4
+        | q1~ q4
+      dynamic mf
+      play HOLD HOLD HOLD HOLD HOLD
+      dynamic f
+      play HOLD HOLD HOLD HOLD HOLD
+      dynamic ff
+      play HOLD HOLD HOLD HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD HOLD
+
+  staff guitar instrument=guitar level=54% pan=22%
+    voice chug
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase CHUG
+        | <c, g,>8 q q q q q q q q q
+        | <c, g,>8 q q q q q q q q q
+        | <c, g,>8 q q q <d, a,>8 q q q q q
+        | <c, g,>8 q q q q q <ges, des>8 q q q
+        | <c, g,>8 q q q q q q q q q
+        | <c, g,>8 q q q q q q q q q
+        | <des, aes,>8 q q q q q q q q q
+        | <c, g,>8 q q q <ges, des>8 q <c, g,>8 q q q
+      phrase HAMMER
+        | <c, g,>4 q4 q4 q4 q4
+        | <ges, des>4 q4 <c, g,>2.
+        | <c, g,>4 q4 q4 q4 q4
+        | <des, aes,>4 <c, g,>4 <ges, des>2.
+        | <c, g,>4 q4 q4 q4 q4
+        | <ges, des>4 q4 <c, g,>2.
+        | <des, aes,>2 <ges, des>2.
+        | <c, g,>1 r4
+      play SILENT SILENT
+      dynamic mf
+      play CHUG CHUG CHUG
+      dynamic ff
+      play CHUG CHUG CHUG CHUG
+      play HAMMER HAMMER
+      dynamic f
+      play CHUG CHUG CHUG
+      dynamic ff
+      play HAMMER HAMMER CHUG CHUG
+      dynamic mp
+      play SILENT
+
+  staff bass instrument=bass level=58%
+    voice line
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase PEDAL
+        | c,8 q q q q q q q q q
+        | c,8 q q q q q q q q q
+        | c,8 q q q d,8 q q q q q
+        | c,8 q q q q q ges,8 q q q
+        | c,8 q q q q q q q q q
+        | c,8 q q q q q q q q q
+        | des,8 q q q q q q q q q
+        | c,8 q q q ges,8 q c,8 q q q
+      phrase HAMMER
+        | c,4 q4 q4 q4 q4
+        | ges,4 q4 c,2.
+        | c,4 q4 q4 q4 q4
+        | des,4 c,4 ges,2.
+        | c,4 q4 q4 q4 q4
+        | ges,4 q4 c,2.
+        | des,2 ges,2.
+        | c,1 r4
+      play SILENT
+      dynamic mf
+      play PEDAL PEDAL PEDAL PEDAL
+      dynamic ff
+      play PEDAL PEDAL PEDAL PEDAL
+      play HAMMER HAMMER
+      dynamic f
+      play PEDAL PEDAL PEDAL
+      dynamic ff
+      play HAMMER HAMMER PEDAL PEDAL
+      dynamic mp
+      play SILENT
+
+  staff lead instrument=lead level=44% pan=-22%
+    voice line
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase RIFF
+        | c'8 d'8 c'8 ges'8 c'8 d'8 c'8 bes8 c'8 d'8
+        | c'8 e'8 f'8 ges'8 f'8 e'8 c'8 d'8 c'8 bes8
+        | c'8 d'8 c'8 ges'8 c'8 d'8 c'8 bes8 c'8 d'8
+        | ges'2 f'2 e'4
+        | c'8 d'8 c'8 ges'8 c'8 d'8 c'8 bes8 c'8 d'8
+        | c'8 e'8 f'8 ges'8 f'8 e'8 c'8 d'8 c'8 bes8
+        | des'8 c'8 bes8 aes8 ges8 aes8 bes8 c'8 des'8 e'8
+        | c'1 r4
+      phrase SCREAM
+        | ges''1 r4
+        | f''2 e''2 d''4
+        | c''1 r4
+        | ges''2. f''2
+        | e''1 r4
+        | d''2 c''2 bes'4
+        | des''2 c''2 ges'4
+        | c''1 r4
+      play SILENT SILENT SILENT SILENT
+      dynamic ff
+      play RIFF RIFF RIFF
+      play SCREAM SCREAM
+      dynamic f
+      play RIFF RIFF RIFF
+      dynamic ff
+      play SCREAM SCREAM RIFF RIFF
+      dynamic mp
+      play SILENT
+
+  staff vox instrument=vox level=26% pan=28%
+    voice choir
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase HOLD
+        | <c' ges' bes'>1~ q4
+        | q1~ q4
+        | q1~ q4
+        | q1~ q4
+        | <des' aes' c''>1~ q4
+        | q1~ q4
+        | <c' ges' bes'>1~ q4
+        | q1~ q4
+      phrase RESOLVE
+        | <c' ges' bes'>1~ q4
+        | q1~ q4
+        | <c' g' c''>1~ q4
+        | q1~ q4
+        | <c' g' c''>1~ q4
+        | q1~ q4
+        | <c' g' c''>1~ q4
+        | q1~ q4
+      play SILENT SILENT SILENT
+      dynamic mp
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic f
+      play HOLD HOLD HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic mp
+      play RESOLVE HOLD HOLD RESOLVE
+
+  staff bell instrument=bell level=26% pan=-35%
+    voice toll
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase TOLL
+        | c'''1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | ges''1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      dynamic mf
+      play TOLL SILENT TOLL SILENT
+      dynamic f
+      play TOLL TOLL TOLL TOLL
+      dynamic mp
+      play SILENT TOLL SILENT TOLL
+      dynamic f
+      play TOLL TOLL TOLL
+      dynamic mp
+      play TOLL SILENT SILENT SILENT
+
+  staff drum instrument=kit level=60%
+    voice beat
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase RUN
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | k8 k8 s8 k8 s8 s8 t8 t8 T8 T8
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | k8 h8 s8 h8 k8 k8 s8 h8 k8 s8
+        | t8 t8 T8 T8 s8 s8 s8 s8 c8 r8
+      phrase FULL
+        | c8 k8 s8 k8 k8 k8 s8 k8 k8 s8
+        | k8 h8 s8 k8 k8 h8 s8 k8 k8 s8
+        | k8 h8 s8 k8 k8 h8 s8 k8 k8 s8
+        | k8 k8 s8 k8 s8 s8 t8 t8 T8 T8
+        | c8 k8 s8 k8 k8 k8 s8 k8 k8 s8
+        | k8 h8 s8 k8 k8 h8 s8 k8 k8 s8
+        | k8 h8 s8 k8 k8 h8 s8 k8 k8 s8
+        | t8 t8 T8 T8 s8 s8 s8 s8 c8 r8
+      dynamic mp
+      play SILENT
+      dynamic mf
+      play RUN RUN RUN RUN
+      dynamic ff
+      play FULL FULL FULL FULL
+      play FULL FULL
+      dynamic f
+      play RUN RUN RUN
+      dynamic ff
+      play FULL FULL FULL FULL
+      dynamic mp
+      play SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 317 s
+    assert loop_pop < 14 db
+    assert centroid < 4000 hz

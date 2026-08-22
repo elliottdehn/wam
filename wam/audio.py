@@ -64,75 +64,8 @@ def tone_for(name, overrides, table):
 # -------------------------------------------------------------------- pitch
 
 
-def degree_to_midi(deg, key, octave=0):
-    """Scale degree -> MIDI note. Degrees past the scale wrap up an octave."""
-    if "semis" in deg:                    # already stacked by chord_notes
-        semis = deg["semis"] + deg["alter"]
-    else:
-        intervals = ap.MODES[key["mode"]]
-        n = len(intervals)
-        idx = deg["degree"] - 1
-        wrap, step = divmod(idx, n)
-        semis = intervals[step] + 12 * wrap + deg["alter"]
-    return 60 + key["root"] + semis + 12 * (deg["octave"] + octave)
-
-
 def midi_to_freq(m):
     return 440.0 * 2.0 ** ((m - 69) / 12.0)
-
-
-# ---------------------------------------------------------------- harmony
-
-
-def chord_notes(symbol, key, seventh=None):
-    """Stack thirds inside the mode: a numeral always lands in the key."""
-    intervals = ap.MODES[key["mode"]]
-    n = len(intervals)
-    root = symbol["degree"] - 1
-    want = 4 if (symbol["seventh"] if seventh is None else seventh) else 3
-    out = []
-    for i in range(want):
-        idx = root + i * 2
-        wrap, step = divmod(idx, n)
-        out.append({"degree": idx + 1, "alter": 0, "octave": 0,
-                    "semis": intervals[step] + 12 * wrap})
-    # Case (and `o`/`+`) override the mode's own quality, third and fifth only.
-    # The seventh is left diatonic, which is what makes `V7` in a minor key the
-    # dominant seventh an author is asking for.
-    quality = symbol.get("quality")
-    if quality and len(out) >= 3:
-        base = out[0]["semis"]
-        third, fifth = {"major": (4, 7), "minor": (3, 7),
-                        "dim": (3, 6), "aug": (4, 8)}[quality]
-        out[1]["semis"] = base + third
-        out[2]["semis"] = base + fifth
-    return out
-
-
-def chord_timeline(song):
-    """(start_beat, end_beat, chord) for the whole song, tiled to fill it."""
-    prog = song.get("progression")
-    if not prog:
-        return []
-    meter = song["meter"]
-    spans = []
-    beat = 0.0
-    for sym in prog:
-        length = sym["bars"] * meter
-        spans.append((beat, beat + length, sym))
-        beat += length
-    return spans
-
-
-def chord_at(spans, beat, cycle_beats):
-    """Which chord is sounding, with the progression looping under the song."""
-    if not spans or cycle_beats <= 0:
-        return None
-    pos = beat % cycle_beats
-    for start, end, sym in spans:
-        if start <= pos < end:
-            return sym
-    return spans[-1][2]
 
 
 # ------------------------------------------------------------------ stereo
@@ -164,17 +97,17 @@ def mix_stereo(buf, sig, start, gain, pan):
     synth.mix_into(buf[:, 1], sig, start, gain * r)
 
 
-# ------------------------------------------------------------------- voices
+# -------------------------------------------------------------- instruments
 
 # Envelopes that stop when the note stops, versus ones that ring past it. A
 # plucked eighth note that gets cut dead at the eighth sounds like a mute, so
-# decay-type voices are allowed to spill into the notes that follow.
+# decay-type instruments are allowed to spill into the notes that follow.
 SUSTAIN_ENVS = ("pad", "sustain", "swell", "gate", "bow", "stab")
 
 GLIDE_TIMES = {"none": 0.0, "short": 0.04, "long": 0.14}
 
 
-def _voice_defaults(name):
+def _instrument_defaults(name):
     return {"name": name, "source": "saw", "tone": "plain", "env": "pluck",
             "level": 1.0, "octave": 0, "detune": 0.0, "space": "none",
             "echo": "none", "drive": "none", "pan": "center", "damp": 0.5,
@@ -182,10 +115,10 @@ def _voice_defaults(name):
 
 
 def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None):
-    """One note (or chord) of one voice, as a mono buffer.
+    """One note (or chord) of one instrument, as a mono buffer.
 
-    `dur_s` is the slot; the returned buffer may be longer when the voice's
-    envelope rings out past it. Callers mix it in at the slot's start.
+    `dur_s` is the written value; the returned buffer may be longer when the
+    envelope rings out past it. Callers mix it in at the note's start.
     """
     env_name = voice["env"]
     ring = 0.0 if env_name in SUSTAIN_ENVS else min(1.6 * dur_s, 0.9)
@@ -210,7 +143,9 @@ def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None):
         out /= math.sqrt(len(freqs))          # a chord is not N times louder
     out *= env
     if voice.get("cut"):
-        out = synth.filter_signal(out, "low", ap.parse_freq(voice["cut"], voice.get("line"), ""), rate)
+        out = synth.filter_signal(out, "low",
+                                  ap.parse_freq(voice["cut"], voice.get("line"), ""),
+                                  rate)
     out = synth.drive(out, voice.get("drive", "none"))
     return out
 
@@ -218,11 +153,8 @@ def render_note(voice, freqs, dur_s, rate, tones, seed, prev_freq=None):
 # -------------------------------------------------------------------- drums
 
 # The kit is built from the same archetypes an author gets, so a piece can be
-# reasoned about and, if it ever needs to be, replaced by a hand-written voice.
+# reasoned about and, if it ever needs to be, replaced by a written-out staff.
 def _drum(piece, rate, seed):
-    def env(name, secs):
-        return synth.envelope(name, int(secs * rate), rate)
-
     if piece == "kick":
         n = int(0.30 * rate)
         body = synth.thump(55.0, n, rate, "plain", seed, drop=4.0)
@@ -236,17 +168,23 @@ def _drum(piece, rate, seed):
     if piece in ("hat", "openhat"):
         secs = 0.055 if piece == "hat" else 0.34
         n = int(secs * rate)
-        x = synth.filter_signal(synth.noise("white", n, rate, seed + 2), "high", 6500.0, rate)
-        metal = synth.metal(3200.0, n, rate, "bright", seed + 3)
-        return (x + 0.4 * metal) * synth.envelope("hit", n, rate)
+        # A cymbal is metal that also hisses, not hiss with a little metal in
+        # it. Highpassing white noise at 6.5 kHz left nothing at all below
+        # 2 kHz, so the thing had no body: all air, which is exactly what
+        # "hissy" describes. The modes lead now and the wash supports them.
+        x = synth.filter_signal(synth.noise("white", n, rate, seed + 2),
+                                "high", 2800.0, rate)
+        metal = synth.metal(2600.0, n, rate, "bright", seed + 3)
+        return (metal + 0.45 * x) * synth.envelope("hit", n, rate)
     if piece in ("tom", "lowtom"):
         n = int(0.34 * rate)
         base = 150.0 if piece == "tom" else 95.0
         return synth.thump(base, n, rate, "plain", seed, drop=2.2) * synth.envelope("hit", n, rate)
     if piece == "crash":
         n = int(1.4 * rate)
-        x = synth.filter_signal(synth.noise("white", n, rate, seed + 4), "high", 3000.0, rate)
-        return (x + 0.6 * synth.metal(2400.0, n, rate, "bright", seed + 5)) * \
+        x = synth.filter_signal(synth.noise("white", n, rate, seed + 4),
+                                "high", 1500.0, rate)
+        return (synth.metal(1900.0, n, rate, "bright", seed + 5) + 0.7 * x) * \
             synth.envelope("bloom", n, rate)
     if piece == "ride":
         n = int(0.7 * rate)
@@ -263,94 +201,78 @@ DRUM_PAN = {"kick": "center", "snare": "center", "hat": "right", "openhat": "rig
             "tom": "left", "lowtom": "left", "crash": "left", "ride": "right"}
 
 
-# ------------------------------------------------------------------- phrases
-
-# What a play-modifier means. These are the compiler's job, not the author's:
-# the author says "answer this phrase", not "transpose the last note".
-def apply_mods(events, mods, key):
-    out = [dict(e) for e in events]
-    for mod in mods:
-        if mod == "^":
-            out = [_shift_octave(e, 1) for e in out]
-        elif mod == "_":
-            out = [_shift_octave(e, -1) for e in out]
-        elif mod == "'":
-            out = _answer(out)
-        elif mod == "~":
-            out = [dict(e, accent=e.get("accent", 1.0) * 0.6) for e in out]
-    return out
-
-
-def _shift_octave(ev, delta):
-    if ev.get("kind") in ("chord_here", "chord_tone"):
-        return dict(ev, octave=ev.get("octave", 0) + delta)
-    if ev.get("kind") not in ("note", "chord"):
-        return dict(ev)
-    return dict(ev, degrees=[dict(d, octave=d["octave"] + delta) for d in ev["degrees"]])
-
-
-def _answer(events):
-    """The variation form: same rhythm, resolved ending.
-
-    The last sounding event is pulled to the tonic, and the one before it to
-    the leading tone below -- a cadence, deterministically, from a `'`.
-    """
-    out = [dict(e) for e in events]
-    sounding = [i for i, e in enumerate(out) if e.get("kind") in ("note", "chord")]
-    # A `'` on a chord-following track would fight the progression, so the
-    # cadence is only written onto tracks that spell their own notes.
-    if not sounding:
-        return out
-    last = sounding[-1]
-    out[last] = dict(out[last], degrees=[dict(out[last]["degrees"][0], degree=1, alter=0)])
-    if len(sounding) > 1:
-        prev = sounding[-2]
-        out[prev] = dict(out[prev],
-                         degrees=[dict(out[prev]["degrees"][0], degree=7, alter=0,
-                                       octave=out[prev]["degrees"][0]["octave"] - 1)])
-    return out
-
-
 # ---------------------------------------------------------------- song build
 
 
-def _track_events(part, song, tones):
-    """Flatten a track's `play` list into (beat, event) pairs, repeated to fill."""
-    default = ap.DURATION_BEATS[part["notes"]]
-    seq = []
+def flatten_voice(bars, bar_beats):
+    """Bars of events -> (start_beat, event), with ties joined.
+
+    A tie is written on the note that starts it and can cross a bar line, so
+    joining has to happen after the bars have been read and checked -- which
+    is also why bar checking counts the written value rather than the sounding
+    one.
+    """
+    out = []
     beat = 0.0
-    for item in part["play"]:
-        if item["phrase"] is None:
-            beat += item.get("bars", 1.0) * song["meter"]
-            continue
-        events = apply_mods(part["phrases"][item["phrase"]], item["mods"], song["key"])
+    pending = None
+    for bar_index, events in enumerate(bars):
         for ev in events:
-            dur = ev["dur"] if ev["dur"] is not None else default
-            seq.append((beat, ev, dur))
-            beat += dur
-    return seq, beat
+            if pending is not None:
+                same = (ev.get("kind") == pending["kind"]
+                        and ev.get("midis") == pending["midis"]
+                        and ev.get("piece") == pending.get("piece"))
+                if same:
+                    pending["beats"] += ev["beats"]
+                    beat += ev["beats"]
+                    if not ev.get("tie"):
+                        out.append((pending["start"], pending))
+                        pending = None
+                    continue
+                # A tie into a different note is a slur at best; sound the
+                # tied note and carry on rather than silently swallowing it.
+                out.append((pending["start"], pending))
+                pending = None
+            if ev["kind"] == "dynamic":
+                out.append((beat, dict(ev, start=beat)))
+                continue
+            item = dict(ev)
+            item["start"] = beat
+            beat += ev["beats"]
+            if ev.get("tie") and ev["kind"] in ("note", "chord"):
+                pending = item
+            else:
+                out.append((item["start"], item))
+    if pending is not None:
+        out.append((pending["start"], pending))
+    return out, beat
 
 
 def render_song(song, doc, tones, rate):
     meter = song["meter"]
     beat_s = 60.0 / song["tempo"]
-    # Solo wins over mute, and any solo silences everything not soloed --
-    # the same rule as every mixer, so the flags behave the way muscle memory
-    # expects while an author is picking one track apart.
-    spans = chord_timeline(song)
-    cycle = spans[-1][1] if spans else 0.0
-    soloed = [t for t in song["tracks"] if t["solo"]]
-    live = soloed if soloed else [t for t in song["tracks"] if not t["mute"]]
-    parts = []
-    natural = 0.0
-    for part in live:
-        seq, length = _track_events(part, song, tones)
-        parts.append((part, seq, length))
-        natural = max(natural, length)
-    if song["bars"]:
-        total_beats = song["bars"] * meter
+    # Solo wins over mute, and any solo silences everything not soloed -- the
+    # same rule as every mixer.
+    soloed = [st for st in song["staves"] if st["solo"]]
+    live = soloed if soloed else [st for st in song["staves"] if not st["mute"]]
+
+    lengths = []
+    for staff in song["staves"]:
+        for voice in staff["voices"]:
+            lengths.append(len(voice["bars"]))
+    written_bars = max(lengths) if lengths else 0
+    if song["bars"] is not None:
+        for staff in song["staves"]:
+            for voice in staff["voices"]:
+                if len(voice["bars"]) > song["bars"]:
+                    raise ap.WamAudioError(
+                        "voice %r in staff %r writes %d bars, but the song "
+                        "declares %d"
+                        % (voice["name"], staff["name"], len(voice["bars"]),
+                           song["bars"]), voice["line"])
+        total_bars = song["bars"]
     else:
-        total_beats = math.ceil(natural / meter) * meter if natural else meter
+        total_bars = written_bars
+    total_beats = total_bars * meter["beats"]
     total_s = total_beats * beat_s
     tail_s = 2.0 * beat_s + 1.8            # room for releases and reverb tails
     n = int((total_s + tail_s) * rate)
@@ -358,126 +280,106 @@ def render_song(song, doc, tones, rate):
     stats = []
     stems = {}
 
-    for part, seq, length in parts:
-        if length <= 0:
-            continue
-        voice = dict(_voice_defaults(part["voice"]))
-        if not part["drums"]:
-            declared = doc["voices"].get(part["voice"])
+    for staff in live:
+        if staff["drums"]:
+            instrument = dict(_instrument_defaults("kit"))
+        else:
+            declared = doc["instruments"].get(staff["instrument"])
             if declared is None:
                 raise ap.WamAudioError(
-                    "track %r names voice %r, which the file never declares"
-                    % (part["name"], part["voice"]), part["line"])
-            voice.update(declared)
-        voice["octave"] = voice.get("octave", 0) + part["octave"]
-        pan = part["pan"] or voice.get("pan", "center")
-        part_buf = np.zeros((n, 2))
-        gain = part["level"] * voice["level"]
-        prev_freq = None
-        # A part shorter than the piece repeats: write one riff, say `bars 8`.
-        reps = max(int(math.ceil(total_beats / length)), 1)
+                    "staff %r names instrument %r, which the file never declares"
+                    % (staff["name"], staff["instrument"]), staff["line"])
+            instrument = dict(_instrument_defaults(staff["instrument"]))
+            instrument.update(declared)
+        staff_buf = np.zeros((n, 2))
         placed = 0
-        for rep in range(reps):
-            for beat, ev, dur in seq:
-                at = beat + rep * length
+        for voice in staff["voices"]:
+            events, _ = flatten_voice(voice["bars"], meter["beats"])
+            octave = instrument.get("octave", 0) + staff["octave"] + voice["octave"]
+            pan = voice["pan"] or staff["pan"] or instrument.get("pan", "center")
+            gain = staff["level"] * voice["level"] * instrument["level"]
+            prev_freq = None
+            dynamic = 1.0
+            for at, ev in events:
                 if at >= total_beats:
                     continue
                 start = _swing(at, song["feel"]) * beat_s
-                jitter, vel_jitter = ap.HUMANIZE[part["humanize"]]
+                jitter, vel_jitter = ap.HUMANIZE[staff["humanize"]]
                 if jitter or vel_jitter:
                     # Seeded on the beat, so a re-render is bit-identical: a
                     # file that compiles differently each time cannot be
                     # reviewed, and cannot be checked.
-                    r = synth.rng_for(int(at * 1000) + len(part["name"]) * 7919)
+                    r = synth.rng_for(int(at * 1000) + len(voice["name"]) * 7919)
                     start = max(start + float(r.normal(0.0, jitter)), 0.0)
                     swing_vel = 1.0 + float(r.normal(0.0, vel_jitter))
                 else:
                     swing_vel = 1.0
+                if ev["kind"] == "dynamic":
+                    dynamic = ev["gain"]
+                    continue
                 if ev["kind"] == "rest":
                     prev_freq = None
                     continue
-                seed = int((at * 97 + rep * 13 + hash(part["name"]) % 1000) % 100000)
+                seed = int((at * 97 + hash(voice["name"]) % 1000) % 100000)
                 if ev["kind"] == "drum":
                     sig = _drum(ev["piece"], rate, seed)
-                    mix_stereo(part_buf, sig, int(start * rate),
-                               gain * ev["accent"] * swing_vel * 0.9,
+                    mix_stereo(staff_buf, sig, int(start * rate),
+                               gain * dynamic * ev["accent"] * swing_vel * 0.9,
                                DRUM_PAN.get(ev["piece"], pan))
                     placed += 1
                     continue
-                if ev["kind"] == "tie":
-                    continue
-                degrees = _resolve_degrees(ev, song, spans, cycle, at)
-                if degrees is None:
-                    prev_freq = None
-                    continue
-                freqs = [midi_to_freq(degree_to_midi(d, song["key"], voice["octave"]))
-                         for d in degrees]
-                sig = render_note(voice, freqs, dur * beat_s, rate, tones, seed, prev_freq)
+                freqs = [midi_to_freq(m + 12 * octave) for m in ev["midis"]]
+                sig = render_note(instrument, freqs, ev["beats"] * beat_s, rate,
+                                  tones, seed, prev_freq)
                 prev_freq = freqs[0]
-                mix_stereo(part_buf, sig, int(start * rate),
-                           gain * ev["accent"] * swing_vel, pan)
+                mix_stereo(staff_buf, sig, int(start * rate),
+                           gain * dynamic * ev["accent"] * swing_vel, pan)
                 placed += 1
-        if part.get("level_to") is not None:
+        if staff.get("level_to") is not None:
             # Ramp across the song body, then hold: the tail must not slide.
             body_n = min(int(total_s * rate), n)
-            curve = np.ones(n) * part["level_to"] / max(part["level"], 1e-9)
-            curve[:body_n] = synth.ramp(1.0,
-                                        part["level_to"] / max(part["level"], 1e-9),
-                                        body_n, part["curve"])
-            part_buf *= curve[:, None]
-        part_buf = _apply_space(part_buf, part["echo"] or voice.get("echo"), rate, synth.echo)
-        part_buf = _apply_space(part_buf, part["space"] or voice.get("space"), rate, synth.reverb)
-        buf += part_buf[:n]
-        stems[part["name"]] = part_buf[:n]
-        stats.append({"track": part["name"], "voice": part["voice"],
-                      "events": placed, "muted": bool(part["mute"]),
-                      "soloed": bool(part["solo"]),
-                      "peak_db": synth.amp_to_db(float(np.max(np.abs(part_buf)))),
-                      "centroid": round(measure(part_buf, rate)["centroid"], 1)})
+            curve = np.ones(n) * staff["level_to"] / max(staff["level"], 1e-9)
+            curve[:body_n] = synth.ramp(
+                1.0, staff["level_to"] / max(staff["level"], 1e-9), body_n,
+                staff["curve"])
+            staff_buf *= curve[:, None]
+        staff_buf = _apply_space(staff_buf, staff["echo"] or instrument.get("echo"),
+                                 rate, synth.echo)
+        staff_buf = _apply_space(staff_buf, staff["space"] or instrument.get("space"),
+                                 rate, synth.reverb)
+        buf += staff_buf[:n]
+        stems[staff["name"]] = staff_buf[:n]
+        stats.append({"staff": staff["name"], "instrument": staff["instrument"],
+                      "voices": len(staff["voices"]), "events": placed,
+                      "muted": bool(staff["mute"]), "soloed": bool(staff["solo"]),
+                      "peak_db": synth.amp_to_db(float(np.max(np.abs(staff_buf)))),
+                      "centroid": round(measure(staff_buf, rate)["centroid"], 1)})
 
     buf = _apply_space(buf, song["space"], rate, synth.reverb)[:n]
-    body = buf[:int(total_s * rate)].copy()
+    body_n = int(total_s * rate)
+    once = buf.copy()
+    for ch in range(2):
+        once[:, ch] = synth.fade_edges(once[:, ch], rate)
     if song["loop"]:
         # Wrap the ring-out onto the head so the loop point has no hole in it.
-        tail = buf[int(total_s * rate):]
+        # That is right for a loop and wrong for listening: the ending is gone
+        # from the end, which sounds exactly like the piece being cut off. So
+        # keep the un-wrapped render too, and let the caller hand over both.
+        body = buf[:body_n].copy()
+        tail = buf[body_n:]
         k = min(len(tail), len(body))
         body[:k] += tail[:k]
     else:
-        body = buf[:int((total_s + tail_s) * rate)].copy()
-        for ch in range(2):
-            body[:, ch] = synth.fade_edges(body[:, ch], rate)
-    meta = {"kind": "song", "progression": [s["text"] for s in song["progression"]]
-            if song.get("progression") else [],
-            "bars": total_beats / meter, "tempo": song["tempo"],
-            "key": song["key"]["text"], "meter": meter, "feel": song["feel"],
-            "loop": bool(song["loop"]), "beats": total_beats, "tracks": stats,
-            "soloed": [t["name"] for t in soloed],
-            "muted": [t["name"] for t in song["tracks"] if t["mute"]]}
-    # Stems are cut to the same window as the mix so they line up sample for
-    # sample; anything else makes an A/B against the mix useless.
-    body_n = len(body)
-    return body, meta, {k: v[:body_n] for k, v in stems.items()}
-
-
-def _resolve_degrees(ev, song, spans, cycle, beat):
-    """Turn one event into scale degrees, resolving `*` against the harmony."""
-    if ev["kind"] in ("note", "chord"):
-        return ev["degrees"]
-    sym = chord_at(spans, beat, cycle)
-    if sym is None:
-        raise ap.WamAudioError(
-            "a track uses %r but the song declares no progression" % ev["raw"])
-    notes = chord_notes(sym, song["key"])
-    shift = ev.get("octave", 0)
-    if ev["kind"] == "chord_here":
-        return [dict(d, octave=d["octave"] + shift) for d in notes]
-    idx = ev["tone_index"]
-    if idx >= len(notes):
-        # Asking for a seventh on a triad: the compiler adds it rather than
-        # dropping the note, because a silent note reads as a bug in the file.
-        notes = chord_notes(sym, song["key"], seventh=True)
-    note = notes[min(idx, len(notes) - 1)]
-    return [dict(note, octave=note["octave"] + shift)]
+        body = once
+        once = None
+    meta = {"kind": "song", "bars": total_bars, "tempo": song["tempo"],
+            "key": song["key"]["text"], "meter": meter["text"],
+            "beats_per_bar": meter["beats"], "feel": song["feel"],
+            "loop": bool(song["loop"]), "beats": total_beats, "staves": stats,
+            "soloed": [st["name"] for st in soloed],
+            "muted": [st["name"] for st in song["staves"] if st["mute"]]}
+    cut = len(body)
+    return body, meta, {k: v[:cut] for k, v in stems.items()}, once
 
 
 def _swing(beat, feel):
@@ -813,10 +715,10 @@ def lint(buf, rate, metrics, meta):
     if metrics["crest"] > 30.0:
         warn.append("crest factor %.1f dB: one transient towers over everything else"
                     % metrics["crest"])
-    for stat in meta.get("tracks", []) + meta.get("layers", []):
+    for stat in meta.get("staves", []) + meta.get("layers", []):
         if stat["peak_db"] < -50.0:
             warn.append("%r contributes nothing audible (%.1f dBFS)"
-                        % (stat.get("track") or stat.get("layer"), stat["peak_db"]))
+                        % (stat.get("staff") or stat.get("layer"), stat["peak_db"]))
     if meta.get("soloed"):
         warn.append("solo is on (%s): this render is not the finished mix"
                     % ", ".join(meta["soloed"]))
@@ -854,8 +756,9 @@ def compile_document(doc, only=None):
     for song in doc["songs"]:
         if only and song["name"] not in only:
             continue
-        buf, meta, stems = render_song(song, doc, tones, rate)
-        pieces.append(_finish(song, buf, meta, doc, rate, loop=song["loop"], stems=stems))
+        buf, meta, stems, once = render_song(song, doc, tones, rate)
+        pieces.append(_finish(song, buf, meta, doc, rate, loop=song["loop"],
+                              stems=stems, once=once))
     for snd in doc["sounds"]:
         if only and snd["name"] not in only:
             continue
@@ -869,7 +772,7 @@ def compile_document(doc, only=None):
     return pieces
 
 
-def _finish(spec, buf, meta, doc, rate, loop, stems=None):
+def _finish(spec, buf, meta, doc, rate, loop, stems=None, once=None):
     peak = float(np.max(np.abs(buf))) or 1.0
     buf = synth.normalize(buf, doc["master"])
     # Stems get the mix's own gain change, so a soloed stem sits exactly where
@@ -877,6 +780,8 @@ def _finish(spec, buf, meta, doc, rate, loop, stems=None):
     gain = (float(np.max(np.abs(buf))) or 1.0) / peak
     metrics = measure(buf, rate, loop=loop)
     return {"name": spec["name"], "kind": meta["kind"], "buf": buf, "rate": rate,
+            # The same gain, so the two renders are the same mix.
+            "once": None if once is None else once * gain,
             "stems": {k: v * gain for k, v in (stems or {}).items()},
             "meta": meta, "metrics": metrics,
             "checks": run_checks(spec["checks"], metrics),

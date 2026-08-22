@@ -1,0 +1,190 @@
+# ALIEN GOD, track 1 — "Signal"
+#
+# Something is transmitting and nothing is answering yet. Five beats to the
+# bar, slow enough that the extra one reads as a held breath rather than a
+# limp, and almost nothing in the register a body responds to until bar 25.
+audio signal
+  key d minor
+  tempo 60
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument bell     source=bell   tone=dark  env=pluck level=100% space=cave
+  instrument air      source=breath tone=alien env=swell level=100% space=cave
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument pulse    source=thump  tone=murk  env=hit   level=100%
+
+song signal
+  meter 5/4
+  bars 48
+  feel straight
+  space cave
+
+  staff monolith instrument=monolith level=36%
+    voice pedal
+      phrase HOLD
+        | <d, a,>1~ q4
+        | q1~ q4
+        | q1~ q4
+        | q1~ q4
+        | <bes,, f,>1~ q4
+        | q1~ q4
+        | <d, a,>1~ q4
+        | q1~ q4
+      dynamic mp
+      play HOLD
+      dynamic mf
+      play HOLD HOLD
+      dynamic f
+      play HOLD HOLD
+      dynamic mp
+      play HOLD
+
+  staff bell instrument=bell level=32% pan=-35%
+    voice toll
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase TOLL
+        | d''1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | a'1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      play SILENT
+      dynamic mf
+      play TOLL TOLL
+      dynamic f
+      play TOLL TOLL
+      dynamic mp
+      play TOLL
+
+  staff air instrument=air level=30% pan=30%
+    voice breath
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase RISE
+        | r1 r4
+        | a'2. d''2
+        | r1 r4
+        | f''2. e''2
+        | r1 r4
+        | d''2. bes'2
+        | r1 r4
+        | a'1 r4
+      play SILENT SILENT
+      dynamic mp
+      play RISE
+      dynamic mf
+      play RISE RISE
+      dynamic p
+      play RISE
+
+  staff bass instrument=bass level=52%
+    voice pedal
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase STEP
+        | d,2. d,4 d,4
+        | r1 r4
+        | d,2. d,4 d,4
+        | r1 r4
+        | bes,,2. bes,,4 bes,,4
+        | r1 r4
+        | d,2. d,4 d,4
+        | r1 r4
+      play SILENT SILENT SILENT
+      dynamic mf
+      play STEP STEP
+      dynamic mp
+      play STEP
+
+  staff vox instrument=vox level=26% pan=20%
+    voice choir
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase CALL
+        | <d' a' c''>1~ q4
+        | q1~ q4
+        | <e' bes' d''>1~ q4
+        | q1~ q4
+        | <d' a' c''>1~ q4
+        | q1~ q4
+        | <d' g' bes'>1~ q4
+        | q1~ q4
+      play SILENT SILENT SILENT SILENT
+      dynamic mf
+      play CALL
+      dynamic p
+      play CALL
+
+  staff drum instrument=kit level=48%
+    voice beat
+      phrase SILENT
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+        | r1 r4
+      phrase FAR
+        | T2. r2
+        | r1 r4
+        | r1 r4
+        | T2. r2
+        | r1 r4
+        | r1 r4
+        | T2. T4 r4
+        | r1 r4
+      play SILENT SILENT
+      dynamic mp
+      play FAR FAR
+      dynamic mf
+      play FAR
+      dynamic p
+      play FAR
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 240 s
+    assert loop_pop < 14 db
+    assert centroid < 3000 hz

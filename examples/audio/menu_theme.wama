@@ -1,106 +1,221 @@
-# Main menu theme. The whole piece is one gesture repeated: a call, then an
-# answer from a different voice in a different place in the stereo field.
-# Nothing else is invented -- the arrangement is built by deciding, per track,
-# which bars it is allowed to speak in.
+# Main menu theme, written as a score.
+#
+# The key signature does real work: in D major every written `f` and `c`
+# sounds sharp, so `<d' f' a'>` means D-F#-A. That is what a player reads off
+# a staff, and transposing the piece is one line rather than every note.
+#
+# Four eight-bar cycles, and they are not the same cycle four times:
+#
+#   1-8    the question. Strings and a call answered two bars later.
+#   9-16   the floor arrives: bass, harp, and a drum that starts as a pulse.
+#   17-24  the payoff. The lead stops trading and plays straight through,
+#          high, over a crash and a driving kit.
+#   25-32  the release, thinning back to what bar 1 sounded like so the loop
+#          rejoins itself.
+#
+# The harmony is eight bars, not four, so the cycle does not close where the
+# ear expects: bars 7-8 turn to Em and A7 instead of repeating G-A.
 audio menu
-  key g major
-  tempo 92
+  key d major
+  tempo 96
   master -1.5
 
 tones
-  # The lead has to carry over everything without turning into a reed: more
-  # harmonics than `warm`, but falling away faster than `bright` leaves them.
+  # `bright` unmodified is reedy; the lead has to carry without turning into
+  # a kazoo.
   tone bright harm=1.15 tilt=1.15
-  # The answering voice is the same family, one shade darker, so the pair reads
-  # as two singers rather than two instruments.
   tone answering from=warm tilt=1.35 harm=0.85
 
-voices
-  voice lead    source=bow   tone=bright    env=bow    level=100% octave=0  space=hall
-  voice reply   source=bow   tone=answering env=bow    level=100% octave=-1 space=hall
-  voice strings source=drone tone=warm      env=pad    level=100% octave=0  space=hall
-  voice pad     source=drone tone=dark      env=pad    level=100% octave=-1
-  voice bass    source=pluck tone=warm      env=pluck  level=100% octave=-2 damp=0.40
-  voice harp    source=pluck tone=bright    env=pluck  level=100% octave=0  damp=0.50 space=room
-  voice chime   source=bell  tone=warm      env=pluck  level=100% octave=0  space=hall
+instruments
+  instrument lead    source=bow   tone=bright    env=bow   level=100% space=hall
+  instrument reply   source=bow   tone=answering env=bow   level=100% space=hall
+  instrument strings source=drone tone=warm      env=pad   level=100% space=hall
+  instrument harp    source=pluck tone=bright    env=pluck level=100% damp=0.5 space=room
+  instrument bass    source=pluck tone=warm      env=pluck level=100% damp=0.4
 
 song main_theme
+  meter 4/4
   bars 32
-  meter 4
   feel straight
-  progression vi IV I V vi IV ii V7
   space hall
 
-  # --- the call ---------------------------------------------------------
-  # Motion on scale degrees, arrivals on chord tones: the melody is free to
-  # wander, but every long note is guaranteed to belong to the chord under it.
-  track lead voice=lead notes=q level=52% pan=-35% humanize=light
-    phrase CALL = 5 1^ *5^:h 6 5 *3^:h
-    phrase LIFT = 5 6 *5^:h 1^ 2^ *1^:h
-    play CALL
-    rest 2
-    play LIFT
-    rest 2
+  # --- the call, and in the payoff the whole tune -----------------------
+  staff lead instrument=lead level=52% pan=-30% humanize=light
+    voice tune
+      phrase CALL1
+        | a'4 d''4 f''2
+        | e''4 d''4 b'2
+      phrase CALL2
+        | f''4 e''4 d''4 a'4
+        | b'4 d''4 f''2
+      phrase SILENT
+        | r1
+        | r1
+      phrase P1
+        | f''4 a''4 f''4 d''4
+        | e''2 d''2
+      phrase P2
+        | d''4 f''4 a''4 b''4
+        | a''2 f''2
+      phrase P3
+        | g''4 f''4 e''4 d''4
+        | c''4 e''4 a'2
+      phrase P4
+        | g'4 b'4 e''4 g''4
+        | a''2 e''2
+      dynamic p
+      play CALL1 SILENT CALL2 SILENT
+      dynamic mp
+      play CALL1 SILENT CALL2 SILENT
+      dynamic ff
+      play P1 P2 P3 P4
+      dynamic mp
+      play CALL1 SILENT CALL2 SILENT
 
-  # --- and the answer ---------------------------------------------------
-  # Two bars later, lower, and resolving where the call left off hanging.
-  track reply voice=reply notes=q level=44% pan=35% humanize=light
-    phrase ANSWER = 1^ 7 *5:h 3 2 *1:h
-    phrase SETTLE = 5 3 *3:h 2 1 *1:h
-    rest 2
-    play ANSWER
-    rest 2
-    play SETTLE
+  # --- the answer: two bars later, lower, other ear ---------------------
+  staff reply instrument=reply level=44% pan=30% octave=-1 humanize=light
+    voice tune
+      phrase ANSWER1
+        | d''4 b'4 g'2
+        | c''4 a'4 e'2
+      phrase ANSWER2
+        | g'4 b'4 e''2
+        | c''4 e''4 a'2
+      phrase SILENT
+        | r1
+        | r1
+      dynamic p
+      play SILENT ANSWER1 SILENT ANSWER2
+      dynamic mp
+      play SILENT ANSWER1 SILENT ANSWER2
+      play SILENT SILENT SILENT SILENT
+      dynamic mp
+      play SILENT ANSWER1 SILENT ANSWER2
 
-  # --- the floor, from the first bar ------------------------------------
-  track pad voice=pad notes=w level=16%->26%
-    phrase P = *
-    play P
+  # --- the harmony, all the way through --------------------------------
+  staff strings instrument=strings level=30% octave=-1
+    voice chords
+      phrase CHORDS
+        | <d' f' a'>1
+        | <b d' f'>1
+        | <g b d'>1
+        | <a c' e'>1
+        | <d' f' a'>1
+        | <b d' f'>1
+        | <e g b>1
+        | <a c' e' g'>1
+      dynamic p
+      play CHORDS
+      dynamic mp
+      play CHORDS
+      dynamic f
+      play CHORDS
+      dynamic mp
+      play CHORDS
 
-  # --- everything below waits eight bars before it is allowed in --------
-  track strings voice=strings notes=w level=18%->34%
-    phrase S = *
-    rest 8
-    play S S S S S S S S
-    play S S S S S S S S
-    play S S S S S S S S
+  # --- the floor, from bar 9 -------------------------------------------
+  staff bass instrument=bass level=62% octave=-1
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase WALK
+        | d4 r4 a,4 r4
+        | b,4 r4 f,4 r4
+        | g,4 r4 d4 r4
+        | a,4 r4 e4 r4
+        | d4 r4 a,4 r4
+        | b,4 r4 f,4 r4
+        | e4 r4 b,4 r4
+        | a,4 r4 e4 r4
+      phrase DRIVEN
+        | d8 d8 a,8 a,8 d8 d8 a,8 a,8
+        | b,8 b,8 f,8 f,8 b,8 b,8 f,8 f,8
+        | g,8 g,8 d8 d8 g,8 g,8 d8 d8
+        | a,8 a,8 e8 e8 a,8 a,8 e8 e8
+        | d8 d8 a,8 a,8 d8 d8 a,8 a,8
+        | b,8 b,8 f,8 f,8 b,8 b,8 f,8 f,8
+        | e8 e8 b,8 b,8 e8 e8 b,8 b,8
+        | a,8 a,8 e8 e8 a,8 a,8 g8 g8
+      play SILENT
+      dynamic mp
+      play WALK
+      dynamic ff
+      play DRIVEN
+      dynamic mp
+      play WALK
 
-  track bass voice=bass notes=q level=48%->70%
-    phrase B = *1:h *5:h
-    rest 8
-    play B B B B B B B B
-    play B B B B B B B B
-    play B B B B B B B B
+  staff harp instrument=harp level=34% pan=-20% humanize=light
+    voice figure
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase ARP
+        | d'8 f'8 a'8 f'8 d'8 f'8 a'8 f'8
+        | b8 d'8 f'8 d'8 b8 d'8 f'8 d'8
+        | g8 b8 d'8 b8 g8 b8 d'8 b8
+        | a8 c'8 e'8 c'8 a8 c'8 e'8 c'8
+        | d'8 f'8 a'8 f'8 d'8 f'8 a'8 f'8
+        | b8 d'8 f'8 d'8 b8 d'8 f'8 d'8
+        | e8 g8 b8 g8 e8 g8 b8 g8
+        | a8 c'8 e'8 g'8 e'8 c'8 a8 c'8
+      phrase ARPHIGH
+        | d''8 f''8 a''8 f''8 d''8 f''8 a''8 f''8
+        | b'8 d''8 f''8 d''8 b'8 d''8 f''8 d''8
+        | g'8 b'8 d''8 b'8 g'8 b'8 d''8 b'8
+        | a'8 c''8 e''8 c''8 a'8 c''8 e''8 c''8
+        | d''8 f''8 a''8 f''8 d''8 f''8 a''8 f''8
+        | b'8 d''8 f''8 d''8 b'8 d''8 f''8 d''8
+        | e'8 g'8 b'8 g'8 e'8 g'8 b'8 g'8
+        | a'8 c''8 e''8 g''8 e''8 c''8 a'8 c''8
+      play SILENT
+      dynamic mp
+      play ARP
+      dynamic ff
+      play ARPHIGH
+      dynamic p
+      play ARP
 
-  track harp voice=harp notes=e level=20%->40% pan=-20% humanize=light
-    phrase H = *1 *5 *3^ *5 *1^ *5 *3^ *5
-    rest 8
-    play H H H H H H H H
-    play H H H H H H H H
-    play H H H H H H H H
-
-  # Light hand percussion for the middle section, driving for the last half.
-  track drums voice=kit notes=e level=24%->46% humanize=light
-    pattern LIGHT = t . . h . . t .
-    pattern DRIVE = k . t h k t . h
-    pattern TAPER = k . t . . . t .
-    rest 8
-    play LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT LIGHT
-    play DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE DRIVE
-    play DRIVE DRIVE DRIVE DRIVE
-    play TAPER TAPER TAPER TAPER
-
-  # One chime to mark each new section, and nothing else.
-  track chime voice=chime notes=w level=24%
-    phrase X = *1^
-    rest 16
-    play X
-    rest 7
-    play X
-    rest 7
+  # --- percussion: a pulse, then a kit, then a fill into the payoff ----
+  staff drum instrument=kit level=58% humanize=light
+    voice beat
+      phrase SILENT
+        | r1
+        | r1
+      phrase PULSE
+        | k2 k2
+        | k2 k4 r4
+      phrase STEADY
+        | k8 h8 s8 h8 k8 h8 s8 h8
+        | k8 h8 s8 h8 k8 s8 h8 h8
+      phrase DRIVE
+        | c8 h8 s8 h8 k8 h8 s8 h8
+        | k8 h8 s8 h8 k8 s8 h8 h8
+      phrase FILL
+        | k8 h8 s8 h8 k8 h8 s8 h8
+        | t8 t8 T8 T8 s8 s8 s8 c8
+      play SILENT SILENT SILENT SILENT
+      dynamic mp
+      play PULSE PULSE STEADY FILL
+      dynamic ff
+      play DRIVE STEADY DRIVE FILL
+      dynamic mp
+      play STEADY STEADY PULSE SILENT
 
   checks
     assert peak <= -1.0 db
-    assert duration ~ 83.5 s
+    assert duration ~ 80.0 s
     assert centroid < 3000 hz
     assert loop_pop < 14 db

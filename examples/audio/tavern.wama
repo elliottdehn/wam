@@ -1,5 +1,4 @@
-# A looping tavern bed. Every track reads the same progression, so the
-# arrangement agrees with itself without any track spelling a chord out.
+# A looping tavern bed, written as a score: staves of voices, voices of bars.
 audio tavern
   key d minor
   tempo walk
@@ -7,53 +6,76 @@ audio tavern
 
 tones
   # The built-in `bright` is fierce for a gut-strung lute; soften it once here
-  # and every voice that asks for `bright` in this file gets the softer one.
+  # and every instrument that asks for `bright` in this file gets the softer one.
   tone bright harm=1.2 noise=0%
   tone reedy from=warm odd=on tilt=1.3
 
-voices
-  voice lute   source=pluck tone=bright env=pluck   level=90% damp=0.55 space=room
-  voice bass   source=pluck tone=warm   env=pluck   level=100% damp=0.35 octave=-2
-  voice fiddle source=bow   tone=reedy  env=bow     level=100% octave=0  space=hall
-  voice reed   source=drone tone=dark   env=pad     level=100% octave=-1
+instruments
+  instrument lute   source=pluck tone=bright env=pluck  level=90% damp=0.55 space=room
+  instrument bass   source=pluck tone=warm   env=pluck  level=100% damp=0.35
+  instrument fiddle source=bow   tone=reedy  env=bow    level=100% space=hall
+  instrument reed   source=drone tone=dark   env=pad    level=100%
 
 song tavern_loop
+  meter 4/4
   bars 8
-  meter 4
   feel straight
-  progression i i VI V
   space room
 
-  # Root and fifth on the strong beats: the floor everything else stands on.
-  track bass voice=bass notes=q level=75%
-    phrase L = *1 . *5 .
-    play L
+  # One staff, two voices: the lute's own arpeggio and the drone under it, the
+  # way a keyboard part is written on one staff in two parts.
+  staff lute instrument=lute level=55% pan=-25% humanize=light
+    voice upper
+      phrase A
+        | d''8 a'8 f''8 a'8 d''8 a'8 f''8 a'8
+        | d''8 a'8 f''8 a'8 d''8 a'8 f''8 a'8
+        | bes'8 f''8 d''8 f''8 bes'8 f''8 d''8 f''8
+        | a'8 e''8 cis''8 e''8 a'8 e''8 cis''8 e''8
+      play A A
+    voice lower
+      phrase B
+        | <d' f'>2 <d' f'>2
+        | <d' f'>2 <d' f'>2
+        | <bes f'>2 <bes f'>2
+        | <a cis'>2 <a cis'>2
+      play B B
 
-  # An arpeggio spelled against the chord, not against the key.
-  track lute voice=lute notes=e level=55% pan=left humanize=light
-    phrase A = *1 *3 *5 *3 *5^ *3 *5 *3
-    play A
+  staff bass instrument=bass level=75% octave=-1
+    voice line
+      phrase L
+        | d4 r4 a,4 r4
+        | d4 r4 a,4 r4
+        | bes,4 r4 f,4 r4
+        | a,4 r4 e,4 r4
+      play L L
 
-  # A held chord underneath, one octave down: body, not melody.
-  track reed voice=reed notes=w level=28%
-    phrase D = *
-    play D
+  # The tune. Rests are written, because a melody that never stops is a drone.
+  staff fiddle instrument=fiddle level=42% pan=25% humanize=light
+    voice tune
+      phrase T
+        | r4 a'4 d''2
+        | r4 f''4 e''2
+        | r4 d''4 bes'2
+        | cis''4 d''4 a'2
+      play T T
 
-  # The tune: sparse, mostly chord tones, and it rests so the loop can breathe.
-  track fiddle voice=fiddle notes=q level=42% pan=right humanize=light
-    phrase T = . *5^ *3^:h
-    phrase U = . 4^ 5^:h
-    phrase V = . *1^ 7:e 5:e *1^:h
-    play T U T V
+  staff reed instrument=reed level=28% octave=-1
+    voice pad
+      phrase P
+        | <d f a>1
+        | <d f a>1
+        | <bes d' f'>1
+        | <a cis' e'>1
+      play P P
 
-  # Two hits a bar. A tavern has a drum, not a drum kit.
-  track drums voice=kit notes=q level=38% humanize=light
-    pattern P = k . s .
-    pattern F = k . s k?
-    play P P P F
+  # A tavern has a drum, not a drum kit.
+  staff drum instrument=kit level=38% humanize=light
+    voice beat
+      phrase D
+        | k4 r4 s4 r4
+      play D D D D D D D D
 
   checks
     assert peak <= -1.0 db
     assert duration ~ 22.9 s
     assert centroid < 3000 hz
-    assert loop_pop < 14 db

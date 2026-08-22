@@ -1,0 +1,267 @@
+# ALIEN GOD, track 2 — "The Approach"
+#
+# The first track that moves. A pedal E under everything for nineteen slots,
+# and the interest comes from what is stacked on it rather than from the
+# harmony going anywhere — which is the point: approaching does not change
+# where you are going.
+audio the_approach
+  key e minor
+  tempo 138
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument guitar   source=saw    tone=grind env=gate  level=100% drive=fuzz
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument lead     source=square tone=grind env=gate  level=100% drive=hard
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+
+song the_approach
+  meter 4/4
+  bars 152
+  feel straight
+  space room
+
+  staff monolith instrument=monolith level=30%
+    voice pedal
+      phrase HOLD
+        | <e, b,>1~
+        | q1~
+        | q1~
+        | q1~
+        | <bes,, f,>1~
+        | q1~
+        | <e, b,>1~
+        | q1~
+      dynamic mf
+      play HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD HOLD HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD HOLD HOLD
+      dynamic mf
+      play HOLD HOLD
+
+  staff bass instrument=bass level=58%
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase PEDAL
+        | e,4 r4 e,4 r4
+        | e,4 r4 e,4 r4
+        | e,4 r4 e,4 r4
+        | e,4 r4 e,8 e,8 r4
+        | e,4 r4 e,4 r4
+        | e,4 r4 e,4 r4
+        | bes,,4 r4 bes,,4 r4
+        | e,4 r4 e,8 e,8 r4
+      phrase DRIVEN
+        | e,8 q q q q q q q
+        | e,8 q q q q q q q
+        | e,8 q q q q q q q
+        | e,8 q q q g,8 q q q
+        | e,8 q q q q q q q
+        | e,8 q q q q q q q
+        | bes,,8 q q q q q q q
+        | e,8 q q q g,8 q bes,,8 q
+      play SILENT
+      dynamic mp
+      play PEDAL PEDAL
+      dynamic mf
+      play DRIVEN DRIVEN DRIVEN
+      dynamic f
+      play DRIVEN DRIVEN
+      dynamic mp
+      play PEDAL PEDAL
+      dynamic ff
+      play DRIVEN DRIVEN DRIVEN DRIVEN
+      dynamic f
+      play DRIVEN DRIVEN
+      dynamic mp
+      play PEDAL SILENT
+
+  staff guitar instrument=guitar level=50% pan=25%
+    voice chug
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase CHUG
+        | <e, b,>8 q q q q q q q
+        | <e, b,>8 q q q q q q q
+        | <e, b,>8 q q q <g, d>8 q q q
+        | <e, b,>8 q q q q q q q
+        | <e, b,>8 q q q q q q q
+        | <e, b,>8 q q q q q q q
+        | <bes,, f,>8 q q q q q q q
+        | <e, b,>8 q q q <g, d>8 q <bes,, f,>8 q
+      phrase STAB
+        | <e, b,>4 r4 <e, b,>4 r4
+        | r1
+        | <bes,, f,>4 r4 <bes,, f,>4 r4
+        | r1
+        | <e, b,>4 r4 <e, b,>4 r4
+        | r1
+        | <g, d>4 <bes,, f,>4 <e, b,>2
+        | r1
+      play SILENT SILENT
+      dynamic mf
+      play CHUG CHUG CHUG
+      dynamic ff
+      play CHUG CHUG
+      dynamic f
+      play STAB STAB
+      dynamic ff
+      play CHUG CHUG CHUG CHUG
+      play CHUG CHUG
+      dynamic mp
+      play STAB SILENT
+
+  staff lead instrument=lead level=42% pan=-25% humanize=light
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase MOTIF
+        | r2 e'4 bes'4
+        | r1
+        | r2 e'4 g'4
+        | r1
+        | r2 bes'4 a'4
+        | r1
+        | g'2 e'2
+        | r1
+      phrase RIFF
+        | e'8 e'8 g'8 bes'8 a'8 g'8 e'8 d'8
+        | e'8 e'8 g'8 bes'8 a'8 g'8 e'8 d'8
+        | e'8 g'8 a'8 bes'8 a'8 g'8 e'8 d'8
+        | e'4 bes'4 e''2
+        | e'8 e'8 g'8 bes'8 a'8 g'8 e'8 d'8
+        | e'8 e'8 g'8 bes'8 a'8 g'8 e'8 d'8
+        | bes'8 a'8 g'8 e'8 d'8 e'8 g'8 a'8
+        | e'2 e''2
+      play SILENT SILENT SILENT
+      dynamic mp
+      play MOTIF
+      dynamic f
+      play RIFF RIFF
+      dynamic mp
+      play MOTIF MOTIF
+      dynamic ff
+      play RIFF RIFF RIFF RIFF
+      play RIFF RIFF
+      dynamic mp
+      play MOTIF SILENT
+
+  staff vox instrument=vox level=24% pan=30%
+    voice choir
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase HOLD
+        | <e' b' d''>1~
+        | q1~
+        | q1~
+        | q1~
+        | <f' bes' d''>1~
+        | q1~
+        | <e' b' d''>1~
+        | q1~
+      play SILENT SILENT SILENT SILENT SILENT
+      dynamic mp
+      play HOLD HOLD
+      dynamic p
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD HOLD
+
+  staff drum instrument=kit level=58%
+    voice beat
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase FAR
+        | T2 r2
+        | r1
+        | r1
+        | T4 T4 r2
+        | T2 r2
+        | r1
+        | r1
+        | T4 T4 T4 r4
+      phrase BEAT
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 k8 k8 s8 s8 r8
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 k8 s8 k8 t8 t8 T8 T8
+      phrase ASSAULT
+        | c8 k8 s8 k8 k8 k8 s8 k8
+        | k8 h8 s8 k8 k8 h8 s8 h8
+        | k8 h8 s8 k8 k8 h8 s8 h8
+        | k8 k8 s8 k8 k8 s8 s8 h8
+        | c8 k8 s8 k8 k8 k8 s8 k8
+        | k8 h8 s8 k8 k8 h8 s8 h8
+        | k8 h8 s8 k8 k8 h8 s8 h8
+        | t8 t8 T8 T8 s8 s8 s8 c8
+      dynamic mp
+      play FAR
+      dynamic mf
+      play FAR BEAT
+      dynamic f
+      play BEAT BEAT BEAT
+      dynamic mp
+      play FAR FAR
+      dynamic ff
+      play ASSAULT ASSAULT ASSAULT ASSAULT
+      play ASSAULT ASSAULT
+      dynamic mp
+      play FAR SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 264 s
+    assert loop_pop < 14 db
+    assert centroid < 4000 hz

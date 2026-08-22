@@ -1,0 +1,249 @@
+# ALIEN GOD, track 5 — "Altar of an Alien God"
+#
+# The title track: the slow, ceremonial end of this world rather than another
+# chase down a corridor. The rite is performed twice, and the second time the
+# thing being addressed answers.
+#
+# Two decisions carry the whole thing, and both are notation rather than mix:
+#
+#   * **7/8.** A bar that is seven eighths long never resolves where the body
+#     expects it to. It limps, and it keeps limping, which is what makes a
+#     ritual feel like it belongs to something that is not us.
+#   * **C phrygian.** The mode puts D flat, E flat, A flat and B flat in the
+#     signature, so the flat second — the interval that makes this music sound
+#     old and wrong — is written as a plain `d`. The compiler derives that
+#     signature from the mode itself. Against it, `ges` is an explicit G flat:
+#     the tritone from C, and the only note in the piece fighting the key.
+audio altar_of_an_alien_god
+  key c phrygian
+  tempo 96
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  # Odd harmonics only: hollow, vocal, and not quite an instrument.
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument guitar   source=saw    tone=grind env=gate  level=100% drive=fuzz
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument lead     source=square tone=grind env=gate  level=100% drive=hard
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+  instrument bell     source=bell   tone=dark  env=pluck level=100% space=cave
+
+song altar_of_an_alien_god
+  meter 7/8
+  bars 152
+  feel straight
+  space cave
+
+  # --- the thing under the floor, never absent -------------------------
+  staff monolith instrument=monolith level=34% octave=-1
+    voice pedal
+      phrase DRONE
+        | <c, g,>2.~ q8
+        | q2.~ q8
+        | q2.~ q8
+        | q2.~ q8
+        | <d, a,>2.~ q8
+        | q2.~ q8
+        | <c, g,>2.~ q8
+        | q2.~ q8
+      dynamic mf
+      play DRONE DRONE
+      dynamic mp
+      play DRONE DRONE DRONE DRONE
+      dynamic p
+      play DRONE DRONE DRONE DRONE
+      dynamic mp
+      play DRONE DRONE DRONE DRONE
+      dynamic mf
+      play DRONE DRONE DRONE
+      dynamic mp
+      play DRONE DRONE
+
+  # --- a bell that tolls the bar, because something is being counted ---
+  staff bell instrument=bell level=30% pan=-30%
+    voice toll
+      phrase TOLL
+        | c''2. r8
+        | r2. r8
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      dynamic mf
+      play TOLL SILENT TOLL SILENT TOLL SILENT TOLL SILENT
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mp
+      play TOLL SILENT TOLL SILENT TOLL SILENT TOLL SILENT
+      dynamic f
+      play TOLL TOLL TOLL TOLL TOLL TOLL TOLL TOLL
+      dynamic mp
+      play TOLL SILENT TOLL SILENT TOLL SILENT TOLL SILENT
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mp
+      play TOLL SILENT TOLL SILENT TOLL SILENT TOLL SILENT
+      dynamic f
+      play TOLL TOLL TOLL TOLL TOLL TOLL TOLL TOLL
+      dynamic mp
+      play TOLL SILENT SILENT SILENT TOLL SILENT SILENT SILENT
+      dynamic p
+      play TOLL SILENT SILENT TOLL
+
+  # --- the approach ----------------------------------------------------
+  staff guitar instrument=guitar level=50% pan=25%
+    voice chug
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      phrase CHUG
+        | <c, g,>8 q q q q q q
+        | <c, g,>8 q q <d, a,>8 q <c, g,>8 q
+      phrase TRITONE
+        | <c, ges,>4 r4 <c, ges,>4 r8
+        | <d, a,>4 <c, ges,>4 <c, g,>4 r8
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play CHUG CHUG CHUG CHUG CHUG CHUG CHUG CHUG
+      dynamic ff
+      play CHUG CHUG CHUG CHUG CHUG CHUG CHUG CHUG
+      play TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play CHUG CHUG CHUG CHUG CHUG CHUG CHUG CHUG
+      dynamic ff
+      play CHUG CHUG CHUG CHUG CHUG CHUG CHUG CHUG
+      play TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE TRITONE
+      dynamic mp
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT
+
+  staff bass instrument=bass level=58% octave=-1
+    voice line
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      phrase PEDAL
+        | c,8 q q q q q q
+        | c,8 q q d,8 q c,8 q
+      phrase STAB
+        | c,4 r4 c,4 r8
+        | d,4 c,4 c,4 r8
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL
+      dynamic ff
+      play PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL
+      play STAB STAB STAB STAB STAB STAB STAB STAB
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL
+      dynamic ff
+      play PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL PEDAL
+      play STAB STAB STAB STAB STAB STAB STAB STAB
+      dynamic mp
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT
+
+  # --- the rite --------------------------------------------------------
+  staff lead instrument=lead level=42% pan=-20% humanize=light
+    voice line
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      phrase RIFF
+        | c'8 d'8 c'8 ges'8 c'8 d'8 c'8
+        | c'8 e'8 f'8 ges'8 f'8 e'8 c'8
+      phrase HIGH
+        | ges'2. r8
+        | f'4 e'4 d'4 r8
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic ff
+      play RIFF RIFF RIFF RIFF RIFF RIFF RIFF RIFF
+      play HIGH HIGH RIFF RIFF HIGH HIGH RIFF RIFF
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mp
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic ff
+      play RIFF RIFF RIFF RIFF RIFF RIFF RIFF RIFF
+      play HIGH HIGH RIFF RIFF HIGH HIGH HIGH HIGH
+      dynamic mp
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT
+
+  # --- and whatever is being addressed ---------------------------------
+  staff vox instrument=vox level=26% pan=30%
+    voice choir
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      phrase VOX
+        | <c' ges' b'>2.~ q8
+        | <d' a' c''>2.~ q8
+      phrase RESOLVE
+        | <c' ges' b'>2.~ q8
+        | <c' g' c''>2.~ q8
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play VOX VOX VOX VOX VOX VOX VOX VOX
+      dynamic f
+      play VOX VOX VOX VOX VOX VOX VOX VOX
+      dynamic p
+      play SILENT SILENT SILENT SILENT SILENT SILENT SILENT SILENT
+      dynamic mf
+      play VOX VOX VOX VOX VOX VOX VOX VOX
+      dynamic f
+      play VOX VOX VOX VOX VOX VOX VOX VOX
+      dynamic mp
+      play VOX VOX VOX VOX VOX VOX VOX VOX
+      play RESOLVE RESOLVE RESOLVE RESOLVE
+
+  staff drum instrument=kit level=58%
+    voice beat
+      phrase SILENT
+        | r2. r8
+        | r2. r8
+      phrase LOW
+        | T2. r8
+        | r2. T8
+      phrase BEAT
+        | k8 r8 s8 r8 k8 s8 r8
+        | k8 r8 s8 k8 k8 s8 r8
+      phrase RITE
+        | c8 k8 s8 k8 k8 s8 h8
+        | k8 h8 s8 k8 h8 s8 h8
+      phrase STABS
+        | k4 r4 s4 r8
+        | k4 s4 k4 c8
+      dynamic mp
+      play LOW SILENT LOW SILENT LOW SILENT LOW LOW
+      dynamic mf
+      play BEAT BEAT BEAT BEAT BEAT BEAT BEAT BEAT
+      dynamic ff
+      play RITE RITE RITE RITE RITE RITE RITE RITE
+      play STABS STABS STABS STABS STABS STABS STABS STABS
+      dynamic p
+      play LOW SILENT SILENT SILENT LOW SILENT SILENT SILENT
+      dynamic mf
+      play BEAT BEAT BEAT BEAT BEAT BEAT BEAT BEAT
+      dynamic ff
+      play RITE RITE RITE RITE RITE RITE RITE RITE
+      play STABS STABS STABS STABS STABS STABS STABS STABS
+      dynamic mp
+      play LOW SILENT LOW SILENT SILENT SILENT SILENT SILENT
+      play SILENT SILENT SILENT SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 332 s
+    assert loop_pop < 14 db
+    assert centroid < 4000 hz

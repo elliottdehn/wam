@@ -1,0 +1,246 @@
+# ALIEN GOD, track 8 — "Hymn for the Drowned Star"
+#
+# The one place on the record that sounds like grief rather than threat. 6/8,
+# so it lilts in twos of three the way a hymn does, and G dorian — minor, but
+# with the raised sixth that keeps it from settling into simple mourning.
+# Nothing distorted plays on this track.
+audio hymn_for_the_drowned_star
+  key g dorian
+  tempo 76
+  master -1.5
+
+tones
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+  tone glass from=bright harm=1.1 tilt=1.3
+
+instruments
+  instrument monolith source=drone tone=murk  env=pad   level=100% space=cave
+  instrument voice1   source=drone tone=alien env=swell level=100% space=hall
+  instrument voice2   source=bow   tone=glass env=bow   level=100% space=hall
+  instrument harp     source=pluck tone=glass env=pluck level=100% damp=0.4 space=hall
+  instrument bass     source=pluck tone=murk  env=pluck level=100% damp=0.5
+  instrument bell     source=bell  tone=dark  env=pluck level=100% space=cave
+
+song hymn_for_the_drowned_star
+  meter 6/8
+  bars 112
+  feel straight
+  space hall
+
+  staff monolith instrument=monolith level=28%
+    voice pedal
+      phrase HOLD
+        | <g, d>2.~
+        | q2.~
+        | q2.~
+        | q2.~
+        | <es, bes,>2.~
+        | q2.~
+        | <g, d>2.~
+        | q2.~
+      dynamic mp
+      play HOLD HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD
+
+  staff harp instrument=harp level=34% pan=-25%
+    voice figure
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase ROLL
+        | g8 d'8 g'8 d'8 g'8 bes'8
+        | g8 d'8 g'8 d'8 g'8 bes'8
+        | f8 c'8 f'8 c'8 f'8 a'8
+        | f8 c'8 f'8 c'8 f'8 a'8
+        | es8 bes8 es'8 bes8 es'8 g'8
+        | es8 bes8 es'8 bes8 es'8 g'8
+        | d8 a8 d'8 a8 d'8 f'8
+        | d8 a8 d'8 f'8 a'8 d''8
+      play SILENT SILENT
+      dynamic mp
+      play ROLL ROLL ROLL
+      dynamic mf
+      play ROLL ROLL ROLL
+      dynamic p
+      play ROLL ROLL ROLL SILENT
+
+  staff voice2 instrument=voice2 level=42% pan=20%
+    voice tune
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase VERSE
+        | d'4 g'8 bes'4.
+        | a'4 g'8 f'4.
+        | g'4 a'8 bes'4.
+        | a'2.
+        | d''4 c''8 bes'4.
+        | a'4 g'8 f'4.
+        | g'4 bes'8 a'4.
+        | g'2.
+      phrase RISE
+        | g'4 bes'8 d''4.
+        | c''4 bes'8 a'4.
+        | bes'4 c''8 d''4.
+        | e''2.
+        | d''4 c''8 bes'4.
+        | a'4 bes'8 c''4.
+        | bes'4 a'8 g'4.
+        | g'2.
+      play SILENT SILENT SILENT
+      dynamic mf
+      play VERSE VERSE
+      dynamic f
+      play RISE RISE
+      dynamic ff
+      play RISE VERSE
+      dynamic mp
+      play VERSE SILENT SILENT SILENT
+
+  staff voice1 instrument=voice1 level=30% pan=-20%
+    voice choir
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase HOLD
+        | <g' bes' d''>2.~
+        | q2.~
+        | <f' a' c''>2.~
+        | q2.~
+        | <es' g' bes'>2.~
+        | q2.~
+        | <d' f' a'>2.~
+        | q2.~
+      play SILENT SILENT SILENT SILENT
+      dynamic mp
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD HOLD HOLD
+
+  staff bass instrument=bass level=46% octave=-1
+    voice line
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase ROOT
+        | g,4. d,4.
+        | g,4. d,4.
+        | f,4. c,4.
+        | f,4. c,4.
+        | es,4. bes,,4.
+        | es,4. bes,,4.
+        | d,4. a,,4.
+        | d,4. d,8 d,8 d,8
+      play SILENT SILENT
+      dynamic mp
+      play ROOT ROOT ROOT ROOT
+      dynamic mf
+      play ROOT ROOT ROOT
+      dynamic p
+      play ROOT ROOT ROOT
+
+  staff bell instrument=bell level=26% pan=35%
+    voice toll
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase TOLL
+        | g''2.
+        | r2.
+        | r2.
+        | r2.
+        | es''2.
+        | r2.
+        | r2.
+        | r2.
+      dynamic mf
+      play TOLL SILENT TOLL SILENT
+      dynamic mp
+      play TOLL SILENT TOLL SILENT
+      dynamic f
+      play TOLL TOLL
+      dynamic p
+      play TOLL SILENT SILENT TOLL
+
+  staff drum instrument=kit level=40%
+    voice beat
+      phrase SILENT
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+        | r2.
+      phrase SOFT
+        | T4. r4.
+        | r2.
+        | T4. r4.
+        | r2.
+        | T4. r4.
+        | r2.
+        | T4. T8 T8 T8
+        | r2.
+      phrase FULL
+        | k4. s4.
+        | k4. s4.
+        | k4. s4.
+        | k8 k8 k8 s4.
+        | k4. s4.
+        | k4. s4.
+        | k4. s4.
+        | t8 t8 T8 T8 s8 c8
+      play SILENT SILENT SILENT
+      dynamic mp
+      play SOFT SOFT
+      dynamic mf
+      play FULL FULL
+      dynamic f
+      play FULL SOFT
+      dynamic p
+      play SOFT SILENT SILENT SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 265 s
+    assert loop_pop < 14 db
+    assert centroid < 3000 hz

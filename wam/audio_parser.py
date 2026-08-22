@@ -10,30 +10,11 @@ how loud a layer ends up -- belongs to the compiler, not to this file.
 """
 import re
 
-
-class WamAudioError(Exception):
-    def __init__(self, msg, line_no=None, line=None):
-        self.line_no = line_no
-        self.line = line
-        loc = " (line %d: %r)" % (line_no, line) if line_no else ""
-        super().__init__(msg + loc)
+from . import notation as wnotation
+from .notation import WamAudioError, MODES, NOTE_PC  # noqa: F401
 
 
 # ------------------------------------------------------------- vocabularies
-
-MODES = {
-    "major":    (0, 2, 4, 5, 7, 9, 11),
-    "minor":    (0, 2, 3, 5, 7, 8, 10),
-    "dorian":   (0, 2, 3, 5, 7, 9, 10),
-    "phrygian": (0, 1, 3, 5, 7, 8, 10),
-    "lydian":   (0, 2, 4, 6, 7, 9, 11),
-    "mixolydian": (0, 2, 4, 5, 7, 9, 10),
-    "harmonic": (0, 2, 3, 5, 7, 8, 11),
-    "pentatonic": (0, 3, 5, 7, 10),
-    "chromatic": tuple(range(12)),
-}
-
-NOTE_PC = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
 
 # Named tempi, so a piece can be "walk" instead of a number nobody can picture.
 TEMPI = {"funeral": 52, "slow": 66, "walk": 84, "medium": 104,
@@ -152,15 +133,20 @@ def parse_key(tokens, line_no, line):
     if not tokens:
         raise WamAudioError("key needs a root and a mode, e.g. `key d minor`", line_no, line)
     root = tokens[0].lower()
-    m = re.match(r"^([a-g])([b#]?)$", root)
+    # Both spellings: `bes` and `fis` as the score layer writes them, and
+    # `bb`/`f#` as most people type them.
+    m = re.match(r"^([a-g])(isis|eses|is|es|##|#|bb|b|)$", root)
     if not m:
         raise WamAudioError("unknown key root %r" % tokens[0], line_no, line)
-    pc = (NOTE_PC[m.group(1)] + {"b": -1, "#": 1, "": 0}[m.group(2)]) % 12
+    alter = {"is": 1, "isis": 2, "es": -1, "eses": -2,
+             "#": 1, "##": 2, "b": -1, "bb": -2, "": 0}[m.group(2)]
+    pc = (NOTE_PC[m.group(1)] + alter) % 12
     mode = (tokens[1].lower() if len(tokens) > 1 else "major")
     if mode not in MODES:
         raise WamAudioError("unknown mode %r (have: %s)" % (mode, ", ".join(MODES)),
                             line_no, line)
-    return {"root": pc, "mode": mode, "text": "%s %s" % (tokens[0], mode)}
+    return {"root": pc, "mode": mode, "letter": m.group(1), "alter": alter,
+            "text": "%s %s" % (tokens[0], mode)}
 
 
 def parse_tempo(tok, line_no, line):
@@ -374,7 +360,8 @@ class _Lines:
 def parse(text):
     lines = _Lines(text)
     doc = {"name": None, "rate": 44100, "master": -1.0, "key": None,
-           "tempo": None, "tones": {}, "voices": {}, "songs": [], "sounds": []}
+           "tempo": None, "tones": {}, "instruments": {}, "songs": [],
+           "sounds": []}
     while lines.peek() is not None:
         level, line, no, raw = lines.next()
         if level != 0:
@@ -385,15 +372,15 @@ def parse(text):
             _parse_header(doc, head, lines, no, raw)
         elif word == "tones":
             _parse_tones(doc, lines, level)
-        elif word == "voices":
-            _parse_voices(doc, lines, level)
+        elif word == "instruments":
+            _parse_instruments(doc, lines, level)
         elif word == "song":
             doc["songs"].append(_parse_song(doc, head, lines, level, no, raw))
         elif word == "sound":
             doc["sounds"].append(_parse_sound(doc, head, lines, level, no, raw))
         else:
             raise WamAudioError(
-                "unknown section %r (audio, tones, voices, song, sound)" % word,
+                "unknown section %r (audio, tones, instruments, song, sound)" % word,
                 no, raw)
     if doc["name"] is None:
         raise WamAudioError("file needs an `audio <name>` header")
@@ -450,20 +437,22 @@ def _parse_tones(doc, lines, level):
         doc["tones"][name] = {"name": name, "base": base, "fields": fields, "line": ln}
 
 
-def _parse_voices(doc, lines, level):
+def _parse_instruments(doc, lines, level):
     for lv, line, ln, raw in lines.children(level):
         tok = line.split()
-        if tok[0] != "voice":
-            raise WamAudioError("expected `voice <name> ...` inside voices", ln, raw)
+        if tok[0] != "instrument":
+            raise WamAudioError("expected `instrument <name> ...` inside instruments",
+                                ln, raw)
         if len(tok) < 2:
-            raise WamAudioError("voice needs a name", ln, raw)
+            raise WamAudioError("instrument needs a name", ln, raw)
         name = tok[1]
         pos, kv = _split_kv(tok[2:])
-        _check_keys(kv, VOICE_KEYS, ln, raw, "voice")
+        _check_keys(kv, VOICE_KEYS, ln, raw, "instrument")
         if pos:
-            raise WamAudioError("voice takes name=value options, got %r" % pos[0], ln, raw)
+            raise WamAudioError("instrument takes name=value options, got %r"
+                                % pos[0], ln, raw)
         if "source" not in kv:
-            raise WamAudioError("voice %r needs a source=" % name, ln, raw)
+            raise WamAudioError("instrument %r needs a source=" % name, ln, raw)
         v = {"name": name, "source": kv["source"], "tone": kv.get("tone", "plain"),
              "env": kv.get("env", "pluck"), "level": 1.0, "octave": 0,
              "detune": 0.0, "space": kv.get("space", "none"),
@@ -475,89 +464,28 @@ def _parse_voices(doc, lines, level):
                           ("detune", float), ("damp", float)):
             if k in kv:
                 v[k] = _num(kv[k], ln, raw) if k != "octave" else int(kv[k])
-        if name in doc["voices"]:
-            raise WamAudioError("voice %r declared twice" % name, ln, raw)
-        doc["voices"][name] = v
+        if name in doc["instruments"]:
+            raise WamAudioError("instrument %r declared twice" % name, ln, raw)
+        doc["instruments"][name] = v
 
 
-def _parse_song(doc, head, lines, level, no, raw):
-    if len(head) < 2:
-        raise WamAudioError("song needs a name", no, raw)
-    song = {"name": head[1], "key": doc["key"], "tempo": doc["tempo"],
-            "bars": None, "meter": 4, "feel": "straight", "space": "none",
-            "tracks": [], "checks": [], "loop": True, "progression": None,
-            "line": no}
-    part = None
-    for lv, line, ln, lraw in lines.children(level):
-        tok = line.split()
-        key = tok[0]
-        if lv == level + 1:
-            part = None
-            if key == "key":
-                song["key"] = parse_key(tok[1:], ln, lraw)
-            elif key == "tempo":
-                song["tempo"] = parse_tempo(tok[1], ln, lraw)
-            elif key == "bars":
-                song["bars"] = int(_num(tok[1], ln, lraw, "a bar count"))
-            elif key == "meter":
-                song["meter"] = int(_num(tok[1].split("/")[0], ln, lraw, "a meter"))
-            elif key == "feel":
-                if tok[1] not in ("straight", "swing", "shuffle"):
-                    raise WamAudioError("feel is straight, swing or shuffle", ln, lraw)
-                song["feel"] = tok[1]
-            elif key == "progression":
-                song["progression"] = [parse_chord_symbol(t, ln, lraw) for t in tok[1:]]
-                if not song["progression"]:
-                    raise WamAudioError("progression needs at least one chord", ln, lraw)
-            elif key == "space":
-                song["space"] = tok[1]
-            elif key == "loop":
-                song["loop"] = tok[1] not in ("off", "no", "false")
-            elif key in ("track", "part"):
-                part = _start_track(song, tok, ln, lraw)
-            elif key == "checks":
-                continue
-            elif key == "assert":
-                song["checks"].append(_parse_assert(tok[1:], ln, lraw))
-            else:
-                raise WamAudioError(
-                    "unknown song field %r (key, tempo, bars, meter, feel, "
-                    "space, loop, progression, track, checks)" % key, ln, lraw)
-        else:
-            if key == "assert":
-                song["checks"].append(_parse_assert(tok[1:], ln, lraw))
-                continue
-            if part is None:
-                raise WamAudioError("%r must sit inside a track" % key, ln, lraw)
-            _parse_track_line(part, tok, ln, lraw)
-    if song["key"] is None:
-        raise WamAudioError("song %r has no key (set one here or in the header)"
-                            % song["name"], no, raw)
-    if song["tempo"] is None:
-        raise WamAudioError("song %r has no tempo" % song["name"], no, raw)
-    if not song["tracks"]:
-        raise WamAudioError("song %r has no tracks" % song["name"], no, raw)
-    return song
-
-
-TRACK_KEYS = ("voice", "level", "octave", "notes", "pan", "space", "echo",
+STAFF_KEYS = ("instrument", "level", "octave", "pan", "space", "echo",
               "humanize", "curve")
-
-CURVES = ("linear", "ease", "fast", "slow", "snap", "drop")
-TRACK_FLAGS = ("mute", "solo")
+STAFF_FLAGS = ("mute", "solo")
 
 # Timing and loudness jitter. A player is never exactly on the grid and never
 # exactly as loud twice; a sequencer always is, and that is most of what makes
 # a rendered part sound like a machine reading a list.
 HUMANIZE = {"off": (0.0, 0.0), "light": (0.008, 0.07), "loose": (0.022, 0.16)}
 
+CURVES = ("linear", "ease", "fast", "slow", "snap", "drop")
+
 
 def _parse_level(text, ln, raw):
     """`level=60%` or `level=35%->90%`.
 
     A build is the shape of a piece, not a property of one note, so it belongs
-    on the fader. The second form ramps across the whole song: the track walks
-    from one level to the other while everything else stays where it is.
+    on the fader. The second form ramps across the whole song.
     """
     if "->" not in text:
         return _num(text, ln, raw, "a level"), None
@@ -565,78 +493,191 @@ def _parse_level(text, ln, raw):
     return _num(start, ln, raw, "a level"), _num(end, ln, raw, "a level")
 
 
-def _start_track(song, tok, ln, raw):
-    """A track is a voice plus its own arrangement and its own mix strip.
+def _parse_song(doc, head, lines, level, no, raw):
+    """A song is staves of voices, and a voice is bars of notation.
 
-    Everything a DAW track owns lives here: which instrument plays it, how loud
-    and where it sits, what space it is sent to, and whether it is muted or
-    soloed while the author is working on something else.
+    The nesting is the one a score has: a staff is an instrument and a mix
+    strip, the voices inside it are independent lines played at the same time
+    by that instrument, and each voice is written out in bars.
     """
+    if len(head) < 2:
+        raise WamAudioError("song needs a name", no, raw)
+    song = {"name": head[1], "key": doc["key"], "tempo": doc["tempo"],
+            "meter": None, "bars": None, "feel": "straight", "space": "none",
+            "staves": [], "checks": [], "loop": True, "line": no}
+    staff = voice = phrase = None
+    for lv, line, ln, lraw in lines.children(level):
+        tok = line.split()
+        key = tok[0]
+        if lv == level + 1:
+            staff = voice = phrase = None
+            if key == "key":
+                song["key"] = parse_key(tok[1:], ln, lraw)
+            elif key == "tempo":
+                song["tempo"] = parse_tempo(tok[1], ln, lraw)
+            elif key == "meter":
+                song["meter"] = wnotation.parse_meter(tok[1], ln, lraw)
+            elif key == "bars":
+                song["bars"] = int(_num(tok[1], ln, lraw, "a bar count"))
+            elif key == "feel":
+                if tok[1] not in ("straight", "swing", "shuffle"):
+                    raise WamAudioError("feel is straight, swing or shuffle", ln, lraw)
+                song["feel"] = tok[1]
+            elif key == "space":
+                song["space"] = tok[1]
+            elif key == "loop":
+                song["loop"] = tok[1] not in ("off", "no", "false")
+            elif key == "staff":
+                staff = _start_staff(song, doc, tok, ln, lraw)
+            elif key == "checks":
+                continue
+            elif key == "assert":
+                song["checks"].append(_parse_assert(tok[1:], ln, lraw))
+            else:
+                raise WamAudioError(
+                    "unknown song field %r (key, tempo, meter, bars, feel, "
+                    "space, loop, staff, checks)" % key, ln, lraw)
+        elif lv == level + 2:
+            phrase = None
+            if key == "assert":
+                song["checks"].append(_parse_assert(tok[1:], ln, lraw))
+                continue
+            if staff is None:
+                raise WamAudioError("%r must sit inside a staff" % key, ln, lraw)
+            if key != "voice":
+                raise WamAudioError(
+                    "a staff holds voices; %r is not one" % key, ln, lraw)
+            voice = _start_voice(staff, tok, ln, lraw)
+        else:
+            if voice is None:
+                raise WamAudioError("%r must sit inside a voice" % key, ln, lraw)
+            if key == "phrase":
+                if len(tok) < 2:
+                    raise WamAudioError("phrase needs a name", ln, lraw)
+                phrase = tok[1]
+                if phrase in voice["phrases"]:
+                    raise WamAudioError("phrase %r declared twice in voice %r"
+                                        % (phrase, voice["name"]), ln, lraw)
+                voice["phrases"][phrase] = []
+            elif key == "dynamic":
+                # A dynamic between phrases, so a phrase can be reused at
+                # different volumes instead of being copied per section.
+                if len(tok) < 2 or tok[1] not in wnotation.DYNAMICS:
+                    raise WamAudioError(
+                        "dynamic needs one of %s"
+                        % " ".join(wnotation.DYNAMICS), ln, lraw)
+                voice["play"].append({"dynamic": tok[1], "line": ln})
+                phrase = None
+            elif key == "play":
+                for ref in tok[1:]:
+                    if ref not in voice["phrases"]:
+                        raise WamAudioError(
+                            "play names %r, which this voice never declares"
+                            % ref, ln, lraw)
+                    voice["play"].append({"phrase": ref, "line": ln})
+                phrase = None
+            elif line.lstrip().startswith("|"):
+                target = (voice["phrases"][phrase] if phrase is not None
+                          else voice["lines"])
+                target.append((line, ln, lraw))
+            else:
+                raise WamAudioError(
+                    "expected a bar starting with `|`, a `phrase`, or a `play`; "
+                    "got %r" % key, ln, lraw)
+    if song["key"] is None:
+        raise WamAudioError("song %r has no key (set one here or in the header)"
+                            % song["name"], no, raw)
+    if song["tempo"] is None:
+        raise WamAudioError("song %r has no tempo" % song["name"], no, raw)
+    if song["meter"] is None:
+        song["meter"] = wnotation.parse_meter("4/4", no, raw)
+    if not song["staves"]:
+        raise WamAudioError("song %r has no staves" % song["name"], no, raw)
+    _read_notation(song)
+    return song
+
+
+def _start_staff(song, doc, tok, ln, raw):
+    """A staff: which instrument plays it, and where it sits in the mix."""
     if len(tok) < 2:
-        raise WamAudioError("track needs a name", ln, raw)
+        raise WamAudioError("staff needs a name", ln, raw)
     pos, kv = _split_kv(tok[2:])
-    _check_keys(kv, TRACK_KEYS, ln, raw, "track")
+    _check_keys(kv, STAFF_KEYS, ln, raw, "staff")
     for flag in pos:
-        if flag not in TRACK_FLAGS:
-            raise WamAudioError("unknown track flag %r (have: %s)"
-                                % (flag, ", ".join(TRACK_FLAGS)), ln, raw)
+        if flag not in STAFF_FLAGS:
+            raise WamAudioError("unknown staff flag %r (have: %s)"
+                                % (flag, ", ".join(STAFF_FLAGS)), ln, raw)
     level, level_to = _parse_level(kv.get("level", "100%"), ln, raw)
-    track = {"name": tok[1], "voice": kv.get("voice", tok[1]),
+    staff = {"name": tok[1], "instrument": kv.get("instrument", tok[1]),
              "level": level, "level_to": level_to,
              "curve": kv.get("curve", "ease"),
-             "octave": int(kv.get("octave", 0)),
-             "notes": kv.get("notes", "q"), "pan": kv.get("pan"),
+             "octave": int(kv.get("octave", 0)), "pan": kv.get("pan"),
              "space": kv.get("space"), "echo": kv.get("echo"),
-             "mute": "mute" in pos, "solo": "solo" in pos,
              "humanize": kv.get("humanize", "off"),
-             "phrases": {}, "play": [], "drums": False, "line": ln}
-    if track["notes"] not in DURATION_BEATS:
-        raise WamAudioError("notes= must be one of w h q e s t", ln, raw)
-    if track["curve"] not in CURVES:
-        raise WamAudioError("curve is one of %s" % ", ".join(CURVES), ln, raw)
-    if track["humanize"] not in HUMANIZE:
+             "mute": "mute" in pos, "solo": "solo" in pos,
+             "voices": [], "line": ln}
+    if staff["humanize"] not in HUMANIZE:
         raise WamAudioError("humanize is one of %s" % ", ".join(HUMANIZE), ln, raw)
-    if any(t["name"] == track["name"] for t in song["tracks"]):
-        raise WamAudioError("track %r declared twice" % track["name"], ln, raw)
-    song["tracks"].append(track)
-    return track
+    if staff["curve"] not in CURVES:
+        raise WamAudioError("curve is one of %s" % ", ".join(CURVES), ln, raw)
+    if any(st["name"] == staff["name"] for st in song["staves"]):
+        raise WamAudioError("staff %r declared twice" % staff["name"], ln, raw)
+    # A drum staff reads its tokens as kit pieces rather than pitches.
+    staff["drums"] = staff["instrument"] == "kit"
+    song["staves"].append(staff)
+    return staff
 
 
-def _parse_track_line(part, tok, ln, raw):
-    key = tok[0]
-    if key in ("phrase", "pattern"):
-        if len(tok) < 3:
-            raise WamAudioError("%s needs `<name> = <tokens>`" % key, ln, raw)
-        name = tok[1]
-        rest = tok[2:]
-        if rest[0] == "=":
-            rest = rest[1:]
-        elif rest[0].startswith("="):
-            rest[0] = rest[0][1:]
-        if not rest:
-            raise WamAudioError("%s %r is empty" % (key, name), ln, raw)
-        if key == "pattern":
-            part["drums"] = True
-            events = [parse_drum_token(t, ln, raw) for t in rest]
-        else:
-            events = [parse_note_token(t, ln, raw) for t in rest]
-        if name in part["phrases"]:
-            raise WamAudioError("phrase %r declared twice in track %r"
-                                % (name, part["name"]), ln, raw)
-        part["phrases"][name] = events
-    elif key == "play":
-        for ref in tok[1:]:
-            base = ref.rstrip("'^_~")
-            if base not in part["phrases"]:
+def _start_voice(staff, tok, ln, raw):
+    if len(tok) < 2:
+        raise WamAudioError("voice needs a name", ln, raw)
+    pos, kv = _split_kv(tok[2:])
+    _check_keys(kv, ("level", "octave", "pan"), ln, raw, "voice")
+    voice = {"name": tok[1], "level": _num(kv.get("level", "100%"), ln, raw),
+             "octave": int(kv.get("octave", 0)), "pan": kv.get("pan"),
+             "lines": [], "phrases": {}, "play": [], "bars": [], "line": ln}
+    if any(v["name"] == voice["name"] for v in staff["voices"]):
+        raise WamAudioError("voice %r declared twice in staff %r"
+                            % (voice["name"], staff["name"]), ln, raw)
+    staff["voices"].append(voice)
+    return voice
+
+
+def _read_notation(song):
+    """Turn every voice's text into bars of events, once the key is known."""
+    for staff in song["staves"]:
+        for voice in staff["voices"]:
+            if voice["lines"] and voice["phrases"]:
                 raise WamAudioError(
-                    "play references %r, which this track never declares" % base, ln, raw)
-            part["play"].append({"phrase": base, "mods": ref[len(base):], "line": ln})
-    elif key == "rest":
-        part["play"].append({"phrase": None, "mods": "",
-                             "bars": _num(tok[1], ln, raw) if len(tok) > 1 else 1.0})
-    else:
-        raise WamAudioError("unknown track line %r (phrase, pattern, play, rest)"
-                            % key, ln, raw)
+                    "voice %r writes bars directly and also declares phrases -- "
+                    "pick one, or the order it plays in is anyone's guess"
+                    % voice["name"], voice["line"])
+            if voice["phrases"]:
+                if not voice["play"]:
+                    raise WamAudioError(
+                        "voice %r declares phrases but never plays any"
+                        % voice["name"], voice["line"])
+                cut = {name: wnotation.parse_bars(text, song["key"], song["meter"],
+                                                  staff["drums"])
+                       for name, text in voice["phrases"].items()}
+                pending = None
+                for item in voice["play"]:
+                    if "dynamic" in item:
+                        pending = {"kind": "dynamic", "beats": 0.0, "tie": False,
+                                   "accent": 1.0,
+                                   "gain": wnotation.DYNAMICS[item["dynamic"]]}
+                        continue
+                    for bar in cut[item["phrase"]]:
+                        if pending is not None:
+                            bar = [pending] + list(bar)
+                            pending = None
+                        voice["bars"].append(bar)
+            else:
+                voice["bars"] = wnotation.parse_bars(
+                    voice["lines"], song["key"], song["meter"], staff["drums"])
+        if not any(v["bars"] for v in staff["voices"]):
+            raise WamAudioError("staff %r has no music in it" % staff["name"],
+                                staff["line"])
 
 
 def _parse_sound(doc, head, lines, level, no, raw):

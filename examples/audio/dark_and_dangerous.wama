@@ -1,0 +1,184 @@
+# "Dark & Dangerous" — a fast, mean loop in the shape early Doom music took:
+# a palm-muted low E hammering eighths, a tritone where the ear wants a fifth,
+# and a kit that never lets up.
+#
+# The menace is written into the notes rather than the mix. E minor puts F# in
+# the signature, so the riff's `f!` — F natural, the flat second — is an
+# explicit accidental fighting the key, and `bes` is the tritone from E. Those
+# two intervals are the whole character of the thing.
+#
+# `q` repeats the chord before it, so a bar of chugging reads as a rhythm
+# instead of the same chord typed eight times.
+audio dark_and_dangerous
+  key e minor
+  tempo 152
+  master -1.5
+
+tones
+  # Distortion wants harmonics to feed on; `harsh` supplies them, and the
+  # drive stages do the rest.
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+
+instruments
+  instrument guitar source=saw    tone=grind env=gate  level=100% drive=fuzz
+  instrument lead   source=square tone=grind env=gate  level=100% drive=hard
+  instrument bass   source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument drone  source=drone  tone=murk  env=pad   level=100% space=cave
+
+song dark_and_dangerous
+  meter 4/4
+  bars 48
+  feel straight
+  space room
+
+  # --- the riff, once it stops hiding ----------------------------------
+  staff lead instrument=lead level=44% pan=-25% humanize=light
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+      phrase MOTIF
+        | r2 e'4 bes'4
+        | r2 e'4 f!'4
+      phrase RIFF
+        | e'8 e'8 e'8 bes'8 e'8 e'8 f!'8 e'8
+        | e'8 e'8 g'8 bes'8 a'8 g'8 f!'8 e'8
+      phrase HOLD
+        | bes'1
+        | e''1
+      dynamic mp
+      play SILENT SILENT SILENT MOTIF
+      play SILENT SILENT SILENT SILENT
+      dynamic ff
+      play RIFF RIFF RIFF RIFF
+      dynamic f
+      play HOLD HOLD
+      play SILENT SILENT
+      dynamic ff
+      play RIFF RIFF RIFF RIFF
+      play HOLD HOLD
+      dynamic mp
+      play MOTIF SILENT
+
+  # --- the chug --------------------------------------------------------
+  staff guitar instrument=guitar level=52% pan=25%
+    voice chug
+      phrase SILENT
+        | r1
+        | r1
+      phrase CHUG
+        | <e, b,>8 q q q q q q q
+        | <e, b,>8 q q q <g, d>8 q <bes, f>8 q
+      phrase STAB
+        | <e, b,>4 r4 <bes, f>4 r4
+        | <g, d>4 <f!, c!>4 <e, b,>2
+      phrase UNISON
+        | <e, b,>8 r8 <e, b,>8 r8 <e, b,>4 r4
+        | <bes, f>8 r8 <bes, f>8 r8 <e, b,>2
+      play SILENT SILENT SILENT SILENT
+      dynamic mf
+      play CHUG CHUG CHUG CHUG
+      dynamic ff
+      play CHUG CHUG CHUG CHUG
+      play UNISON UNISON
+      dynamic f
+      play STAB STAB
+      dynamic ff
+      play CHUG CHUG CHUG CHUG
+      play UNISON UNISON
+      play SILENT SILENT
+
+  # --- the floor -------------------------------------------------------
+  staff bass instrument=bass level=60% octave=-1
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+      phrase PEDAL
+        | e,8 q q q q q q q
+        | e,8 q q q g,8 q bes,8 q
+      phrase STAB
+        | e,4 r4 bes,4 r4
+        | g,4 f!,4 e,2
+      phrase UNISON
+        | e,8 r8 e,8 r8 e,4 r4
+        | bes,8 r8 bes,8 r8 e,2
+      play SILENT SILENT SILENT SILENT
+      dynamic mf
+      play PEDAL PEDAL PEDAL PEDAL
+      dynamic ff
+      play PEDAL PEDAL PEDAL PEDAL
+      play UNISON UNISON
+      dynamic f
+      play STAB STAB
+      dynamic ff
+      play PEDAL PEDAL PEDAL PEDAL
+      play UNISON UNISON
+      play SILENT SILENT
+
+  # --- the room it happens in ------------------------------------------
+  staff drone instrument=drone level=30% octave=-1
+    voice pad
+      phrase PAD
+        | <e, b,>1
+        | q1
+        | q1
+        | q1
+        | <bes, f>1
+        | q1
+        | <e, b,>1
+        | q1
+      dynamic mf
+      play PAD
+      dynamic mp
+      play PAD
+      dynamic p
+      play PAD
+      dynamic mp
+      play PAD
+      dynamic p
+      play PAD
+      dynamic mf
+      play PAD
+
+  # --- and the kit -----------------------------------------------------
+  staff drum instrument=kit level=62%
+    voice beat
+      phrase SILENT
+        | r1
+        | r1
+      phrase LOW
+        | T2 r2
+        | r2 T4 T4
+      phrase BEAT
+        | k8 r8 s8 r8 k8 k8 s8 r8
+        | k8 r8 s8 r8 k8 s8 s8 h8
+      phrase ASSAULT
+        | c8 k8 s8 k8 k8 k8 s8 k8
+        | k8 k8 s8 k8 k8 s8 t8 T8
+      phrase HALF
+        | k4 r4 s4 r4
+        | k4 k4 s2
+      phrase UNISON
+        | k8 r8 k8 r8 s4 r4
+        | k8 r8 k8 r8 s2
+      dynamic mp
+      play SILENT LOW SILENT LOW
+      dynamic mf
+      play BEAT BEAT BEAT BEAT
+      dynamic ff
+      play ASSAULT ASSAULT ASSAULT ASSAULT
+      play UNISON UNISON
+      dynamic f
+      play HALF HALF
+      dynamic ff
+      play ASSAULT ASSAULT ASSAULT ASSAULT
+      play UNISON UNISON
+      play SILENT SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 75.8 s
+    assert loop_pop < 14 db
+    assert centroid < 4000 hz

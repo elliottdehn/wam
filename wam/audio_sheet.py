@@ -201,7 +201,7 @@ def build_sheet(piece, width=1180):
     title = "%s  %s" % (meta["kind"], piece["name"])
     draw_text(img, pad, y, title, INK, scale=2)
     if meta["kind"] == "song":
-        sub = "%s   %g bpm   %g bars   %d/4   %s%s" % (
+        sub = "%s   %g bpm   %g bars   %s   %s%s" % (
             meta["key"], meta["tempo"], meta["bars"], meta["meter"],
             meta["feel"], "   loop" if meta["loop"] else "")
     else:
@@ -268,17 +268,20 @@ def build_sheet(piece, width=1180):
     # answers "did the thing land where the file said it would".
     if meta["kind"] == "song":
         beat_s = 60.0 / meta["tempo"]
-        beats = int(meta["beats"])
+        # The grid is the bar lines the author wrote, so a hit that lands off
+        # the beat is visible as exactly that.
+        per_bar = float(meta["beats_per_bar"])
+        beats = int(round(meta["beats"]))
         for b in range(beats + 1):
             t = b * beat_s
             if t > dur:
                 break
-            is_bar = b % meta["meter"] == 0
+            is_bar = abs(b % per_bar) < 1e-6
             _vline(img, x0 + t / max(dur, 1e-9) * plot_w, y, y + mark_h,
                    INK if is_bar else GRID, 0.9 if is_bar else 0.5)
             if is_bar:
                 draw_text(img, x0 + t / max(dur, 1e-9) * plot_w + 2, y + 2,
-                          str(b // meta["meter"] + 1), DIM)
+                          str(int(b // per_bar) + 1), DIM)
     else:
         # `at=` is a fraction of the sound's authored length, not of the
         # rendered file, which is longer by whatever the tail needed.

@@ -1,0 +1,240 @@
+# ALIEN GOD, track 6 — "Procession"
+#
+# A march, which is the one form where repetition is the content. Toms carry
+# it; the melody is a single line doubled an octave down, because a procession
+# is many people doing one thing.
+audio procession
+  key d phrygian
+  tempo 88
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument horn     source=saw    tone=grind env=stab  level=100% drive=soft space=hall
+  instrument lowhorn  source=saw    tone=murk  env=stab  level=100% drive=soft space=hall
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+  instrument bell     source=bell   tone=dark  env=pluck level=100% space=cave
+
+song procession
+  meter 4/4
+  bars 88
+  feel straight
+  space hall
+
+  staff monolith instrument=monolith level=30%
+    voice pedal
+      phrase HOLD
+        | <d, a,>1~
+        | q1~
+        | q1~
+        | q1~
+        | <bes,, f,>1~
+        | q1~
+        | <d, a,>1~
+        | q1~
+      dynamic mp
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic f
+      play HOLD HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD
+
+  staff drum instrument=kit level=62%
+    voice march
+      phrase STEP
+        | T4 t4 T4 t4
+        | T4 t4 T4 t4
+        | T4 t4 T4 t4
+        | T4 T4 t8 t8 t8 t8
+        | T4 t4 T4 t4
+        | T4 t4 T4 t4
+        | T4 t4 T4 t4
+        | T8 T8 t8 t8 T8 T8 t8 t8
+      phrase FULL
+        | k4 t4 k4 s4
+        | k4 t4 k4 s4
+        | k4 t4 k4 s4
+        | k4 k4 s8 s8 t8 T8
+        | k4 t4 k4 s4
+        | k4 t4 k4 s4
+        | k4 t4 k4 s4
+        | t8 t8 T8 T8 s8 s8 c8 r8
+      dynamic mp
+      play STEP STEP
+      dynamic mf
+      play STEP FULL FULL
+      dynamic ff
+      play FULL FULL FULL
+      dynamic mp
+      play STEP STEP STEP
+
+  staff horn instrument=horn level=44% pan=-25%
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase THEME
+        | d'2 es'2
+        | f'2 d'2
+        | es'2 c'2
+        | d'1
+        | d'2 es'2
+        | f'2 g'2
+        | f'2 es'2
+        | d'1
+      phrase ANSWER
+        | a'2 bes'2
+        | a'2 f'2
+        | g'2 es'2
+        | d'1
+        | a'2 bes'2
+        | c''2 bes'2
+        | a'2 f'2
+        | d'1
+      play SILENT SILENT
+      dynamic mf
+      play THEME ANSWER THEME
+      dynamic ff
+      play ANSWER THEME ANSWER
+      dynamic mp
+      play THEME SILENT SILENT
+
+  staff lowhorn instrument=lowhorn level=40% pan=25% octave=-1
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase THEME
+        | d'2 es'2
+        | f'2 d'2
+        | es'2 c'2
+        | d'1
+        | d'2 es'2
+        | f'2 g'2
+        | f'2 es'2
+        | d'1
+      phrase ANSWER
+        | a'2 bes'2
+        | a'2 f'2
+        | g'2 es'2
+        | d'1
+        | a'2 bes'2
+        | c''2 bes'2
+        | a'2 f'2
+        | d'1
+      play SILENT SILENT
+      dynamic mp
+      play THEME ANSWER THEME
+      dynamic f
+      play ANSWER THEME ANSWER
+      dynamic p
+      play THEME SILENT SILENT
+
+  staff bass instrument=bass level=54%
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase WALK
+        | d,4 r4 d,4 r4
+        | d,4 r4 a,,4 r4
+        | bes,,4 r4 bes,,4 r4
+        | d,4 r4 d,8 d,8 r4
+        | d,4 r4 d,4 r4
+        | es,4 r4 es,4 r4
+        | f,4 r4 e,4 r4
+        | d,4 d,4 d,8 d,8 r4
+      play SILENT
+      dynamic mf
+      play WALK WALK WALK WALK
+      dynamic ff
+      play WALK WALK WALK
+      dynamic mp
+      play WALK WALK WALK
+
+  staff vox instrument=vox level=26% pan=30%
+    voice choir
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase HOLD
+        | <d' f' a'>1~
+        | q1~
+        | <es' g' bes'>1~
+        | q1~
+        | <d' f' a'>1~
+        | q1~
+        | <c' es' g'>1~
+        | q1~
+      play SILENT SILENT SILENT
+      dynamic mp
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD
+
+  staff bell instrument=bell level=28% pan=-35%
+    voice toll
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase TOLL
+        | d''1
+        | r1
+        | r1
+        | r1
+        | bes'1
+        | r1
+        | r1
+        | r1
+      dynamic mf
+      play TOLL SILENT TOLL SILENT
+      dynamic f
+      play TOLL TOLL TOLL
+      dynamic mp
+      play TOLL SILENT TOLL SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 240 s
+    assert loop_pop < 14 db
+    assert centroid < 3000 hz

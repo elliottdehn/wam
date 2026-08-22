@@ -302,10 +302,25 @@ def _sinc_kernel(kind, cutoff, sr, taps=257, q=4.0):
     return k / (np.sum(k) if kind == "low" and np.sum(k) else s)
 
 
-def _fftconv(x, k):
+def _fftconv(x, k, causal=False):
+    """FFT convolution. `causal` decides what "aligned" means.
+
+    A windowed-sinc filter kernel is symmetric, so its output is delayed by
+    half the kernel and the delay has to be compensated -- that is what the
+    default does, and it is why filtering does not smear a transient forwards.
+
+    A reverb impulse response is not symmetric. It is causal: all of its energy
+    is *after* time zero. Compensating a delay it does not have drags the whole
+    tail earlier by half the reverb time, which puts the reverb of a note
+    before the note -- 0.8 s of pre-echo for a hall. Pass `causal=True` for any
+    kernel that is an impulse response rather than a filter, and take the full
+    convolution so the tail is not truncated.
+    """
     n = len(x) + len(k) - 1
     size = 1 << (n - 1).bit_length()
     y = np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(k, size), size)[:n]
+    if causal:
+        return y
     lead = (len(k) - 1) // 2
     return y[lead:lead + len(x)]          # compensate the linear-phase delay
 
@@ -613,7 +628,7 @@ def reverb(x, name, sr=SR, seed=11):
     pre = int(p["pre"] * sr)
     ir = np.concatenate([np.zeros(pre), ir])
     ir /= np.sqrt(np.sum(ir * ir)) or 1.0
-    wet = _fftconv(np.concatenate([x, np.zeros(len(ir))]), ir)[:len(x) + len(ir)]
+    wet = _fftconv(x, ir, causal=True)
     dry = np.concatenate([x, np.zeros(len(wet) - len(x))])
     # Match the wet path's loudness to the dry one before mixing. A space is a
     # place, not a fader: declaring `space=hall` must not make a track louder

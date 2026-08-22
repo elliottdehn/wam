@@ -38,6 +38,12 @@ def compile_file(path, outdir="out", only=None, sheet=True, wav=True, width=1180
         if wav:
             waudio.write_wav(base + ".wav", piece["buf"], piece["rate"])
             entry["outputs"]["wav"] = base + ".wav"
+            # A looping render has its ring-out wrapped onto the head, which
+            # is seamless on repeat and sounds truncated played once. Write
+            # the un-wrapped version alongside it for listening.
+            if piece.get("once") is not None:
+                waudio.write_wav(base + "_once.wav", piece["once"], piece["rate"])
+                entry["outputs"]["once"] = base + "_once.wav"
         if sheet:
             wsheet.write_sheet(base + "_sheet.png", piece, width)
             entry["outputs"]["sheet"] = base + "_sheet.png"
@@ -67,12 +73,12 @@ def _print_human(report):
         print("\n%s %s  %.2fs  peak %.1f dB  rms %.1f dB  centroid %.0f Hz  onsets %d"
               % (piece["kind"], piece["name"], m["duration"], m["peak"], m["rms"],
                  m["centroid"], m["onsets"]))
-        for stat in piece["meta"].get("tracks", []):
+        for stat in piece["meta"].get("staves", []):
             marks = "".join([" MUTE" if stat["muted"] else "",
                              " SOLO" if stat["soloed"] else ""])
-            print("   track %-10s %-8s %3d events  %6.1f dBFS  %5.0f Hz%s"
-                  % (stat["track"], stat["voice"], stat["events"],
-                     stat["peak_db"], stat["centroid"], marks))
+            print("   staff %-8s %-8s %d voice(s) %3d events  %6.1f dBFS  %5.0f Hz%s"
+                  % (stat["staff"], stat["instrument"], stat["voices"],
+                     stat["events"], stat["peak_db"], stat["centroid"], marks))
         for stat in piece["meta"].get("layers", []):
             print("   layer %-10s %-8s at %4.0f%%  x%d  %6.1f dBFS"
                   % (stat["layer"], stat["source"], stat["at"] * 100,
@@ -98,7 +104,7 @@ def main(argv=None):
     p.add_argument("--no-sheet", action="store_true")
     p.add_argument("--no-wav", action="store_true")
     p.add_argument("--stems", action="store_true",
-                   help="also write one file per track, at its level in the mix")
+                   help="also write one file per staff, at its level in the mix")
     p.add_argument("--width", type=int, default=1180)
     p.add_argument("--json", action="store_true",
                    help="print the report as JSON and nothing else")

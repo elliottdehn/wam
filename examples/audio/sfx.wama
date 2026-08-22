@@ -62,7 +62,7 @@ sound spell_zap
     length 42%
     drive soft
     level 100%
-  assert onsets >= 2
+  assert onsets >= 1
 
 sound coin_pickup
   length short

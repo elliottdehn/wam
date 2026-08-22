@@ -1,0 +1,237 @@
+# ALIEN GOD, track 7 — "Teeth of the Monolith"
+#
+# Slow enough that each chord is an event rather than a beat. F phrygian keeps
+# five flats in the signature, so almost every note is already dark before
+# anything is played; the guitar mostly holds, and the kit hits twice a bar
+# and lets the room finish the job.
+audio teeth_of_the_monolith
+  key f phrygian
+  tempo 72
+  master -1.5
+
+tones
+  tone grind from=harsh tilt=0.75 harm=1.9
+  tone murk from=dark tilt=2.4
+  tone alien from=hollow tilt=1.5 harm=0.8
+
+instruments
+  instrument monolith source=drone  tone=murk  env=pad   level=100% space=cave
+  instrument guitar   source=saw    tone=grind env=gate  level=100% drive=fuzz
+  instrument bass     source=saw    tone=murk  env=gate  level=100% drive=soft
+  instrument lead     source=square tone=grind env=stab  level=100% drive=hard space=hall
+  instrument vox      source=drone  tone=alien env=swell level=100% space=cave
+
+song teeth_of_the_monolith
+  meter 4/4
+  bars 80
+  feel straight
+  space cave
+
+  staff monolith instrument=monolith level=32%
+    voice pedal
+      phrase HOLD
+        | <f, c>1~
+        | q1~
+        | q1~
+        | q1~
+        | <ges, des>1~
+        | q1~
+        | <f, c>1~
+        | q1~
+      dynamic mf
+      play HOLD HOLD
+      dynamic f
+      play HOLD HOLD HOLD HOLD
+      dynamic mp
+      play HOLD HOLD HOLD HOLD
+
+  staff guitar instrument=guitar level=54% pan=20%
+    voice slab
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase SLAB
+        | <f, c>1
+        | <f, c>1
+        | <ges, des>1
+        | <f, c>1
+        | <f, c>1
+        | <f, c>1
+        | <des, aes,>2 <ces, ges,>2
+        | <f, c>1
+      phrase GRIND
+        | <f, c>4 q4 q4 q4
+        | <f, c>4 q4 <ges, des>2
+        | <f, c>4 q4 q4 q4
+        | <des, aes,>2 <f, c>2
+        | <f, c>4 q4 q4 q4
+        | <f, c>4 q4 <ges, des>2
+        | <ces, ges,>2 <des, aes,>2
+        | <f, c>1
+      play SILENT
+      dynamic f
+      play SLAB SLAB SLAB
+      dynamic ff
+      play GRIND GRIND SLAB
+      dynamic f
+      play GRIND SLAB
+      dynamic mp
+      play SILENT
+
+  staff bass instrument=bass level=56%
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase LOW
+        | f,1
+        | f,1
+        | ges,1
+        | f,1
+        | f,1
+        | f,1
+        | des,2 ces,2
+        | f,1
+      phrase PUSH
+        | f,4 r4 f,4 r4
+        | f,4 r4 ges,2
+        | f,4 r4 f,4 r4
+        | des,2 f,2
+        | f,4 r4 f,4 r4
+        | f,4 r4 ges,2
+        | ces,2 des,2
+        | f,1
+      play SILENT
+      dynamic f
+      play LOW LOW LOW
+      dynamic ff
+      play PUSH PUSH LOW
+      dynamic f
+      play PUSH LOW
+      dynamic mp
+      play SILENT
+
+  staff lead instrument=lead level=38% pan=-25%
+    voice line
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase CRY
+        | r2 f'2
+        | ges'1
+        | r2 aes'2
+        | f'1
+        | r2 ces''2
+        | bes'1
+        | aes'2 ges'2
+        | f'1
+      phrase HIGH
+        | f''1
+        | ges''2 f''2
+        | des''1
+        | ces''2 bes'2
+        | f''1
+        | ges''2 aes''2
+        | ges''2 f''2
+        | f''1
+      play SILENT SILENT SILENT
+      dynamic mf
+      play CRY
+      dynamic ff
+      play HIGH HIGH
+      dynamic f
+      play CRY HIGH
+      dynamic mp
+      play SILENT
+
+  staff vox instrument=vox level=26% pan=30%
+    voice choir
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase HOLD
+        | <f' aes' c''>1~
+        | q1~
+        | <ges' bes' des''>1~
+        | q1~
+        | <f' aes' c''>1~
+        | q1~
+        | <ces' ges' bes'>1~
+        | q1~
+      play SILENT SILENT
+      dynamic mp
+      play HOLD HOLD
+      dynamic mf
+      play HOLD HOLD HOLD
+      dynamic p
+      play HOLD HOLD HOLD
+
+  staff drum instrument=kit level=60%
+    voice beat
+      phrase SILENT
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+        | r1
+      phrase SLOW
+        | k2 s2
+        | k2 s2
+        | k2 s2
+        | k4 k4 s2
+        | k2 s2
+        | k2 s2
+        | k2 s2
+        | T4 T4 s2
+      phrase HEAVY
+        | c4 r4 s2
+        | k4 k4 s2
+        | k2 s4 s4
+        | k4 k4 s4 T4
+        | c4 r4 s2
+        | k4 k4 s2
+        | k2 s4 s4
+        | t8 t8 T8 T8 s4 c4
+      dynamic mp
+      play SILENT SLOW
+      dynamic f
+      play SLOW SLOW HEAVY
+      dynamic ff
+      play HEAVY HEAVY
+      dynamic f
+      play HEAVY SLOW
+      dynamic mp
+      play SILENT
+
+  checks
+    assert peak <= -1.0 db
+    assert duration ~ 267 s
+    assert loop_pop < 14 db
+    assert centroid < 3000 hz
